@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Aule - UNIPV</title>
+    
+    <script>
+        const CONFIG_APP = {
+            titoloSede: "Impegni Aule",
+            urlLogo: "/logo.png", // Lascia vuoto ("") per nasconderlo
+            intervalloAggiornamento: 5000,
+            messaggioNessunaLezione: "Nessun impegno attivo programmato per la giornata.",
+            messaggioErroreRete: "Connessione persa col Server API.",
+            pausaTraCaroselli: 180000,
+            esposizioneLocandina: 15000
+        };
+    </script>
+
+<style>
+    :root {
+        --colore-sfondo: #0d1117;          
+        --colore-scheda: #161b22;          
+        --colore-testo-primario: #c9d1d9;  
+        --colore-testo-secondario: #8b949e;
+        --accento-titolo: #58a6ff;         
+        --accento-orologio: #f2cc60;       
+        --bordo-in-corso: #238636;         
+        --bordo-futuro: #58a6ff;           
+        --bordo-offline: #da3633;          
+    }
+
+    body { 
+        background-color: var(--colore-sfondo); color: var(--colore-testo-primario); 
+        font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 25px; box-sizing: border-box;
+        height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    #banner-wrapper, .header { flex-shrink: 0; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #30363d; padding-bottom: 15px; margin-bottom: 25px; }
+    .header-left { display: flex; align-items: center; gap: 15px; }
+    .header-left h1 { color: var(--accento-titolo); margin: 0; font-size: 1.8rem; }
+    .orologio { font-size: 2rem; color: var(--accento-orologio); font-weight: bold; }
+
+    #dashboard { flex-grow: 1; min-height: 0; display: flex; flex-direction: column; }
+    .layout-colonne { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; flex-grow: 1; min-height: 0; overflow: hidden; }
+    
+    /* MODIFICA: Qui forziamo la colonna a non scrollare e a comprimere i figli */
+    .colonna-scroll { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 12px; 
+        overflow: hidden; 
+        height: 100%; 
+    }
+
+    .titolo-colonna {
+        font-size: 1.3rem; color: var(--colore-testo-secondario); border-bottom: 2px solid #30363d; 
+        padding-bottom: 8px; margin-top: 0; margin-bottom: 5px; text-transform: uppercase;
+        flex-shrink: 0; /* Il titolo non deve rimpicciolirsi */
+    }
+
+    .card { 
+        background: var(--colore-scheda); border-left: 5px solid var(--bordo-futuro); 
+        padding: 10px 15px; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        display: flex; flex-direction: column; gap: 5px; 
+        flex-shrink: 1; /* MODIFICA: Permette alla card di rimpicciolirsi se serve */
+        min-height: 50px; /* Altezza minima per evitare che spariscano */
+    }
+    
+    .card.in-corso { border-left-color: var(--bordo-in-corso); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; }
+    .orario { font-size: 1.1rem; font-weight: bold; }
+    .aula { font-size: 0.9rem; background: #21262d; padding: 2px 8px; border-radius: 15px; color: var(--accento-orologio); font-weight: bold; }
+    .titolo { font-size: 1.1rem; font-weight: 600; line-height: 1.1; color: #e6edf3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .docente { color: var(--colore-testo-secondario); font-size: 0.85rem; }
+
+    .stato-sistema { text-align: center; margin-top: 50px; font-size: 1.3rem; color: var(--colore-testo-secondario); font-style: italic; }
+    .offline { color: var(--bordo-offline); font-weight: bold; font-style: normal; }
+    
+    .card.cancellato { border-left-color: var(--bordo-offline); opacity: 0.85; }
+    .badge-avviso { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; width: fit-content; }
+    .badge-rosso { background-color: var(--bordo-offline); color: white; }
+    .badge-giallo { background-color: #d29922; color: #0d1117; }
+    .testo-barrato { text-decoration: line-through; opacity: 0.5; }
+
+    #kiosk-adv {
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #000;
+        z-index: 9999; display: none; opacity: 0; transition: opacity 1.5s ease-in-out;
+        justify-content: center; align-items: center; gap: 40px; padding: 40px; box-sizing: border-box;
+    }
+
+    @media (max-width: 768px) { .layout-colonne { grid-template-columns: 1fr; gap: 20px; } }
+</style>
+</head>
+<body>
+
+    <div id="kiosk-adv"></div>
+
+    <div id="banner-wrapper" style="width:100%; text-align:center; margin-bottom:25px; display:none;">
+        <img id="logo-sede" src="" alt="Banner Sede" style="width:100%; max-height:15vh; object-fit:contain; border-radius:8px;">
+    </div>
+
+    <div class="header">
+        <div class="header-left">
+            <h1 id="titolo-sede">Caricamento...</h1>
+        </div>
+        <div id="orologio" class="orologio">--:--</div>
+    </div>
+    
+    <div id="dashboard">
+        <div class="stato-sistema">Inizializzazione connessione col Server API...</div>
+    </div>
+
+    <script>
+        document.getElementById('titolo-sede').innerText = CONFIG_APP.titoloSede;
+        document.title = "Dashboard - " + CONFIG_APP.titoloSede;
+        if (CONFIG_APP.urlLogo !== "") {
+            document.getElementById('logo-sede').src = CONFIG_APP.urlLogo;
+            document.getElementById('banner-wrapper').style.display = 'block';
+        }
+
+        setInterval(() => {
+            document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        }, 1000);
+
+        function generaCardHTML(impegno) {
+            // Genera la classe CSS speciale se cancellato
+            let classeStato = impegno.inCorso ? 'in-corso' : '';
+            if (impegno.cancellato) classeStato += ' cancellato';
+            
+            // Crea il Badge se presente l'avviso
+            let htmlAvviso = '';
+            if (impegno.avviso) {
+                const classeBadge = impegno.cancellato ? 'badge-rosso' : 'badge-giallo';
+                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${impegno.avviso}</div>`;
+            }
+            
+            // Barra il testo se cancellato
+            const stileTesto = impegno.cancellato ? 'testo-barrato' : '';
+
+            return `
+                <div class="card ${classeStato}">
+                    ${htmlAvviso}
+                    <div class="card-header">
+                        <div class="orario ${stileTesto}">${impegno.orario}</div>
+                        <div class="aula ${stileTesto}">${impegno.aula}</div>
+                    </div>
+                    <div class="titolo ${stileTesto}">${impegno.titolo}</div>
+                    <div class="docente ${stileTesto}">${impegno.docente}</div>
+                </div>
+            `;
+        }
+
+        async function scaricaDatiServerLocale() {
+            const dashboard = document.getElementById('dashboard');
+            try {
+                const risposta = await fetch('/dati.json');
+                if (!risposta.ok) throw new Error('Errore HTTP');
+                const datiAule = await risposta.json();
+
+                if (!datiAule || datiAule.length === 0) {
+                    dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                    return;
+                }
+
+                let htmlInCorso = '', htmlFuturi = '';
+                datiAule.forEach(imp => {
+                    if (imp.inCorso) htmlInCorso += generaCardHTML(imp);
+                    else htmlFuturi += generaCardHTML(imp);
+                });
+
+                if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
+                if (!htmlFuturi) htmlFuturi = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione programmata</div>';
+
+                const nuovoLayout = `
+                    <div class="layout-colonne">
+                        <div class="colonna-scroll">
+                            <h2 class="titolo-colonna">In Corso</h2>
+                            ${htmlInCorso}
+                        </div>
+                        <div class="colonna-scroll">
+                            <h2 class="titolo-colonna">Prossimi Eventi</h2>
+                            ${htmlFuturi}
+                        </div>
+                    </div>
+                `;
+                
+                if (dashboard.innerHTML !== nuovoLayout) {
+                    dashboard.innerHTML = nuovoLayout;
+                }
+            } catch(errore) {
+                dashboard.innerHTML = `
+                    <div class="stato-sistema offline">
+                        <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <br>${CONFIG_APP.messaggioErroreRete}
+                    </div>
+                `;
+            }
+        }
+        
+        scaricaDatiServerLocale();
+        setInterval(scaricaDatiServerLocale, CONFIG_APP.intervalloAggiornamento);
+
+        const advOverlay = document.getElementById('kiosk-adv');
+        async function riproduciLocandine() {
+            const isLandscape = window.innerWidth > window.innerHeight;
+            const immaginiValide = [];
+            
+            for(let i = 1; i <= 4; i++) {
+                const url = `/locandine/${i}.jpg?` + Date.now();
+                const urlConfermata = await new Promise(resolve => {
+                    let img = new Image(); img.onload = () => resolve(url); img.onerror = () => resolve(null); img.src = url;
+                });
+                if(urlConfermata) immaginiValide.push(urlConfermata);
+            }
+            if(immaginiValide.length === 0) return; 
+
+            const gruppi = [];
+            const imgPerGruppo = isLandscape ? 2 : 1;
+            for(let i = 0; i < immaginiValide.length; i += imgPerGruppo) { 
+                gruppi.push(immaginiValide.slice(i, i + imgPerGruppo)); 
+            }
+
+            advOverlay.style.display = 'flex';
+            for(let i = 0; i < gruppi.length; i++) {
+                advOverlay.innerHTML = gruppi[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
+                await new Promise(r => setTimeout(r, 50));
+                advOverlay.style.opacity = '1';
+                await new Promise(r => setTimeout(r, CONFIG_APP.esposizioneLocandina));
+                advOverlay.style.opacity = '0';
+                await new Promise(r => setTimeout(r, 1500));
+            }
+            advOverlay.style.display = 'none'; 
+            advOverlay.innerHTML = '';
+        }
+        
+        setInterval(riproduciLocandine, CONFIG_APP.pausaTraCaroselli);
+    </script>
+</body>
+</html>
