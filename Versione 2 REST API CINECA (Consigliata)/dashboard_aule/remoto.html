@@ -30,14 +30,24 @@
         --bordo-offline: #da3633;          
     }
 
-    body { 
+body { 
         background-color: var(--colore-sfondo); color: var(--colore-testo-primario); 
-        font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 25px; box-sizing: border-box;
+        font-family: system-ui, -apple-system, sans-serif; 
+        margin: 0; 
+        padding: 15px; /* Rimpicciolito da 25px a 15px */
+        box-sizing: border-box;
         height: 100vh; display: flex; flex-direction: column; overflow: hidden;
     }
 
-    #banner-wrapper, .header { flex-shrink: 0; }
-    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #30363d; padding-bottom: 15px; margin-bottom: 25px; }
+#banner-wrapper { margin-bottom: 10px !important; }
+    #banner-wrapper img { max-height: 10vh !important; } /* Logo leggermente più compatto */
+    
+    .header { 
+        display: flex; justify-content: space-between; align-items: center; 
+        border-bottom: 2px solid #30363d; 
+        padding-bottom: 10px; /* Rimpicciolito da 15px */
+        margin-bottom: 15px; /* Rimpicciolito da 25px */
+    }
     .header-left { display: flex; align-items: center; gap: 15px; }
     .header-left h1 { color: var(--accento-titolo); margin: 0; font-size: 1.8rem; }
     .orologio { font-size: 2rem; color: var(--accento-orologio); font-weight: bold; }
@@ -60,26 +70,71 @@
         flex-shrink: 0; /* Il titolo non deve rimpicciolirsi */
     }
 
-    .card { 
+.card { 
         background: var(--colore-scheda); border-left: 5px solid var(--bordo-futuro); 
-        padding: 10px 15px; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-        display: flex; flex-direction: column; gap: 5px; 
-        flex-shrink: 1; /* MODIFICA: Permette alla card di rimpicciolirsi se serve */
-        min-height: 50px; /* Altezza minima per evitare che spariscano */
+        padding: 6px 12px; /* Ridotto per risparmiare altezza */
+        border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        display: flex; flex-direction: column; 
+        gap: 2px; /* Riduce lo spazio tra riga 1 e riga 2 */
+        flex-shrink: 1; 
+        min-height: 35px; 
+        overflow: hidden;
     }
     
     .card.in-corso { border-left-color: var(--bordo-in-corso); }
-    .card-header { display: flex; justify-content: space-between; align-items: center; }
-    .orario { font-size: 1.1rem; font-weight: bold; }
-    .aula { font-size: 0.9rem; background: #21262d; padding: 2px 8px; border-radius: 15px; color: var(--accento-orologio); font-weight: bold; }
-    .titolo { font-size: 1.1rem; font-weight: 600; line-height: 1.1; color: #e6edf3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .docente { color: var(--colore-testo-secondario); font-size: 0.85rem; }
+    
+    /* Riga 1: Alta priorità. Non si restringe mai (flex-shrink: 0) */
+    .card-header { 
+        display: flex; justify-content: space-between; align-items: center; gap: 10px; 
+        flex-shrink: 0; 
+    }
+    
+    /* Riga 2: Bassa priorità. Se lo schermo è pieno, collassa (flex-shrink: 10) */
+    .card-footer { 
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        flex-shrink: 10; 
+        min-height: 0; 
+        overflow: hidden;
+    }
 
+    .titolo { 
+        font-size: 1.1rem; font-weight: 600; line-height: 1.2; color: #e6edf3; 
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+        flex: 1; /* Occupa tutto lo spazio a sinistra */
+    }
+    
+    .aula { 
+        font-size: 0.9rem; background: #21262d; padding: 2px 8px; border-radius: 15px; 
+        color: var(--accento-orologio); font-weight: bold; 
+        flex-shrink: 0; /* L'aula non deve mai venire troncata */
+        white-space: nowrap; 
+    }
+    
+    .docente { 
+        color: var(--colore-testo-secondario); font-size: 0.85rem; 
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+        flex: 1; 
+    }
+    
+    .orario { 
+        font-size: 0.95rem; font-weight: bold; color: var(--colore-testo-primario); 
+        flex-shrink: 0; white-space: nowrap; 
+    }
     .stato-sistema { text-align: center; margin-top: 50px; font-size: 1.3rem; color: var(--colore-testo-secondario); font-style: italic; }
     .offline { color: var(--bordo-offline); font-weight: bold; font-style: normal; }
     
     .card.cancellato { border-left-color: var(--bordo-offline); opacity: 0.85; }
-    .badge-avviso { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; width: fit-content; }
+    .badge-avviso { 
+            display: inline-block; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-size: 0.70rem; /* Leggermente più piccolo */
+            font-weight: bold; 
+            text-transform: uppercase; 
+            width: fit-content; 
+            align-self: flex-end; /* Allinea il badge a destra! */
+            margin-bottom: -2px; /* Lo avvicina al titolo per salvare spazio */
+        }
     .badge-rosso { background-color: var(--bordo-offline); color: white; }
     .badge-giallo { background-color: #d29922; color: #0d1117; }
     .testo-barrato { text-decoration: line-through; opacity: 0.5; }
@@ -124,30 +179,29 @@
             document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
         }, 1000);
 
-        function generaCardHTML(impegno) {
-            // Genera la classe CSS speciale se cancellato
+function generaCardHTML(impegno) {
             let classeStato = impegno.inCorso ? 'in-corso' : '';
             if (impegno.cancellato) classeStato += ' cancellato';
             
-            // Crea il Badge se presente l'avviso
             let htmlAvviso = '';
             if (impegno.avviso) {
                 const classeBadge = impegno.cancellato ? 'badge-rosso' : 'badge-giallo';
                 htmlAvviso = `<div class="badge-avviso ${classeBadge}">${impegno.avviso}</div>`;
             }
             
-            // Barra il testo se cancellato
             const stileTesto = impegno.cancellato ? 'testo-barrato' : '';
 
             return `
                 <div class="card ${classeStato}">
                     ${htmlAvviso}
                     <div class="card-header">
-                        <div class="orario ${stileTesto}">${impegno.orario}</div>
+                        <div class="titolo ${stileTesto}">${impegno.titolo}</div>
                         <div class="aula ${stileTesto}">${impegno.aula}</div>
                     </div>
-                    <div class="titolo ${stileTesto}">${impegno.titolo}</div>
-                    <div class="docente ${stileTesto}">${impegno.docente}</div>
+                    <div class="card-footer">
+                        <div class="docente ${stileTesto}">${impegno.docente}</div>
+                        <div class="orario ${stileTesto}">${impegno.orario}</div>
+                    </div>
                 </div>
             `;
         }
