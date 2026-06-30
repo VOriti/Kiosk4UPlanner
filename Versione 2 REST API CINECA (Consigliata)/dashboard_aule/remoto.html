@@ -12,8 +12,15 @@
             intervalloAggiornamento: 5000,
             messaggioNessunaLezione: "Nessun impegno attivo programmato per la giornata.",
             messaggioErroreRete: "Connessione persa col Server API.",
-            pausaTraCaroselli: 180000,
-            esposizioneLocandina: 15000
+            // Impostazioni per il carosello di locandine
+            pausaTraCaroselli: 180000, // Pausa tra un carosello di locandine e l'altro in millisecondi (di base 3 minuti)
+            esposizioneLocandina: 15000, // Durata di esposizione di ogni locandina in millisecondi (di base 15 secondi)
+            // LINK MENU A SCOMPARSA - cambiare il urlCalendario con il link del calendario pubblico di U-Planner della propria sede
+            urlCalendario: "https://unipv.prod.up.cineca.it/calendarioPubblico/linkCalendarioId=5e3d320d8409120018939b0a",
+            urlRepo: "https://github.com/VOriti/Kiosk4Uplanner", // Link al repository GitHub del progetto, lasciare invariato per licenza e aggiornamenti
+            urlLicenza: "https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it", // Link alla licenza Creative Commons BY-NC-SA 4.0, lasciare invariato per rispettare la licenza Share-Alike
+            autore: "Vincenzo Oriti",
+            emailAutore: "vincenzo.oriti@unipv.it"
         };
     </script>
 
@@ -72,13 +79,14 @@ body {
 
 .card { 
         background: var(--colore-scheda); border-left: 5px solid var(--bordo-futuro); 
-        padding: 6px 12px; /* Ridotto per risparmiare altezza */
+        padding: 6px 12px;
         border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         display: flex; flex-direction: column; 
-        gap: 2px; /* Riduce lo spazio tra riga 1 e riga 2 */
+        gap: 2px; 
         flex-shrink: 1; 
         min-height: 35px; 
         overflow: hidden;
+        min-width: 0; /* Permette alla card intera di restringersi */
     }
     
     .card.in-corso { border-left-color: var(--bordo-in-corso); }
@@ -87,6 +95,7 @@ body {
     .card-header { 
         display: flex; justify-content: space-between; align-items: center; gap: 10px; 
         flex-shrink: 0; 
+        min-width: 0; /* Permette all'header di restringersi */
     }
     
     /* Riga 2: Bassa priorità. Se lo schermo è pieno, collassa (flex-shrink: 10) */
@@ -95,12 +104,21 @@ body {
         flex-shrink: 10; 
         min-height: 0; 
         overflow: hidden;
+        min-width: 0; /* Permette al footer di restringersi */
     }
 
     .titolo { 
         font-size: 1.1rem; font-weight: 600; line-height: 1.2; color: #e6edf3; 
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
         flex: 1; /* Occupa tutto lo spazio a sinistra */
+        min-width: 0; /* Permette alla card di restringersi e usare i puntini (...) */
+    }
+    
+    .docente { 
+        color: var(--colore-testo-secondario); font-size: 0.85rem; 
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+        flex: 1; 
+        min-width: 0; /*  Permette alla card di restringersi e usare i puntini (...) */
     }
     
     .aula { 
@@ -108,12 +126,6 @@ body {
         color: var(--accento-orologio); font-weight: bold; 
         flex-shrink: 0; /* L'aula non deve mai venire troncata */
         white-space: nowrap; 
-    }
-    
-    .docente { 
-        color: var(--colore-testo-secondario); font-size: 0.85rem; 
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
-        flex: 1; 
     }
     
     .orario { 
@@ -145,7 +157,245 @@ body {
         justify-content: center; align-items: center; gap: 40px; padding: 40px; box-sizing: border-box;
     }
 
-    @media (max-width: 768px) { .layout-colonne { grid-template-columns: 1fr; gap: 20px; } }
+    /* MENU FLUTTUANTE A SCOMPARSA */
+    #info-badge {
+        position: fixed;
+        bottom: 25px;
+        right: 0;
+        background: rgba(22, 27, 34, 0.95);
+        backdrop-filter: blur(5px);
+        border: 1px solid #30363d;
+        border-right: none;
+        border-radius: 30px 0 0 30px;
+        display: flex;
+        align-items: center;
+        height: 42px;
+        padding: 0 15px 0 10px;
+        color: var(--colore-testo-secondario);
+        z-index: 9999;
+        box-shadow: -3px 0 10px rgba(0,0,0,0.4);
+
+        transform: translateX(calc(100% - 32px)); 
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    #info-badge:hover {
+        transform: translateX(0); 
+    }
+    
+.badge-icona {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        cursor: pointer; /* Mostra la manina per far capire che è cliccabile */
+    }
+    
+    /* Animazione rotazione freccia */
+    .badge-icona svg {
+        transition: transform 0.3s ease;
+    }
+    
+    /* Apre il cassetto con l'hover (su PC) o con la classe 'aperto' (su Mobile) */
+    #info-badge:hover,
+    #info-badge.aperto {
+        transform: translateX(0); 
+    }
+    
+    /* Ribalta la freccia quando il cassetto è aperto */
+    #info-badge:hover .badge-icona svg,
+    #info-badge.aperto .badge-icona svg {
+        transform: rotate(180deg); 
+    }
+    
+    #info-badge:hover .badge-contenuto,
+    #info-badge.aperto .badge-contenuto {
+        opacity: 1; 
+        transition-delay: 0.15s; 
+    }
+
+.badge-contenuto a {
+        position: relative; 
+        color: var(--colore-testo-secondario);
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: color 0.2s;
+    }
+    .badge-contenuto a:hover { 
+        color: var(--colore-testo-primario); 
+    }
+    .badge-contenuto svg { width: 15px; height: 15px; }
+
+    .badge-contenuto a::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 120%;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 10px;
+        background-color: var(--colore-testo-primario);
+        color: var(--colore-sfondo);
+        font-size: 0.75rem;
+        font-weight: normal;
+        white-space: nowrap;
+        border-radius: 4px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        opacity: 0;
+        visibility: hidden;
+        z-index: 10000;
+        pointer-events: none;
+    }
+
+    .badge-contenuto a::before {
+        content: '';
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border-width: 5px;
+        border-style: solid;
+        border-color: var(--colore-testo-primario) transparent transparent transparent;
+        opacity: 0;
+        visibility: hidden;
+        z-index: 10000;
+        pointer-events: none;
+    }
+
+    #link-autore::after {
+        left: auto;
+        right: 0; 
+        transform: none;
+    }
+    #link-autore::before {
+        left: auto;
+        right: 35px; 
+        transform: none;
+    }
+
+    .badge-contenuto a:hover::after,
+    .badge-contenuto a:hover::before {
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 0.05s ease-in;
+    }
+
+/* =========================================
+OTTIMIZZAZIONI PER SMARTPHONE E TABLET
+========================================= */
+    @media (max-width: 768px) {
+        body { 
+            height: auto; 
+            min-height: 100vh; 
+            overflow-y: auto; 
+            overflow-x: hidden; 
+        }
+        #dashboard { height: auto; }
+        
+        .layout-colonne { 
+            grid-template-columns: minmax(0, 1fr); 
+            gap: 20px; 
+            overflow: visible; 
+        }
+        
+        .colonna-scroll { 
+            height: auto; 
+            overflow: visible; 
+            min-width: 0; 
+            max-width: 100%;
+        }
+        
+        .card { 
+            flex-shrink: 0; 
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+/* --- NUOVO MENU MOBILE A COMPARSA VERTICALE --- */
+        #info-badge {
+            height: auto;
+            max-height: 42px; /* DA CHIUSO: Torna compatto come un bottoncino */
+            padding: 0 15px 0 10px;
+            border-radius: 30px 0 0 30px;
+            max-width: 85vw;
+            align-items: center;
+            overflow: hidden;
+            /* Animazione fluida sia in orizzontale (uscita) che in verticale (ingrandimento) */
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.4s ease, padding 0.4s ease, border-radius 0.3s ease;
+        }
+
+        /* DISATTIVA L'HOVER NATIVO SU MOBILE */
+        #info-badge:hover {
+            transform: translateX(calc(100% - 32px));
+        }
+        #info-badge:hover .badge-icona svg {
+            transform: none; /* Blocca rotazioni a vuoto */
+        }
+
+        /* STATO APERTO (Click) */
+        #info-badge.aperto, #info-badge.aperto:hover {
+            transform: translateX(0);
+            max-height: 600px; 
+            padding: 15px 20px 15px 10px;
+            border-radius: 20px 0 0 20px;
+            align-items: center; /* RIPORTA LA FRECCIA PERFETTAMENTE AL CENTRO */
+        }
+
+        /* ROTAZIONE FRECCIA ISTANTANEA */
+        .badge-icona svg {
+            transition: transform 0.25s ease-out; /* Scattante, nessun ritardo in chiusura! */
+        }
+        #info-badge.aperto .badge-icona svg, #info-badge.aperto:hover .badge-icona svg {
+            transform: rotate(180deg);
+        }
+
+        /* GESTIONE APPARIZIONE TESTI */
+        .badge-contenuto {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 15px;
+            margin-left: 10px;
+            white-space: normal;
+            opacity: 0;
+            transition: opacity 0.15s ease-out; /* Sparisce istantaneamente quando chiudi */
+        }
+        #info-badge.aperto .badge-contenuto {
+            opacity: 1;
+            transition-delay: 0.2s; /* Appare in ritardo solo all'apertura, per dare tempo al pannello di srotolarsi */
+        }
+
+        .badge-contenuto span[style*="opacity:0.3"] {
+            display: none !important;
+        }
+
+        .badge-contenuto a {
+            font-size: 0.95rem; 
+            padding: 5px 0;
+            flex-wrap: wrap; /* Permette ai sottotitoli di andare a capo */
+        }
+
+        /* TRASFORMA LA NUVOLETTA IN TESTO DESCRITTIVO INLINE */
+        .badge-contenuto a::after {
+            display: block !important;
+            position: static !important;
+            transform: none !important;
+            background: transparent !important;
+            color: var(--colore-testo-secondario) !important;
+            padding: 4px 0 0 22px !important; /* Allineato col testo superiore */
+            font-size: 0.75rem !important;
+            white-space: normal !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            box-shadow: none !important;
+            width: 100%;
+        }
+
+        /* Nasconde solo il triangolino inutile */
+        .badge-contenuto a::before {
+            display: none !important;
+        }
+    }
 </style>
 </head>
 <body>
@@ -290,6 +540,45 @@ function generaCardHTML(impegno) {
         }
         
         setInterval(riproduciLocandine, CONFIG_APP.pausaTraCaroselli);
+    </script>
+
+<div id="info-badge">
+    <div class="badge-icona">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </div>
+    <div class="badge-contenuto">
+        <a id="link-calendario" href="#" target="_blank" data-tooltip="Apri il calendario pubblico originale di U-Planner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            UPlanner
+        </a>
+        <span style="opacity:0.3">|</span>
+            <a id="link-repo" href="#" target="_blank" data-tooltip="Visualizza il codice sorgente e la documentazione del progetto su GitHub">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"></path></svg>
+                GitHub
+            </a>
+        <span style="opacity:0.3">|</span>
+            <a id="link-licenza" href="#" target="_blank" data-tooltip="Rilasciato con licenza Creative Commons BY-NC-SA 4.0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                CC BY-NC-SA 4.0
+            </a>
+        <span style="opacity:0.3">|</span>
+            <a id="link-autore" style="cursor: default;" data-tooltip="">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                <span id="nome-autore" style="font-weight:600;"></span>
+            </a>
+        </div>
+    </div>
+
+<script>
+        document.getElementById('link-calendario').href = CONFIG_APP.urlCalendario;
+        document.getElementById('link-repo').href = CONFIG_APP.urlRepo;
+        document.getElementById('link-licenza').href = CONFIG_APP.urlLicenza;
+        document.getElementById('nome-autore').innerText = CONFIG_APP.autore;
+        const testoInformativo = "Per suggerimenti, richieste di modifica o segnalazione di malfunzionamenti: ";
+        document.getElementById('link-autore').setAttribute('data-tooltip', testoInformativo + CONFIG_APP.emailAutore);
+        document.querySelector('.badge-icona').addEventListener('click', function() {
+            document.getElementById('info-badge').classList.toggle('aperto');
+        });
     </script>
 </body>
 </html>
