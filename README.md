@@ -17,7 +17,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 
 * 📖 [**Versione 1: Scraping DOM (Senza API)**](Versione%201%20-%20Scraping%20DOM%20(Senza%20API)/README.md) - Soluzione fai-da-te. Intercetta l'interfaccia web originale iniettando codice tramite Chromium. Consigliata solo se non disponi di alcuna credenziale di accesso a CINECA. Ideale se *non* si dispone di un'utenza API CINECA. *Necessita di un calendario pubblico da aprire per fare lo scraping dei dati.*
 
-* 🚀 [**Versione 2: REST API CINECA (Consigliata)**](Versione%202%20REST%20API%20CINECA%20(Consigliata)/README.md) - Metodo 'Native'. Interroga direttamente il DB di CINECA. Scelta consigliata per stabilità e prestazioni. Include persistenza degli annullamenti, mappatura dinamica degli edifici e un layout Responsive con menù interattivo. *Necessita delle credenziali di accesso a U-Planner.*
+* 🚀 [**Versione 2: REST API CINECA (Consigliata)**](Versione%202%20-%20REST%20API%20CINECA%20(Consigliata)/README.md) - Metodo 'Native'. Interroga direttamente il DB di CINECA. Scelta consigliata per stabilità e prestazioni. Include persistenza degli annullamenti, mappatura dinamica degli edifici e un layout Responsive con menù interattivo. *Necessita delle credenziali di accesso a U-Planner.*
 
 ## Quale versione scegliere?
 
