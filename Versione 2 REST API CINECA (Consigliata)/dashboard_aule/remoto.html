@@ -214,6 +214,17 @@ body {
         transition-delay: 0.15s; 
     }
 
+    .badge-contenuto {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            opacity: 0; 
+            transition: opacity 0.3s ease;
+            white-space: nowrap; /* Impedisce ai link di andare a capo */
+            margin-left: 10px;
+            font-size: 0.85rem;
+        }
+
 .badge-contenuto a {
         position: relative; 
         color: var(--colore-testo-secondario);
