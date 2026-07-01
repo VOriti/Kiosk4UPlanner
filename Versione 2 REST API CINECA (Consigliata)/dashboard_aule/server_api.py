@@ -53,8 +53,13 @@ def carica_stato():
     if os.path.exists(os.path.join(PERCORSO_BASE, 'stato_impegni.json')):
         with open(os.path.join(PERCORSO_BASE, 'stato_impegni.json'), 'r', encoding='utf-8') as f:
             storico_impegni = json.load(f)
-    ora_attuale = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    storico_impegni = {k: v for k, v in storico_impegni.items() if v['timestamp_fine'] > ora_attuale - 86400}
+    
+    #Fix per evitare che impegni annullati rimangano nel file di stato per 24 ore finendo per essere visualizzati come "ANNULLATO" anche il giorno successivo.
+    # Ottiene la mezzanotte di oggi in formato UTC (timestamp)
+    ora_attuale = datetime.datetime.now(datetime.timezone.utc)
+    mezzanotte_oggi = ora_attuale.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    # Mantiene solo gli eventi che finiscono DOPO la mezzanotte di oggi
+    storico_impegni = {k: v for k, v in storico_impegni.items() if v['timestamp_fine'] > mezzanotte_oggi}
 
 # Chiama questa funzione subito dopo aver inizializzato le variabili globali
 carica_stato()
