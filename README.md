@@ -2,7 +2,7 @@
 
 *Sviluppato per l'Università di Pavia (UNIPV)*
 
-**Versione:** 3.0 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
+**Versione:** 3.5 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
 
 ---
 
@@ -30,6 +30,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 | **Risorse Hardware** | Elevato (Chrome è pesante) | **Minimo (Python Script)** |
 | **Interfaccia Utente (UI)** | Fissa a due colonne (Desktop) | **Responsive Mobile & Desktop, Info Badge (Menu fluttuante)** |
 | **Configurazione UI** | Modifica nel codice JS/HTML | **Blocco CONFIG_APP semplificato in remoto.html** |
+| **Stati eventi UPlanner** | Mostra sempre solo P (Pubblicati) e C (Confermati), indisponibilità appaiono come "Attività Programmata" | **Mostra P (Pubblicati), C (Confermati), eventi Confermati sono disattivabili dalla vista, flagga eventi A (Annullati) come Annullati automaticamente, i pallini P e C sono visibili accanto al nome o disattivabili, gestisce le Indisponibilità mostrando il nome corretto** |
 | **Stato del Progetto** | Legacy (Backup) | **Produzione (Standard)** |
 ---
 
@@ -44,6 +45,15 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 ---
 
 # Changelog
+
+## [v3.5] - Gestione avanzata eventi UPlanner
+Questa release affina ulteriormente la gestione dei dati provenienti da U-Planner, introducendo un controllo più preciso sugli stati degli eventi e migliorando la chiarezza delle informazioni esposte sulla dashboard.
+
+### ✨ Novità e Miglioramenti
+* **Gestione granulare degli Stati (P e C):** Il sistema ora distingue chiaramente gli eventi Pubblicati (P) da quelli Confermati (C). Appositi indicatori visivi (pallini) vengono mostrati accanto al nome dell'evento per identificarne lo stato; tali indicatori possono essere comodamente disattivati se non necessari.
+* **Filtro Eventi Confermati:** È stata introdotta la possibilità di nascondere completamente dalla vista gli eventi in stato Confermato (C).
+* **Annullamenti Automatici (A):** Gli eventi contrassegnati come Annullati (A) da U-Planner vengono ora rilevati nativamente e flaggati in automatico come tali sull'interfaccia.
+* **Risoluzione delle Indisponibilità:** Le indisponibilità delle aule vengono processate in modo completo mostrando la loro causale reale, eliminando la precedente e anonima dicitura di "Attività programmata".
 
 ## [v3.0] - Responsive Design, UX Improvements & Logic Fixes
 Questa versione introduce il pieno supporto ai dispositivi mobili, una revisione completa dell'interfaccia utente (UX) e importanti ottimizzazioni nella gestione dei dati lato server.

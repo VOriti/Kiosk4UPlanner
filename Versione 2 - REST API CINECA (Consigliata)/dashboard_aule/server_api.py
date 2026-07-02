@@ -23,6 +23,11 @@ URL_LOGIN    = f"{URL_BASE}/Utenti/login"
 URL_IMPEGNI  = f"{URL_BASE}/Impegni/getImpegniCalendario" 
 
 # ============================================================================
+# CONFIGURAZIONE FILTRI VISUALIZZAZIONE
+# ============================================================================
+MOSTRA_CONFERMATI = True  # Imposta su False se vuoi nascondere gli impegni in stato 'C' (Blu)
+
+# ============================================================================
 # CONFIGURAZIONE DEBUG
 # ============================================================================
 DEBUG_MODE = False # Imposta su True solo quando devi mappare nuovi edifici o vedere la struttura dei dati. In modalità debug, il server logga tutti gli impegni ricevuti e stampa una mappa degli edifici trovati.
@@ -31,7 +36,7 @@ DEBUG_MODE = False # Imposta su True solo quando devi mappare nuovi edifici o ve
 # CONFIGURAZIONE SERVER LOCALE E LOG
 # ============================================================================
 PORTA_SERVER = 8080
-PERCORSO_BASE = '/home/vincenzo/dashboard_aule' #modifica 'vincenzo' con il tuo nome utente di sistema. Es. '/home/mario/dashboard_aule'
+PERCORSO_BASE = '/home/vincenzo/dashboard_aule' # modifica 'vincenzo' con il tuo nome utente di sistema. Es. '/home/mario/dashboard_aule'
 FILE_LOG = os.path.join(PERCORSO_BASE, 'kiosk.log')
 
 logging.basicConfig(
@@ -111,15 +116,49 @@ def estrai_e_formatta_dati(impegni_grezzi):
             if ID_EDIFICIO not in edifici_impegno and ID_EDIFICIO != "":
                 continue
 
+            # RECUPERO E NORMALIZZAZIONE STATO CINECA (P, C, S, A, B)
+            stato = item.get('stato', 'P')
+            if isinstance(stato, dict):
+                stato = stato.get('codice') or stato.get('id') or 'P'
+            stato = str(stato).upper().strip()
+
+            if stato == 'B':
+                continue # Salta brutalmente le Bozze
+                
+            if stato == 'C' and not MOSTRA_CONFERMATI:
+                continue
+
+            is_cancellato = (stato == 'A')
+            avviso_stato = ""
+            if stato == 'A':
+                avviso_stato = "ANNULLATO"
+            elif stato == 'S':
+                avviso_stato = "SOSPESO"
+
             str_inizio = item.get('dataInizio', '').replace('Z', '+00:00')
             str_fine = item.get('dataFine', '').replace('Z', '+00:00')
             dt_inizio = datetime.datetime.fromisoformat(str_inizio)
             dt_fine = datetime.datetime.fromisoformat(str_fine)
             
-            # Parsing titolo robusto
+            # --- GESTIONE TITOLO E INDISPONIBILITÀ ---
             evento = item.get('evento', {})
-            titolo_raw = (item.get('nome') or evento.get('nome') or evento.get('dettaglioDidattico', {}).get('nome') or "Attività programmata")
             
+            # Intercetta qualsiasi tipo di indisponibilità (parziale, totale, o totale aule)
+            is_indisponibilita = (
+                item.get('indisponibilita', False) or 
+                item.get('indisponibilitaTotale', False) or 
+                item.get('indisponibilitaTotaleAule', False) or 
+                item.get('tipoImpegno') == 'INDISPONIBILITA'
+            )
+            
+            # Catena di estrazione potenziata con causaleIndisponibilita e note
+            testo_estratto = (item.get('nome') or item.get('causaleIndisponibilita') or item.get('note') or evento.get('nome') or item.get('motivo') or item.get('descrizione') or evento.get('dettaglioDidattico', {}).get('nome') or "Attività programmata")
+            
+            if is_indisponibilita:
+                titolo_raw = f"INDISPONIBILITÀ: {testo_estratto}"
+            else:
+                titolo_raw = testo_estratto
+
             nuovi_estratti[id_imp] = {
                 "id": id_imp,
                 "orario": f"{dt_inizio.astimezone().strftime('%H:%M')} - {dt_fine.astimezone().strftime('%H:%M')}",
@@ -129,13 +168,14 @@ def estrai_e_formatta_dati(impegni_grezzi):
                 "inCorso": (dt_inizio <= ora_attuale <= dt_fine),
                 "timestamp_inizio": dt_inizio.timestamp(),
                 "timestamp_fine": dt_fine.timestamp(),
-                "cancellato": False,
-                "avviso": ""
+                "cancellato": is_cancellato,
+                "avviso": avviso_stato,
+                "stato_cineca": stato
             }
         except Exception:
             continue
 
-# Aggiornamento stato con logica di persistenza spostamenti
+    # Aggiornamento stato con logica di persistenza spostamenti e stati reali
     for id_nuovo, imp_nuovo in nuovi_estratti.items():
         if id_nuovo not in storico_impegni:
             storico_impegni[id_nuovo] = imp_nuovo
@@ -146,24 +186,27 @@ def estrai_e_formatta_dati(impegni_grezzi):
             cambiata_aula = imp_storico['aula'] != imp_nuovo['aula']
             cambiato_orario = imp_storico['orario'] != imp_nuovo['orario']
             
-            # Se è cambiato qualcosa e non abbiamo già un avviso di spostamento
             if (cambiata_aula or cambiato_orario) and not imp_storico.get('avviso', '').startswith("Spostato"):
-                # Salviamo le info "vecchie" prima di sovrascriverle
                 vecchia_aula = imp_storico['aula']
                 vecchio_orario = imp_storico['orario']
                 imp_storico['avviso'] = f"Spostato (da {vecchia_aula} ore {vecchio_orario})"
             
-            # Aggiorniamo i dati correnti (mantenendo l'avviso se esiste già)
-            imp_nuovo['avviso'] = imp_storico.get('avviso', "")
+            # Se l'evento estratto live ha un avviso di stato prioritario, lo applichiamo subito
+            if imp_nuovo['avviso']:
+                imp_storico['avviso'] = imp_nuovo['avviso']
+                imp_storico['cancellato'] = imp_nuovo['cancellato']
+            else:
+                imp_nuovo['avviso'] = imp_storico.get('avviso', "")
+            
             imp_storico.update(imp_nuovo)
 
-    # Gestione Annullamenti
+    # Gestione Annullamenti storici
     for id_storico, imp_storico in storico_impegni.items():
         if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
             imp_storico["cancellato"] = True
             imp_storico["avviso"] = "ANNULLATO"
 
-    # Salva le modifiche su file dopo aver aggiornato il dizionario
+    # Salva le modifiche su file
     salva_stato()
 
     dati_puliti = [imp for imp in storico_impegni.values() if imp['timestamp_fine'] > ora_attuale.timestamp() or imp['inCorso']]

@@ -25,7 +25,9 @@ Quando il server prova a scaricare i dati delle aule e si accorge che il Token �
 * **Menu Fluttuante a Scomparsa (Info Badge):** Un menu rapido e interattivo integrato nella UI che espone link utili (Calendario, GitHub, Licenza) scomparendo elegantemente per non rubare spazio su schermo (a comparsa laterale su PC, ed espansione verticale su Mobile).
 * **Immunità agli Aggiornamenti:** Eventuali modifiche grafiche, banner istituzionali o manutenzioni dell'interfaccia Angular di U-Planner non romperanno mai la dashboard, poiché i dati viaggiano esclusivamente su un protocollo dati (JSON) che resta invariato.
 * **Mapping Dinamico Edifici:** Grazie alla DEBUG_MODE, il sistema può auto-mappare tutti gli edifici disponibili con un semplice riavvio, eliminando la necessità di cercare manualmente gli ID nel DB di CINECA.
-* **Gestione Annullamenti:** Il sistema traccia i cambiamenti in tempo reale (spostamenti di aula/orario o annullamenti) e li rende persistenti sul disco.
+* **Gestione Avanzata degli Stati (P e C):** Distingue nativamente gli eventi Pubblicati (P) dai Confermati (C) tramite indicatori visivi e permette di nascondere gli eventi non definitivi.
+* **Risoluzione Indisponibilità:** Identifica e mostra la causale reale per cui un'aula è indisponibile, evitando le vecchie diciture generiche (es. "Attività programmata").
+* **Gestione Annullamenti e Modifiche Live:** Gli eventi "Annullati" (A) dal gestionale vengono intercettati automaticamente; il sistema traccia inoltre i cambiamenti in tempo reale (spostamenti di aula/orario) e li rende persistenti sul disco.
 * **Layout CSS a "Compressione Automatica":** Il frontend (remoto.html) utilizza Flexbox per garantire che tutte le card siano sempre visibili senza bisogno di scroll, comprimendosi dinamicamente in base al numero di lezioni.
 
 ### 🏗️ Architettura del Sistema
@@ -84,6 +86,11 @@ URL_LOGIN    = f"{URL_BASE}/Utenti/login"
 URL_IMPEGNI  = f"{URL_BASE}/Impegni/getImpegniCalendario" 
 
 # ============================================================================
+# CONFIGURAZIONE FILTRI VISUALIZZAZIONE
+# ============================================================================
+MOSTRA_CONFERMATI = True  # Imposta su False se vuoi nascondere gli impegni in stato 'C' (Blu)
+
+# ============================================================================
 # CONFIGURAZIONE DEBUG
 # ============================================================================
 DEBUG_MODE = False # Imposta su True solo quando devi mappare nuovi edifici o vedere la struttura dei dati. In modalità debug, il server logga tutti gli impegni ricevuti e stampa una mappa degli edifici trovati.
@@ -137,6 +144,8 @@ const CONFIG_APP = {
     // Impostazioni per il carosello di locandine
     pausaTraCaroselli: 180000, // Pausa in millisecondi tra un carosello e l'altro (default 3 minuti)
     esposizioneLocandina: 15000, // Durata esposizione per ogni singola locandina in millisecondi
+    // FLAG Stato Evento: Imposta su false per nascondere i pallini P (Pubblicato) e C (Confermato) accanto al titolo
+    mostraStatoPC: true,
     // LINK MENU A SCOMPARSA (Info Badge)
     urlCalendario: "https://unipv.prod.up.cineca.it/calendarioPubblico/linkCalendarioId=5e3d320d8409120018939b0a", // Inserisci il calendario della tua sede
     urlRepo: "https://github.com/VOriti/Kiosk4Uplanner", // Lascia invariato per rispetto licenza Attribution
