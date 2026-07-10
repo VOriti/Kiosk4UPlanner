@@ -6,52 +6,88 @@ import time
 import threading
 import datetime
 import requests
+import yaml
+import hashlib
+import ipaddress
+import secrets
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import socketserver
 
-# ============================================================================
-# CONFIGURAZIONE API CINECA 
-# ============================================================================
-API_USERNAME = "INSERISCI_LA_TUA_USERNAME_DI_UP"
-API_PASSWORD = "INSERISCI_LA_TUA_PASSWORD_DI_UP"
-API_REALM    = "INSERISCI_IL_CLIENTE_ID_DEL_TUO_ATENEO"   # Es. "vzdv2mcs8ffre6sed856fsa86kgg5" Per scoprire il tuo realm, apri la console admin di UPlanner e copia il valore del campo "clienteId" nella sezione "Realm" (in alto a sinistra). Per altri atenei, chiedere al supporto CINECA il codice corretto o attivare la debug mode per far girare uno script di discovery che stampa i codici nel log su kiosk.log
-ID_EDIFICIO  = "INSERISCI_L_ID_EDIFICIO"   # Es. "05" per  Palazzo San Felice in UNIPV. Per altri atenei, chiedere al supporto CINECA il codice corretto o attivare la debug mode per far girare uno script di discovery che stampa i codici nel log su kiosk.log
-INTERVALO_AGGIORNAMENTO = 300  # secondi (default 5 minuti)
-URL_BASE     = "https://unipv.prod.up.cineca.it/api" # URL_BASE = "https://cineca.prod.up.cineca.it/api" è l'URL di base per le API CINECA di UPlanner. Sostituire "cineca" prima di prod con il proprio ateneo
+PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
+FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
-URL_LOGIN    = f"{URL_BASE}/Utenti/login"
-# Usiamo l'endpoint corretto scoperto dai log della console admin
-URL_IMPEGNI  = f"{URL_BASE}/Impegni/getImpegniCalendario" 
-
-# ============================================================================
-# CONFIGURAZIONE FILTRI VISUALIZZAZIONE
-# ============================================================================
-MOSTRA_CONFERMATI = True  # Imposta su False se vuoi nascondere gli impegni in stato 'C' (Blu)
-
-# ============================================================================
-# CONFIGURAZIONE DEBUG
-# ============================================================================
-DEBUG_MODE = False # Imposta su True solo quando devi mappare nuovi edifici o vedere la struttura dei dati. In modalità debug, il server logga tutti gli impegni ricevuti e stampa una mappa degli edifici trovati.
-
-# ============================================================================
-# CONFIGURAZIONE SERVER LOCALE E LOG
-# ============================================================================
-PORTA_SERVER = 8080
-PERCORSO_BASE = '/home/vincenzo/dashboard_aule' # modifica 'vincenzo' con il tuo nome utente di sistema. Es. '/home/mario/dashboard_aule'
-FILE_LOG = os.path.join(PERCORSO_BASE, 'kiosk.log')
-
-logging.basicConfig(
-    filename=FILE_LOG,
-    level=logging.INFO,
-    format='%(asctime)s - [API SERVER] - %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    encoding='utf-8'
-)
-
+CONFIG = {}
+SESSIONS = {}
 memoria_dati = []
 lock_memoria = threading.Lock()
 token_cineca = None
 storico_impegni = {}
 data_storico = None
+memoria_news = []
+news_poll_event = threading.Event()
+
+DEFAULT_CONFIG = """main:
+  porta_server: 8080
+  percorso_base: '{PERCORSO}'
+  file_log: 'kiosk.log'
+  # ----------------------------------------------------------------------------
+  # MODALITÀ DEBUG E DIAGNOSTICA
+  # ----------------------------------------------------------------------------
+  # Imposta su 'true' solo in fase di test o se richiesto dall'assistenza.
+  debug_mode: false
+sicurezza:
+  admin_attivo: true
+  admin_ip_autorizzati:
+    - '127.0.0.1'
+  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+api_cineca:
+  username: ''
+  password: ''
+  realm: ''
+  id_edificio: ''
+  intervallo_aggiornamento_sec: 300
+  url_base: 'https://cineca.prod.up.cineca.it/api'
+frontend:
+  mostra_confermati: true
+  caroselloAttivo: true
+  titoloSede: 'Impegni Aule'
+  urlLogo: '/logo.png'
+  mostraStatoPC: true
+  messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
+  messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
+  pausaTraCaroselli: 180000
+  esposizioneLocandina: 10000
+  intervalloAggiornamento: 5000
+  urlCalendario: 'https://unipv.prod.up.cineca.it/calendarioPubblico/linkCalendarioId=5e3d320d8409120018939b0a'
+  urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
+  urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
+  autore: 'Vincenzo Oriti'
+  emailAutore: 'vincenzo.oriti@unipv.it'
+"""
+
+def load_config():
+    global CONFIG, PERCORSO_BASE
+    if not os.path.exists(FILE_CONFIG):
+        with open(FILE_CONFIG, 'w', encoding='utf-8') as f:
+            f.write(DEFAULT_CONFIG.replace('{PERCORSO}', PERCORSO_BASE))
+    with open(FILE_CONFIG, 'r', encoding='utf-8') as f:
+        CONFIG = yaml.safe_load(f)
+        
+    if 'main' in CONFIG and 'percorso_base' in CONFIG['main']:
+        pb = CONFIG['main']['percorso_base'].strip("'\"")
+        if os.path.exists(pb):
+            PERCORSO_BASE = pb
+
+load_config()
+
+file_log = os.path.join(PERCORSO_BASE, CONFIG.get('main', {}).get('file_log', 'kiosk.log'))
+logging.basicConfig(
+    filename=file_log,
+    level=logging.INFO,
+    format='%(asctime)s - [API SERVER] - %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    encoding='utf-8'
+)
 
 def carica_stato():
     global storico_impegni
@@ -59,14 +95,10 @@ def carica_stato():
         with open(os.path.join(PERCORSO_BASE, 'stato_impegni.json'), 'r', encoding='utf-8') as f:
             storico_impegni = json.load(f)
     
-    #Fix per evitare che impegni annullati rimangano nel file di stato per 24 ore finendo per essere visualizzati come "ANNULLATO" anche il giorno successivo.
-    # Ottiene la mezzanotte di oggi in formato UTC (timestamp)
     ora_attuale = datetime.datetime.now(datetime.timezone.utc)
     mezzanotte_oggi = ora_attuale.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    # Mantiene solo gli eventi che finiscono DOPO la mezzanotte di oggi
     storico_impegni = {k: v for k, v in storico_impegni.items() if v['timestamp_fine'] > mezzanotte_oggi}
 
-# Chiama questa funzione subito dopo aver inizializzato le variabili globali
 carica_stato()
 
 def salva_stato():
@@ -76,14 +108,19 @@ def salva_stato():
 def effettua_login():
     global token_cineca
     logging.info("Richiesta di un nuovo Token a CINECA (Admin) in corso...")
+    
+    api_cineca = CONFIG.get('api_cineca', {})
+    url_base = api_cineca.get('url_base', 'https://cineca.prod.up.cineca.it/api')
+    url_login = f"{url_base}/Utenti/login"
+    
     payload = {
-        "username": API_USERNAME, 
-        "password": API_PASSWORD, 
-        "realm": API_REALM,
-        "clientId": API_REALM 
+        "username": api_cineca.get('username', ''), 
+        "password": api_cineca.get('password', ''), 
+        "realm": api_cineca.get('realm', ''),
+        "clientId": api_cineca.get('realm', '')
     }
     try:
-        risposta = requests.post(URL_LOGIN, json=payload, timeout=10)   
+        risposta = requests.post(url_login, json=payload, timeout=10)   
         if risposta.status_code == 200:
             dati = risposta.json()
             token_cineca = dati.get("id")
@@ -110,40 +147,35 @@ def estrai_e_formatta_dati(impegni_grezzi):
             id_imp = item.get('id') or item.get('_id')
             if not id_imp: continue
             
-            # FILTRO EDIFICIO
             aule = item.get('aule', [])
             edifici_impegno = [a.get('edificio', {}).get('codice') for a in aule]
-            if ID_EDIFICIO not in edifici_impegno and ID_EDIFICIO != "":
+            
+            id_edificio = str(CONFIG.get('api_cineca', {}).get('id_edificio', ''))
+            if id_edificio not in edifici_impegno and id_edificio != "":
                 continue
 
-            # RECUPERO E NORMALIZZAZIONE STATO CINECA (P, C, S, A, B)
             stato = item.get('stato', 'P')
             if isinstance(stato, dict):
                 stato = stato.get('codice') or stato.get('id') or 'P'
             stato = str(stato).upper().strip()
 
-            if stato == 'B':
-                continue # Salta brutalmente le Bozze
+            if stato == 'B': continue
                 
-            if stato == 'C' and not MOSTRA_CONFERMATI:
-                continue
+            mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
+            if stato == 'C' and not mostra_confermati: continue
 
             is_cancellato = (stato == 'A')
             avviso_stato = ""
-            if stato == 'A':
-                avviso_stato = "ANNULLATO"
-            elif stato == 'S':
-                avviso_stato = "SOSPESO"
+            if stato == 'A': avviso_stato = "ANNULLATO"
+            elif stato == 'S': avviso_stato = "SOSPESO"
 
             str_inizio = item.get('dataInizio', '').replace('Z', '+00:00')
             str_fine = item.get('dataFine', '').replace('Z', '+00:00')
             dt_inizio = datetime.datetime.fromisoformat(str_inizio)
             dt_fine = datetime.datetime.fromisoformat(str_fine)
             
-            # --- GESTIONE TITOLO E INDISPONIBILITÀ ---
             evento = item.get('evento', {})
             
-            # Intercetta qualsiasi tipo di indisponibilità (parziale, totale, o totale aule)
             is_indisponibilita = (
                 item.get('indisponibilita', False) or 
                 item.get('indisponibilitaTotale', False) or 
@@ -151,7 +183,6 @@ def estrai_e_formatta_dati(impegni_grezzi):
                 item.get('tipoImpegno') == 'INDISPONIBILITA'
             )
             
-            # Catena di estrazione potenziata con causaleIndisponibilita e note
             testo_estratto = (item.get('nome') or item.get('causaleIndisponibilita') or item.get('note') or evento.get('nome') or item.get('motivo') or item.get('descrizione') or evento.get('dettaglioDidattico', {}).get('nome') or "Attività programmata")
             
             if is_indisponibilita:
@@ -175,14 +206,12 @@ def estrai_e_formatta_dati(impegni_grezzi):
         except Exception:
             continue
 
-    # Aggiornamento stato con logica di persistenza spostamenti e stati reali
     for id_nuovo, imp_nuovo in nuovi_estratti.items():
         if id_nuovo not in storico_impegni:
             storico_impegni[id_nuovo] = imp_nuovo
         else:
             imp_storico = storico_impegni[id_nuovo]
             
-            # Verifica se c'è stato un cambiamento (Aula o Orario)
             cambiata_aula = imp_storico['aula'] != imp_nuovo['aula']
             cambiato_orario = imp_storico['orario'] != imp_nuovo['orario']
             
@@ -191,7 +220,6 @@ def estrai_e_formatta_dati(impegni_grezzi):
                 vecchio_orario = imp_storico['orario']
                 imp_storico['avviso'] = f"Spostato (da {vecchia_aula} ore {vecchio_orario})"
             
-            # Se l'evento estratto live ha un avviso di stato prioritario, lo applichiamo subito
             if imp_nuovo['avviso']:
                 imp_storico['avviso'] = imp_nuovo['avviso']
                 imp_storico['cancellato'] = imp_nuovo['cancellato']
@@ -200,13 +228,19 @@ def estrai_e_formatta_dati(impegni_grezzi):
             
             imp_storico.update(imp_nuovo)
 
-    # Gestione Annullamenti storici
     for id_storico, imp_storico in storico_impegni.items():
         if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
             imp_storico["cancellato"] = True
             imp_storico["avviso"] = "ANNULLATO"
 
-    # Salva le modifiche su file
+    mezzanotte_oggi = ora_attuale.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    chiavi_scadute = [k for k, v in storico_impegni.items() if v['timestamp_fine'] <= mezzanotte_oggi]
+    for k in chiavi_scadute:
+        del storico_impegni[k]
+
+    for imp in storico_impegni.values():
+         imp['inCorso'] = (imp['timestamp_inizio'] <= ora_attuale.timestamp() <= imp['timestamp_fine'])
+
     salva_stato()
 
     dati_puliti = [imp for imp in storico_impegni.values() if imp['timestamp_fine'] > ora_attuale.timestamp() or imp['inCorso']]
@@ -219,22 +253,27 @@ def ciclo_aggiornamento_api():
     
     while True:
         try:
+            api_cineca = CONFIG.get('api_cineca', {})
+            realm = api_cineca.get('realm', '')
+            url_base = api_cineca.get('url_base', 'https://cineca.prod.up.cineca.it/api')
+            url_impegni = f"{url_base}/Impegni/getImpegniCalendario"
+            intervallo = int(api_cineca.get('intervallo_aggiornamento_sec', 300))
+            
             if not token_cineca:
                 if not effettua_login():
                     time.sleep(120)
                     continue
             
             headers = { 
-                "Authorization": token_cineca, # Nessun Bearer, passiamo il token pulito
+                "Authorization": token_cineca,
                 "Content-Type": "application/json",
-                "X-Realm": API_REALM 
+                "X-Realm": realm 
             }            
             
             oggi = datetime.datetime.now(datetime.timezone.utc)
             inizio_giornata = oggi.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S.000Z")
             fine_giornata = oggi.replace(hour=23, minute=59, second=59, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-            # Payload identico a quello inviato dalla console admin
             payload = {
                 "limit": 150,
                 "dataInizio": inizio_giornata,
@@ -245,8 +284,8 @@ def ciclo_aggiornamento_api():
                 "contestoId": "5b97788424deec000e171a8f"
             }
             
-            logging.info(f"DEBUG: Richiesta impegni (Admin) a {URL_IMPEGNI}")
-            risposta = requests.post(URL_IMPEGNI, json=payload, headers=headers, timeout=15)
+            logging.info(f"DEBUG: Richiesta impegni a {url_impegni}")
+            risposta = requests.post(url_impegni, json=payload, headers=headers, timeout=15)
             
             if risposta.status_code == 401:
                 logging.error("❌ Token scaduto o non valido (401). Forzo il rinnovo.")
@@ -255,53 +294,354 @@ def ciclo_aggiornamento_api():
                 continue
             elif risposta.status_code == 200:
                 dati_grezzi = risposta.json()
-                # --- BLOCCO DEBUG CONDIZIONALE ---
-                if DEBUG_MODE:
-                    # Logghiamo quanti eventi abbiamo ricevuto
+                if CONFIG.get('main', {}).get('debug_mode', False):
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")
-                    
-                    # Logghiamo i dettagli di ogni impegno per capire se la struttura è quella attesa
-                    for i, imp in enumerate(dati_grezzi):
-                        titolo = imp.get('nome') or imp.get('evento', {}).get('nome') or "N/A"
-                        id_aula = imp.get('aule', [{}])[0].get('id', 'N/A')
-                        logging.info(f"🕵️ DEBUG [{i}]: Trovato '{titolo}' | Aula ID: {id_aula}")
-
-                    # Mappa edifici (quella che avevamo già)
-                    edifici_scoperti = set()
-                    for imp in dati_grezzi:
-                        for a in imp.get('aule', []):
-                            ed = a.get('edificio', {})
-                            if ed.get('codice'):
-                                edifici_scoperti.add(f"{ed.get('codice')} = {ed.get('descrizione')}")
-                    logging.info(f"🕵️ DEBUG MAPPA EDIFICI: {edifici_scoperti}")
-                # ---------------------------------
                 with lock_memoria:
                     memoria_dati = estrai_e_formatta_dati(dati_grezzi)
-                logging.info(f"✅ Dati ricevuti! Trovati {len(memoria_dati)} impegni per l'edificio {ID_EDIFICIO}.")
+                logging.info(f"✅ Dati ricevuti! Trovati {len(memoria_dati)} impegni.")
             else:
                 logging.error(f"❌ Errore HTTP {risposta.status_code}: {risposta.text[:100]}")
                 
         except Exception as e:
             logging.error(f"❌ Errore critico nel ciclo API: {e}")
         
-        time.sleep(INTERVALO_AGGIORNAMENTO)
+        # Uso try per prendere l'intervallo aggiornato per via potenziale di restart non attivati, anche se i thread si uccidono.
+        intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec', 300))
+        time.sleep(intervallo)
+
+def NewsPollingDaemon():
+    global memoria_news
+    logging.info("🚀 Avviato demone News (Footer).")
+    import xml.etree.ElementTree as ET
+    import re
+    
+    def clean_html(raw_html):
+        if not raw_html: return ""
+        cleanr = re.compile('<.*?>')
+        cleantext = re.sub(cleanr, '', str(raw_html))
+        return cleantext.strip()
+        
+    while True:
+        try:
+            footer_config = CONFIG.get('footer_news', {})
+            if not footer_config.get('abilitato', False):
+                news_poll_event.wait(3600)
+                news_poll_event.clear()
+                continue
+                
+            notizie_per_fonte = []
+            fonti = footer_config.get('fonti', [])
+            
+            for fonte in fonti:
+                url = fonte.get('url', '').strip()
+                tipo = fonte.get('tipo', '').lower()
+                nome = fonte.get('nome', 'Fonte')
+                abilitata = fonte.get('abilitata', True)
+                
+                if not url or not abilitata:
+                    continue
+                    
+                notizie_di_questa_fonte = []
+                try:
+                    res = requests.get(url, timeout=10)
+                    res.raise_for_status()
+                    
+                    if tipo == 'rest':
+                        dati = res.json()
+                        for item in dati:
+                            title = item.get('title', {}).get('rendered', '')
+                            link = item.get('link', '')
+                            if title:
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link})
+                    elif tipo == 'rss':
+                        root = ET.fromstring(res.text)
+                        for item in root.findall('./channel/item'):
+                            title = item.find('title')
+                            link_elem = item.find('link')
+                            link = link_elem.text.strip() if link_elem is not None and link_elem.text else ''
+                            if title is not None and title.text:
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title.text), "link": link})
+                except Exception as e:
+                    logging.error(f"❌ Errore recupero news da {nome} ({url}): {e}")
+                
+                if notizie_di_questa_fonte:
+                    notizie_per_fonte.append(notizie_di_questa_fonte)
+            
+            notizie_estratte = []
+            if notizie_per_fonte:
+                max_len = max(len(l) for l in notizie_per_fonte)
+                for i in range(max_len):
+                    for l in notizie_per_fonte:
+                        if i < len(l):
+                            notizie_estratte.append(l[i])
+                            
+            memoria_news = notizie_estratte
+        except Exception as e:
+            logging.error(f"❌ Errore critico demone News: {e}")
+            
+        news_poll_event.wait(3600)
+        news_poll_event.clear()
 
 class KioskServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass 
+    
+    def _check_security(self):
+        sicurezza = CONFIG.get('sicurezza', {})
+        if not sicurezza.get('admin_attivo', False):
+            self.send_error(404, "Not Found")
+            return False
+        
+        client_ip = self.client_address[0]
+        allowed_ips = sicurezza.get('admin_ip_autorizzati', [])
+        
+        if not allowed_ips:
+            return True
+            
+        is_allowed = False
+        try:
+            ip_obj = ipaddress.ip_address(client_ip)
+            for cidr in allowed_ips:
+                if ip_obj in ipaddress.ip_network(cidr, strict=False):
+                    is_allowed = True
+                    break
+        except Exception:
+            pass
+            
+        if not is_allowed:
+            self.send_error(403, "Forbidden")
+            return False
+            
+        return True
+
+    def _check_token(self):
+        token = self.headers.get('X-Admin-Token')
+        if not token or token not in SESSIONS:
+            self.send_error(401, "Unauthorized")
+            return False
+        if SESSIONS[token] < time.time():
+            del SESSIONS[token]
+            self.send_error(401, "Unauthorized")
+            return False
+        return True
         
     def do_GET(self):
-        if self.path == '/dati.json':
+        parsed_path = self.path.split('?')[0]
+        if parsed_path == '/':
+            self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html')
+        elif parsed_path == '/remoto.html':
+            self.send_response(301)
+            self.send_header('Location', '/')
+            self.end_headers()
+        elif parsed_path == '/config_pubblica':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            frontend_config = CONFIG.get('frontend', {})
+            footer_news_config = CONFIG.get('footer_news', {})
+            self.wfile.write(json.dumps({**frontend_config, "footer_news": footer_news_config}).encode('utf-8'))
+        elif parsed_path == '/api/news':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(memoria_news).encode('utf-8'))
+        elif parsed_path == '/dati.json':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             with lock_memoria: self.wfile.write(json.dumps(memoria_dati).encode('utf-8'))
-        elif self.path in ['/', '/remoto.html']:
-            self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html')
-        elif self.path == '/logo.png': 
+        elif parsed_path == '/logo.png': 
             self.serve_file(os.path.join(PERCORSO_BASE, 'logo.png'), 'image/png')
-        elif self.path.startswith('/locandine/'): 
-            self.serve_file(os.path.join(PERCORSO_BASE, 'locandine', os.path.basename(self.path)), 'image/jpeg')
+        elif parsed_path.startswith('/locandine/'): 
+            self.serve_file(os.path.join(PERCORSO_BASE, 'locandine', os.path.basename(parsed_path)), 'image/jpeg')
+        elif parsed_path == '/lista_locandine.json':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            try:
+                cartella_locandine = os.path.join(PERCORSO_BASE, 'locandine')
+                if os.path.exists(cartella_locandine):
+                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                    self.wfile.write(json.dumps(immagini).encode('utf-8'))
+                else:
+                    self.wfile.write(json.dumps([]).encode('utf-8'))
+            except Exception as e:
+                logging.error(f"Errore lettura locandine: {e}")
+                self.wfile.write(json.dumps([]).encode('utf-8'))
+        elif parsed_path == '/admin':
+            if self._check_security():
+                self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html')
+        elif parsed_path == '/api/admin/config_full':
+            if self._check_security() and self._check_token():
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                
+                safe_config = json.loads(json.dumps(CONFIG))
+                if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
+                    safe_config['api_cineca']['password'] = '********'
+                
+                hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
+                if hash_salvato in ['8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', '737a5c64f7f67b7f86e6b6b96698eb5d24b85ba933dd2710b867e16b6b6b9669', 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0']:
+                    safe_config['avviso_sicurezza'] = True
+                else:
+                    safe_config['avviso_sicurezza'] = False
+                    
+                self.wfile.write(json.dumps(safe_config).encode('utf-8'))
+        else:
+            self.send_error(404, "Not Found")
+
+    def do_POST(self):
+        parsed_path = self.path.split('?')[0]
+        if parsed_path == '/api/admin/login':
+            if not self._check_security(): return
+            
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(body)
+                pwd = data.get('password', '')
+                pwd_hash = hashlib.sha256(pwd.encode('utf-8')).hexdigest()
+                
+                hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
+                
+                if pwd_hash == hash_salvato:
+                    token = secrets.token_hex(16)
+                    SESSIONS[token] = time.time() + 3600
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"token": token}).encode('utf-8'))
+                else:
+                    self.send_error(401, "Unauthorized")
+            except Exception as e:
+                logging.error(f"Errore login: {e}")
+                self.send_error(400, "Bad Request")
+                
+        elif parsed_path == '/api/admin/save':
+            if not self._check_security() or not self._check_token(): return
+            
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            try:
+                payload = json.loads(body)
+                
+                if 'main' in payload:
+                    if 'main' not in CONFIG: CONFIG['main'] = {}
+                    CONFIG['main'].update(payload['main'])
+                
+                if 'frontend' in payload:
+                    if 'frontend' not in CONFIG: CONFIG['frontend'] = {}
+                    CONFIG['frontend'].update(payload['frontend'])
+                    
+                if 'api_cineca' in payload:
+                    if 'api_cineca' not in CONFIG: CONFIG['api_cineca'] = {}
+                    nuova_pwd = payload['api_cineca'].get('password')
+                    if nuova_pwd == '********':
+                        payload['api_cineca']['password'] = CONFIG['api_cineca'].get('password', '')
+                    CONFIG['api_cineca'].update(payload['api_cineca'])
+                    
+                if 'sicurezza' in payload:
+                    if 'sicurezza' not in CONFIG: CONFIG['sicurezza'] = {}
+                    if 'admin_ip_autorizzati' in payload['sicurezza']:
+                        CONFIG['sicurezza']['admin_ip_autorizzati'] = payload['sicurezza']['admin_ip_autorizzati']
+                    if 'admin_attivo' in payload['sicurezza']:
+                        CONFIG['sicurezza']['admin_attivo'] = payload['sicurezza']['admin_attivo']
+                        
+                if 'footer_news' in payload:
+                    if 'footer_news' not in CONFIG: CONFIG['footer_news'] = {}
+                    CONFIG['footer_news'].update(payload['footer_news'])
+                
+                nuova_admin_pwd = payload.get('admin_password', '').strip()
+                if nuova_admin_pwd:
+                    CONFIG['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
+                    
+                # Aggiornamento custom per preservare i commenti
+                import re
+                with open(FILE_CONFIG, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                out_lines = []
+                curr_sec = None
+                skip_list = False
+                for line in lines:
+                    if skip_list:
+                        if line.strip() == '' or line.startswith('    ') or line.strip().startswith('-') or line.strip().startswith('#'):
+                            continue
+                        else:
+                            skip_list = False
+                    
+                    m_sec = re.match(r'^([a-zA-Z0-9_]+):', line)
+                    if m_sec:
+                        curr_sec = m_sec.group(1)
+                        out_lines.append(line)
+                        continue
+                    
+                    if curr_sec and curr_sec in CONFIG:
+                        m_key = re.match(r'^(\s+)([a-zA-Z0-9_]+):\s*(.*)', line)
+                        if m_key:
+                            indent, key, resto = m_key.group(1), m_key.group(2), m_key.group(3)
+                            if key in CONFIG[curr_sec]:
+                                val = CONFIG[curr_sec][key]
+                                comm = ""
+                                idx = resto.find('#')
+                                while idx != -1:
+                                    if resto.count('"', 0, idx) % 2 == 0 and resto.count("'", 0, idx) % 2 == 0:
+                                        comm = " " + resto[idx:]
+                                        break
+                                    idx = resto.find('#', idx + 1)
+                                
+                                if isinstance(val, bool):
+                                    v_str = 'true' if val else 'false'
+                                    out_lines.append(f"{indent}{key}: {v_str}{comm}\n")
+                                elif isinstance(val, list):
+                                    skip_list = True
+                                    out_lines.append(f"{indent}{key}:{comm}\n")
+                                    for item in val:
+                                        if isinstance(item, dict):
+                                            out_lines.append(f"{indent}  - nome: \"{item.get('nome', '')}\"\n")
+                                            out_lines.append(f"{indent}    url: \"{item.get('url', '')}\"\n")
+                                            out_lines.append(f"{indent}    tipo: \"{item.get('tipo', 'rss')}\"\n")
+                                            abilitata_str = 'true' if item.get('abilitata', True) else 'false'
+                                            out_lines.append(f"{indent}    abilitata: {abilitata_str}\n")
+                                        else:
+                                            out_lines.append(f"{indent}  - {json.dumps(item)}\n")
+                                else:
+                                    v_str = json.dumps(val)
+                                    out_lines.append(f"{indent}{key}: {v_str}{comm}\n")
+                                continue
+                    out_lines.append(line)
+                with open(FILE_CONFIG, 'w', encoding='utf-8') as f:
+                    f.writelines(out_lines)
+                
+                load_config() # Ricarica per sicurezza
+                news_poll_event.set() # Sveglia il demone per rileggere subito la config delle fonti
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+                
+            except Exception as e:
+                logging.error(f"Errore salvataggio config: {e}")
+                self.send_error(400, "Bad Request")
+                
+        elif parsed_path == '/api/admin/restart':
+            if not self._check_security() or not self._check_token(): return
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+            
+            logging.info("Riavvio richiesto dall'Admin. Termino il processo (il watchdog Bash lo riavvierà).")
+            import os
+            def restart():
+                time.sleep(1)
+                os._exit(0)
+            threading.Thread(target=restart, daemon=True).start()
+        else:
+            self.send_error(404, "Not Found")
 
     def serve_file(self, path, mime):
         if os.path.exists(path):
@@ -318,7 +658,10 @@ class KioskServer(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     threading.Thread(target=ciclo_aggiornamento_api, daemon=True).start()
+    threading.Thread(target=NewsPollingDaemon, daemon=True).start()
     try:
-        HTTPServer(('0.0.0.0', PORTA_SERVER), KioskServer).serve_forever()
+        porta = int(CONFIG.get('main', {}).get('porta_server', 8080))
+        logging.info(f"Avvio KioskServer sulla porta {porta}")
+        HTTPServer(('0.0.0.0', porta), KioskServer).serve_forever()
     except Exception as e:
         logging.error(f"Errore critico avvio server: {e}")

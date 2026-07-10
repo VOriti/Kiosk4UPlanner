@@ -1,0 +1,144 @@
+# ==============================================================================
+# CONFIGURAZIONE KIOSK U-PLANNER v4.0
+# ==============================================================================
+# Attenzione: Questo file usa la sintassi YAML. 
+# Mantieni l'allineamento degli spazi a sinistra e usa le virgolette per i testi.
+
+main:
+# ============================================================================
+# CONFIGURAZIONE SERVER LOCALE E LOG
+# ============================================================================
+  porta_server: "8080" # porta del server locale. L'indirizzo base per raggiungere il kiosk è http://[IP_RASPBERRY]:[PORTA]
+
+  percorso_base: "'/home/vincenzo/dashboard_aule"
+  file_log: "kiosk.log" # nome del file di log (verrà creato nel percorso base)
+
+  # ----------------------------------------------------------------------------
+  # MODALITÀ DEBUG E DIAGNOSTICA
+  # ----------------------------------------------------------------------------
+  # Imposta su 'true' solo in fase di test o se richiesto dall'assistenza.
+  # Aumenta la quantità di log salvati su kiosk.log e uno script di discovery per trovare gli ID degli Edifici
+  debug_mode: false
+
+sicurezza:
+  # ----------------------------------------------------------------------------
+  # PANNELLO DI AMMINISTRAZIONE WEB
+  # ----------------------------------------------------------------------------
+  # Imposta su 'true' SOLO se vuoi abilitare il pannello web per modificare 
+  # queste impostazioni direttamente dal browser all'indirizzo /admin
+  admin_attivo: true
+
+  # Quali IP possono accedere al pannello Admin? (Usa la notazione CIDR)
+  # 127.0.0.1 permette l'accesso solo direttamente dalla macchina fisica.
+  # Puoi aggiungere la rete di ateneo, o altro range desiderato, ad es: - "192.168.1.0/24"
+  admin_ip_autorizzati:
+  password_admin_hash: "a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0"
+  # questo hash corrispode alla password "cambiami". Quando si usa questa password compare un alert che ricorda di cambiarla. Per cambiarla basta digitare una nuova password nel pannello Admin e il sistema genererà un nuovo hash.
+
+api_cineca:
+  # ----------------------------------------------------------------------------
+  # CREDENZIALI E CONNESSIONE U-PLANNER
+  # ----------------------------------------------------------------------------
+  # Account tecnico fornito dall'Ateneo
+  username: "USERNAME_DI_UPLANNER"
+  password: "PASSWORD_DI_UPLANNER"
+  realm: "5a6734b248e4aa0cdeaaf875" # Questo è il Cliente ID di UNIPV, cambiarlo per altro ateneo (vedi guida)
+
+  # Codice numerico identificativo del palazzo (es. "05" per San Felice in UNIPV)
+  id_edificio: "05"
+
+  # Ogni quanti secondi il server interroga CINECA per aggiornare i dati? 
+  # (300 = 5 minuti. Non scendere sotto i 60 per non sovraccaricare le API)
+  intervallo_aggiornamento_sec: "300"
+
+  url_base: "https://unipv.prod.up.cineca.it/api" # URL_BASE = "https://cineca.prod.up.cineca.it/api" è l'URL di base per le API CINECA di UPlanner. Si consiglia di sostituire "cineca" prima di prod con il proprio ateneo. url_base sarà richiamato all'interno del codice per formare l'URL_LOGIN e l'URL_IMPEGNI che le API utilizzano.
+
+frontend:
+  # ----------------------------------------------------------------------------
+  # MOSTRA/NASCONDI FUNZIONI DEL KIOSK
+  # ----------------------------------------------------------------------------
+  # MOSTRA EVENTI CONFERMATI: se impostato su 'false', nasconde le aule che hanno stato C (Confermato ma non Pubblicato)
+  mostra_confermati: true
+
+  # INTERRUTTORE GENERALE CAROSELLO: se 'false', lo schermo resta fisso sulle lezioni
+  # e la cartella /locandine/ viene ignorata.
+  caroselloAttivo: true
+
+  # ----------------------------------------------------------------------------
+  # OPZIONI ASPETTO GRAFICO E DASHBOARD
+  # ----------------------------------------------------------------------------
+  # Intestazione principale mostrata in alto a sinistra nel Kiosk (default "Impegni Aule" perché il logo che usiamo in UNIPV contiene già il nome del palazzo)
+  titoloSede: "Impegni Aule"
+
+  # Percorso del logo. Lasciare le virgolette vuote "" per nasconderlo del tutto
+  urlLogo: "/logo.png"
+
+  # Mostra Stato Evento: mostra i pallini P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni. Imposta 'mostra_confermati: true' nel blocco 'api_cineca' per mostrare anche i Confermato (azzurro), altrimenti solo i Pubblicato (verde).
+  mostraStatoPC: true
+
+  # Testi di servizio in caso di assenza lezioni o caduta di rete
+  messaggioNessunaLezione: "Nessun impegno attivo programmato per la giornata."
+  messaggioErroreRete: "Connessione persa col Server API. Tentativo di riconnessione..."
+
+  # ----------------------------------------------------------------------------
+  # OPZIONI CAROSELLO LOCANDINE (Digital Signage)
+  # ----------------------------------------------------------------------------
+
+  # Pausa (in millisecondi) tra la fine di un giro di locandine e il successivo.
+  # (180000 = 3 minuti di aule fisse a schermo)
+  pausaTraCaroselli: 180000
+
+  # Tempo di permanenza a schermo di OGNI SINGOLA locandina (in millisecondi)
+  # (10000 = 10 secondi)
+  esposizioneLocandina: 10000
+
+  # Velocità di ridisegno interno dell'interfaccia aule (in millisecondi)
+  intervalloAggiornamento: 5000
+
+  # ----------------------------------------------------------------------------
+  # METADATI E CREDITS (Footer del pannello Admin)
+  # ----------------------------------------------------------------------------
+  urlCalendario: "https://unipv.prod.up.cineca.it/calendarioPubblico/linkCalendarioId=5e3d320d8409120018939b0a" # URL del Calendario Pubblico U-Planner - cambiarlo con il link del calendario pubblico di U-Planner della propria sede
+  urlRepo: "https://github.com/VOriti/Kiosk4Uplanner" # URL del repository GitHub del progetto,lasciare invariato per licenza e aggiornamenti
+  urlLicenza: "https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it" # URL della licenza Creative Commons BY-NC-SA 4.0, lasciare invariato per rispettare la licenza Share-Alike
+  autore: "Vincenzo Oriti" # Autore del Kiosk
+  emailAutore: "vincenzo.oriti@unipv.it" # Email dell'autore
+
+# ==============================================================================
+# CONFIGURAZIONE FOOTER E NOTIZIE (TICKER)
+# ==============================================================================
+footer_news:
+  # Interruttore globale. Se false, il footer scompare completamente dallo schermo
+  abilitato: true
+  
+  # Stile di animazione del testo. Valori ammessi: "orizzontale" (telegiornale) o "verticale" (tabellone)
+  stile_scorrimento: "verticale"
+  
+  # Aspetto grafico del Footer
+  velocita: 20 # (solo per scorrimento orizzontale) Più è basso, più va veloce
+  colore_testo: "#c9d1d9"
+  dimensione_testo: "1.20rem"
+  colore_sfondo: "#3e3c3d"
+  
+  # Interruttore per l'avviso di emergenza/servizio fisso a lato del ticker
+  alert_fisso_attivo: true
+  
+  # Testo dell'avviso. Viene conservato in memoria anche se alert_fisso_attivo è false
+  alert_testo: "\u26a0\ufe0f Avviso: Domani 09/12/2026 chiusura sede per festivit\u00e0 patronale."
+  
+  # Fonti per il recupero delle notizie (Massimo 3). 
+  # Se l'URL è lasciato vuoto (""), la fonte viene ignorata dal backend.
+  # Valori ammessi per 'tipo': "rss" (Feed XML standard) oppure "rest" (Endpoint JSON WordPress/Drupal)
+  fonti:
+    - nome: "Ateneo - Test REST API con AgendaDigitale.eu"
+      url: "https://www.agendadigitale.eu/wp-json/wp/v2/posts"
+      tipo: "rest"
+      abilitata: true
+    - nome: "Dipartimento - Test RSS con ANSA"
+      url: "https://www.ansa.it/sito/notizie/topnews/topnews_rss.xml"
+      tipo: "rss"
+      abilitata: true
+    - nome: ""
+      url: ""
+      tipo: "rss"
+      abilitata: false

@@ -7,24 +7,33 @@
     <title>Dashboard Aule - UNIPV</title>
 
     <script>
-        const CONFIG_APP = {
-            titoloSede: "Impegni Aule",
-            urlLogo: "/logo.png", // Lascia vuoto ("") per nasconderlo
-            intervalloAggiornamento: 5000,
-            messaggioNessunaLezione: "Nessun impegno attivo programmato per la giornata.",
-            messaggioErroreRete: "Connessione persa col Server API.",
-            // Impostazioni per il carosello di locandine
-            pausaTraCaroselli: 180000, // Pausa tra un carosello di locandine e l'altro in millisecondi (di base 3 minuti)
-            esposizioneLocandina: 15000, // Durata di esposizione di ogni locandina in millisecondi (di base 15 secondi)
-            // FLAG Stato Evento: Imposta su false per nascondere i pallini P (Pubblicato) e C (Confermato) accanto al titolo
-            mostraStatoPC: true,
-            // LINK MENU A SCOMPARSA - cambiare il urlCalendario con il link del calendario pubblico di U-Planner della propria sede
-            urlCalendario: "https://unipv.prod.up.cineca.it/calendarioPubblico/linkCalendarioId=5e3d320d8409120018939b0a",
-            urlRepo: "https://github.com/VOriti/Kiosk4Uplanner", // Link al repository GitHub del progetto, lasciare invariato per licenza e aggiornamenti
-            urlLicenza: "https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it", // Link alla licenza Creative Commons BY-NC-SA 4.0, lasciare invariato per rispettare la licenza Share-Alike
-            autore: "Vincenzo Oriti",
-            emailAutore: "vincenzo.oriti@unipv.it"
-        };
+        let CONFIG_APP = {};
+
+        async function fetchConfigPubblica() {
+            try {
+                const response = await fetch('/config_pubblica');
+                if (!response.ok) throw new Error("Errore config_pubblica");
+                const newConfig = await response.json();
+                if (Object.keys(CONFIG_APP).length > 0 && JSON.stringify(CONFIG_APP) !== JSON.stringify(newConfig)) {
+                    window.location.reload();
+                    return;
+                }
+                CONFIG_APP = newConfig;
+            } catch (e) {
+                console.error("Impossibile caricare configurazione, utilizzo fallback:", e);
+                CONFIG_APP = {
+                    titoloSede: "Impegni Aule",
+                    urlLogo: "/logo.png",
+                    intervalloAggiornamento: 5000,
+                    messaggioNessunaLezione: "Nessun impegno programmato.",
+                    messaggioErroreRete: "Connessione API persa.",
+                    pausaTraCaroselli: 180000,
+                    esposizioneLocandina: 10000,
+                    mostraStatoPC: true,
+                    caroselloAttivo: true
+                };
+            }
+        }
     </script>
 
     <style>
@@ -46,7 +55,6 @@
             font-family: system-ui, -apple-system, sans-serif;
             margin: 0;
             padding: 15px;
-            /* Rimpicciolito da 25px a 15px */
             box-sizing: border-box;
             height: 100vh;
             display: flex;
@@ -62,17 +70,13 @@
             max-height: 10vh !important;
         }
 
-        /* Logo leggermente più compatto */
-
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 2px solid #30363d;
             padding-bottom: 10px;
-            /* Rimpicciolito da 15px */
             margin-bottom: 15px;
-            /* Rimpicciolito da 25px */
         }
 
         .header-left {
@@ -109,7 +113,6 @@
             overflow: hidden;
         }
 
-        /* MODIFICA: Qui forziamo la colonna a non scrollare e a comprimere i figli */
         .colonna-scroll {
             display: flex;
             flex-direction: column;
@@ -127,7 +130,6 @@
             margin-bottom: 5px;
             text-transform: uppercase;
             flex-shrink: 0;
-            /* Il titolo non deve rimpicciolirsi */
         }
 
         .card {
@@ -143,14 +145,12 @@
             min-height: 35px;
             overflow: hidden;
             min-width: 0;
-            /* Permette alla card intera di restringersi */
         }
 
         .card.in-corso {
             border-left-color: var(--bordo-in-corso);
         }
 
-        /* Riga 1: Alta priorità. Non si restringe mai (flex-shrink: 0) */
         .card-header {
             display: flex;
             justify-content: space-between;
@@ -158,10 +158,8 @@
             gap: 10px;
             flex-shrink: 0;
             min-width: 0;
-            /* Permette all'header di restringersi */
         }
 
-        /* Riga 2: Bassa priorità. Se lo schermo è pieno, collassa (flex-shrink: 10) */
         .card-footer {
             display: flex;
             justify-content: space-between;
@@ -171,7 +169,6 @@
             min-height: 0;
             overflow: hidden;
             min-width: 0;
-            /* Permette al footer di restringersi */
         }
 
         .titolo {
@@ -183,9 +180,7 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             flex: 1;
-            /* Occupa tutto lo spazio a sinistra */
             min-width: 0;
-            /* Permette alla card di restringersi e usare i puntini (...) */
         }
 
         .docente {
@@ -196,7 +191,6 @@
             white-space: nowrap;
             flex: 1;
             min-width: 0;
-            /*  Permette alla card di restringersi e usare i puntini (...) */
         }
 
         .aula {
@@ -207,7 +201,6 @@
             color: var(--accento-orologio);
             font-weight: bold;
             flex-shrink: 0;
-            /* L'aula non deve mai venire troncata */
             white-space: nowrap;
         }
 
@@ -243,14 +236,11 @@
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 0.70rem;
-            /* Leggermente più piccolo */
             font-weight: bold;
             text-transform: uppercase;
             width: fit-content;
             align-self: flex-end;
-            /* Allinea il badge a destra! */
             margin-bottom: -2px;
-            /* Lo avvicina al titolo per salvare spazio */
         }
 
         .badge-rosso {
@@ -288,12 +278,9 @@
             background-color: #238636;
         }
 
-        /* Verde Pubblicato */
         .stato-c {
             background-color: #0078d4;
         }
-
-        /* Blu Confermato */
 
         #kiosk-adv {
             position: fixed;
@@ -313,7 +300,6 @@
             box-sizing: border-box;
         }
 
-        /* MENU FLUTTUANTE A SCOMPARSA */
         #info-badge {
             position: fixed;
             bottom: 25px;
@@ -330,7 +316,6 @@
             color: var(--colore-testo-secondario);
             z-index: 9999;
             box-shadow: -3px 0 10px rgba(0, 0, 0, 0.4);
-
             transform: translateX(calc(100% - 32px));
             transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
@@ -345,21 +330,17 @@
             justify-content: center;
             width: 22px;
             cursor: pointer;
-            /* Mostra la manina per far capire che è cliccabile */
         }
 
-        /* Animazione rotazione freccia */
         .badge-icona svg {
             transition: transform 0.3s ease;
         }
 
-        /* Apre il cassetto con l'hover (su PC) o con la classe 'aperto' (su Mobile) */
         #info-badge:hover,
         #info-badge.aperto {
             transform: translateX(0);
         }
 
-        /* Ribalta la freccia quando il cassetto è aperto */
         #info-badge:hover .badge-icona svg,
         #info-badge.aperto .badge-icona svg {
             transform: rotate(180deg);
@@ -378,7 +359,6 @@
             opacity: 0;
             transition: opacity 0.3s ease;
             white-space: nowrap;
-            /* Impedisce ai link di andare a capo */
             margin-left: 10px;
             font-size: 0.85rem;
         }
@@ -456,9 +436,6 @@
             transition: opacity 0.05s ease-in;
         }
 
-        /* =========================================
-OTTIMIZZAZIONI PER SMARTPHONE E TABLET
-========================================= */
         @media (max-width: 768px) {
             body {
                 height: auto;
@@ -490,31 +467,25 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 box-sizing: border-box;
             }
 
-            /* --- NUOVO MENU MOBILE A COMPARSA VERTICALE --- */
             #info-badge {
                 height: auto;
                 max-height: 42px;
-                /* DA CHIUSO: Torna compatto come un bottoncino */
                 padding: 0 15px 0 10px;
                 border-radius: 30px 0 0 30px;
                 max-width: 85vw;
                 align-items: center;
                 overflow: hidden;
-                /* Animazione fluida sia in orizzontale (uscita) che in verticale (ingrandimento) */
                 transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.4s ease, padding 0.4s ease, border-radius 0.3s ease;
             }
 
-            /* DISATTIVA L'HOVER NATIVO SU MOBILE */
             #info-badge:hover {
                 transform: translateX(calc(100% - 32px));
             }
 
             #info-badge:hover .badge-icona svg {
                 transform: none;
-                /* Blocca rotazioni a vuoto */
             }
 
-            /* STATO APERTO (Click) */
             #info-badge.aperto,
             #info-badge.aperto:hover {
                 transform: translateX(0);
@@ -522,13 +493,10 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 padding: 15px 20px 15px 10px;
                 border-radius: 20px 0 0 20px;
                 align-items: center;
-                /* RIPORTA LA FRECCIA PERFETTAMENTE AL CENTRO */
             }
 
-            /* ROTAZIONE FRECCIA ISTANTANEA */
             .badge-icona svg {
                 transition: transform 0.25s ease-out;
-                /* Scattante, nessun ritardo in chiusura! */
             }
 
             #info-badge.aperto .badge-icona svg,
@@ -536,7 +504,6 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 transform: rotate(180deg);
             }
 
-            /* GESTIONE APPARIZIONE TESTI */
             .badge-contenuto {
                 flex-direction: column;
                 align-items: flex-start;
@@ -545,13 +512,11 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 white-space: normal;
                 opacity: 0;
                 transition: opacity 0.15s ease-out;
-                /* Sparisce istantaneamente quando chiudi */
             }
 
             #info-badge.aperto .badge-contenuto {
                 opacity: 1;
                 transition-delay: 0.2s;
-                /* Appare in ritardo solo all'apertura, per dare tempo al pannello di srotolarsi */
             }
 
             .badge-contenuto span[style*="opacity:0.3"] {
@@ -562,10 +527,8 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 font-size: 0.95rem;
                 padding: 5px 0;
                 flex-wrap: wrap;
-                /* Permette ai sottotitoli di andare a capo */
             }
 
-            /* TRASFORMA LA NUVOLETTA IN TESTO DESCRITTIVO INLINE */
             .badge-contenuto a::after {
                 display: block !important;
                 position: static !important;
@@ -573,7 +536,6 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 background: transparent !important;
                 color: var(--colore-testo-secondario) !important;
                 padding: 4px 0 0 22px !important;
-                /* Allineato col testo superiore */
                 font-size: 0.75rem !important;
                 white-space: normal !important;
                 opacity: 1 !important;
@@ -582,169 +544,116 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 width: 100%;
             }
 
-            /* Nasconde solo il triangolino inutile */
             .badge-contenuto a::before {
                 display: none !important;
             }
+        }
+
+        #overlay-carosello {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0d1117;
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        #immagine-carosello {
+            max-width: 95%;
+            max-height: 95%;
+            border-radius: 12px;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+            object-fit: contain;
+        }
+
+        #kiosk-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            min-height: 8vh;
+            display: none;
+            background-color: #161b22;
+            border-top: 2px solid #30363d;
+            z-index: 1000;
+            padding: 10px 0;
+            align-items: center;
+        }
+
+        #alert-box {
+            display: none;
+            background-color: #d29922;
+            color: #0d1117;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            text-align: center;
+            align-self: stretch;
+        }
+
+        #ticker-wrapper {
+            flex-grow: 1;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
+            height: auto;
+            min-height: 6vh;
+        }
+
+        .ticker-orizzontale {
+            display: inline-block;
+            white-space: nowrap;
+            padding-left: 100%;
+            animation: ticker-orizzontale-anim linear infinite;
+            font-size: 1.15rem;
+            color: #c9d1d9;
+        }
+
+        @keyframes ticker-orizzontale-anim {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-100%); }
+        }
+
+        .ticker-verticale {
+            width: 100%;
+            text-align: center;
+            font-size: 1.15rem;
+            color: #c9d1d9;
+            opacity: 1;
+            transition: opacity 0.5s ease-in-out;
+            padding: 0 15px;
         }
     </style>
 </head>
 
 <body>
-
+    <div id="overlay-carosello">
+        <img id="immagine-carosello" src="" alt="Locandina">
+    </div>
     <div id="kiosk-adv"></div>
-
     <div id="banner-wrapper" style="width:100%; text-align:center; margin-bottom:25px; display:none;">
         <img id="logo-sede" src="" alt="Banner Sede"
             style="width:100%; max-height:15vh; object-fit:contain; border-radius:8px;">
     </div>
-
     <div class="header">
         <div class="header-left">
             <h1 id="titolo-sede">Caricamento...</h1>
         </div>
         <div id="orologio" class="orologio">--:--</div>
     </div>
-
     <div id="dashboard">
         <div class="stato-sistema">Inizializzazione connessione col Server API...</div>
     </div>
-
-    <script>
-        document.getElementById('titolo-sede').innerText = CONFIG_APP.titoloSede;
-        document.title = "Dashboard - " + CONFIG_APP.titoloSede;
-        if (CONFIG_APP.urlLogo !== "") {
-            document.getElementById('logo-sede').src = CONFIG_APP.urlLogo;
-            document.getElementById('banner-wrapper').style.display = 'block';
-        }
-
-        setInterval(() => {
-            document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-        }, 1000);
-
-        function generaCardHTML(impegno) {
-            let classeStato = impegno.inCorso ? 'in-corso' : '';
-            if (impegno.cancellato) classeStato += ' cancellato';
-
-            let htmlAvviso = '';
-            if (impegno.avviso) {
-                const classeBadge = impegno.cancellato ? 'badge-rosso' : 'badge-giallo';
-                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${impegno.avviso}</div>`;
-            }
-
-            const stileTesto = impegno.cancellato ? 'testo-barrato' : '';
-
-            // --- NUOVA LOGICA: P O C CERCHIATE ---
-            let iconaStato = '';
-            // Controlla il flag nella configurazione prima di stampare il pallino
-            if (CONFIG_APP.mostraStatoPC) {
-                if (impegno.stato_cineca === 'P') {
-                    iconaStato = `<span class="badge-stato stato-p">P</span>`;
-                } else if (impegno.stato_cineca === 'C') {
-                    iconaStato = `<span class="badge-stato stato-c">C</span>`;
-                }
-            }
-
-            return `
-                <div class="card ${classeStato}">
-                    ${htmlAvviso}
-                    <div class="card-header">
-                        <div class="titolo ${stileTesto}">${iconaStato}${impegno.titolo}</div>
-                        <div class="aula ${stileTesto}">${impegno.aula}</div>
-                    </div>
-                    <div class="card-footer">
-                        <div class="docente ${stileTesto}">${impegno.docente}</div>
-                        <div class="orario ${stileTesto}">${impegno.orario}</div>
-                    </div>
-                </div>
-            `;
-        }
-
-        async function scaricaDatiServerLocale() {
-            const dashboard = document.getElementById('dashboard');
-            try {
-                const risposta = await fetch('/dati.json');
-                if (!risposta.ok) throw new Error('Errore HTTP');
-                const datiAule = await risposta.json();
-
-                if (!datiAule || datiAule.length === 0) {
-                    dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
-                    return;
-                }
-
-                let htmlInCorso = '', htmlFuturi = '';
-                datiAule.forEach(imp => {
-                    if (imp.inCorso) htmlInCorso += generaCardHTML(imp);
-                    else htmlFuturi += generaCardHTML(imp);
-                });
-
-                if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
-                if (!htmlFuturi) htmlFuturi = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione programmata</div>';
-
-                const nuovoLayout = `
-                    <div class="layout-colonne">
-                        <div class="colonna-scroll">
-                            <h2 class="titolo-colonna">In Corso</h2>
-                            ${htmlInCorso}
-                        </div>
-                        <div class="colonna-scroll">
-                            <h2 class="titolo-colonna">Prossimi Eventi</h2>
-                            ${htmlFuturi}
-                        </div>
-                    </div>
-                `;
-
-                if (dashboard.innerHTML !== nuovoLayout) {
-                    dashboard.innerHTML = nuovoLayout;
-                }
-            } catch (errore) {
-                dashboard.innerHTML = `
-                    <div class="stato-sistema offline">
-                        <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <br>${CONFIG_APP.messaggioErroreRete}
-                    </div>
-                `;
-            }
-        }
-
-        scaricaDatiServerLocale();
-        setInterval(scaricaDatiServerLocale, CONFIG_APP.intervalloAggiornamento);
-
-        const advOverlay = document.getElementById('kiosk-adv');
-        async function riproduciLocandine() {
-            const isLandscape = window.innerWidth > window.innerHeight;
-            const immaginiValide = [];
-
-            for (let i = 1; i <= 4; i++) {
-                const url = `/locandine/${i}.jpg?` + Date.now();
-                const urlConfermata = await new Promise(resolve => {
-                    let img = new Image(); img.onload = () => resolve(url); img.onerror = () => resolve(null); img.src = url;
-                });
-                if (urlConfermata) immaginiValide.push(urlConfermata);
-            }
-            if (immaginiValide.length === 0) return;
-
-            const gruppi = [];
-            const imgPerGruppo = isLandscape ? 2 : 1;
-            for (let i = 0; i < immaginiValide.length; i += imgPerGruppo) {
-                gruppi.push(immaginiValide.slice(i, i + imgPerGruppo));
-            }
-
-            advOverlay.style.display = 'flex';
-            for (let i = 0; i < gruppi.length; i++) {
-                advOverlay.innerHTML = gruppi[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
-                await new Promise(r => setTimeout(r, 50));
-                advOverlay.style.opacity = '1';
-                await new Promise(r => setTimeout(r, CONFIG_APP.esposizioneLocandina));
-                advOverlay.style.opacity = '0';
-                await new Promise(r => setTimeout(r, 1500));
-            }
-            advOverlay.style.display = 'none';
-            advOverlay.innerHTML = '';
-        }
-
-        setInterval(riproduciLocandine, CONFIG_APP.pausaTraCaroselli);
-    </script>
 
     <div id="info-badge">
         <div class="badge-icona">
@@ -792,18 +701,303 @@ OTTIMIZZAZIONI PER SMARTPHONE E TABLET
                 </svg>
                 <span id="nome-autore" style="font-weight:600;"></span>
             </a>
+            <span style="opacity:0.3">|</span>
+            <a id="toggle-locandine" href="#" style="cursor: pointer;" data-tooltip="Attiva o disattiva le locandine solo su questo dispositivo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <span id="testo-toggle-locandine">Locandine: ON</span>
+            </a>
         </div>
     </div>
 
+    <div id="kiosk-footer">
+        <div id="alert-box"></div>
+        <div id="ticker-wrapper"></div>
+    </div>
+
     <script>
-        document.getElementById('link-calendario').href = CONFIG_APP.urlCalendario;
-        document.getElementById('link-repo').href = CONFIG_APP.urlRepo;
-        document.getElementById('link-licenza').href = CONFIG_APP.urlLicenza;
-        document.getElementById('nome-autore').innerText = CONFIG_APP.autore;
-        const testoInformativo = "Per suggerimenti, richieste di modifica o segnalazione di malfunzionamenti: ";
-        document.getElementById('link-autore').setAttribute('data-tooltip', testoInformativo + CONFIG_APP.emailAutore);
-        document.querySelector('.badge-icona').addEventListener('click', function () {
-            document.getElementById('info-badge').classList.toggle('aperto');
+        let tickerInterval;
+        let fetchNewsInterval;
+        let notizieCorrenti = [];
+        let indexVerticale = 0;
+
+        async function aggiornaNews() {
+            if (!CONFIG_APP.footer_news || !CONFIG_APP.footer_news.abilitato) {
+                document.getElementById('kiosk-footer').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('kiosk-footer').style.display = 'flex';
+            if (CONFIG_APP.footer_news.colore_sfondo) {
+                document.getElementById('kiosk-footer').style.backgroundColor = CONFIG_APP.footer_news.colore_sfondo;
+            }
+            
+            const alertBox = document.getElementById('alert-box');
+            if (CONFIG_APP.footer_news.alert_fisso_attivo && CONFIG_APP.footer_news.alert_testo) {
+                alertBox.innerText = CONFIG_APP.footer_news.alert_testo;
+                alertBox.style.display = 'flex';
+            } else {
+                alertBox.style.display = 'none';
+            }
+
+            try {
+                const res = await fetch('/api/news');
+                if (res.ok) {
+                    notizieCorrenti = await res.json();
+                    renderTicker();
+                }
+            } catch(e) {
+                console.error("Errore recupero news:", e);
+            }
+        }
+
+        function renderTicker() {
+            const wrapper = document.getElementById('ticker-wrapper');
+            clearInterval(tickerInterval);
+            
+            if (notizieCorrenti.length === 0) {
+                wrapper.innerHTML = '';
+                return;
+            }
+
+            const stile = CONFIG_APP.footer_news.stile_scorrimento || 'orizzontale';
+            const colTesto = CONFIG_APP.footer_news.colore_testo || '#c9d1d9';
+            const dimTesto = CONFIG_APP.footer_news.dimensione_testo || '1.15rem';
+            
+            if (stile === 'orizzontale') {
+                const testi = notizieCorrenti.map(n => {
+                    const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
+                    return n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                });
+                const stringaUnica = testi.join(' &nbsp;&nbsp;&bull;&nbsp;&nbsp; ');
+                
+                const velocitaBase = CONFIG_APP.footer_news.velocita || 50;
+                const durata = Math.max(10, (stringaUnica.length / 5) * (velocitaBase / 50));
+                
+                wrapper.innerHTML = `<span class="ticker-orizzontale" style="animation-duration: ${durata}s; color: ${colTesto}; font-size: ${dimTesto};">${stringaUnica}</span>`;
+            } else {
+                wrapper.innerHTML = `<div id="ticker-verticale" class="ticker-verticale" style="color: ${colTesto}; font-size: ${dimTesto};"></div>`;
+                const divVert = document.getElementById('ticker-verticale');
+                indexVerticale = 0;
+                
+                const mostraProssima = () => {
+                    divVert.style.opacity = 0;
+                    setTimeout(() => {
+                        const n = notizieCorrenti[indexVerticale];
+                        const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
+                        const htmlContenuto = n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                        divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
+                        divVert.style.opacity = 1;
+                        indexVerticale = (indexVerticale + 1) % notizieCorrenti.length;
+                    }, 500);
+                };
+                
+                mostraProssima();
+                tickerInterval = setInterval(mostraProssima, 6000);
+            }
+        }
+
+        function generaCardHTML(impegno) {
+            let classeStato = impegno.inCorso ? 'in-corso' : '';
+            if (impegno.cancellato) classeStato += ' cancellato';
+
+            let htmlAvviso = '';
+            if (impegno.avviso) {
+                const classeBadge = impegno.cancellato ? 'badge-rosso' : 'badge-giallo';
+                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${impegno.avviso}</div>`;
+            }
+
+            const stileTesto = impegno.cancellato ? 'testo-barrato' : '';
+            let iconaStato = '';
+            if (CONFIG_APP.mostraStatoPC) {
+                if (impegno.stato_cineca === 'P') {
+                    iconaStato = `<span class="badge-stato stato-p">P</span>`;
+                } else if (impegno.stato_cineca === 'C') {
+                    iconaStato = `<span class="badge-stato stato-c">C</span>`;
+                }
+            }
+
+            return `
+                <div class="card ${classeStato}">
+                    ${htmlAvviso}
+                    <div class="card-header">
+                        <div class="titolo ${stileTesto}">${iconaStato}${impegno.titolo}</div>
+                        <div class="aula ${stileTesto}">${impegno.aula}</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="docente ${stileTesto}">${impegno.docente}</div>
+                        <div class="orario ${stileTesto}">${impegno.orario}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        let eraOffline = false;
+        async function scaricaDatiServerLocale() {
+            const dashboard = document.getElementById('dashboard');
+            try {
+                const risposta = await fetch('/dati.json');
+                if (!risposta.ok) throw new Error('Errore HTTP');
+                
+                if (eraOffline) {
+                    window.location.reload();
+                    return;
+                }
+                const datiAule = await risposta.json();
+
+                if (!datiAule || datiAule.length === 0) {
+                    dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                    return;
+                }
+
+                let htmlInCorso = '', htmlFuturi = '';
+                datiAule.forEach(imp => {
+                    if (imp.inCorso) htmlInCorso += generaCardHTML(imp);
+                    else htmlFuturi += generaCardHTML(imp);
+                });
+
+                if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
+                if (!htmlFuturi) htmlFuturi = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione programmata</div>';
+
+                const nuovoLayout = `
+                    <div class="layout-colonne">
+                        <div class="colonna-scroll">
+                            <h2 class="titolo-colonna">In Corso</h2>
+                            ${htmlInCorso}
+                        </div>
+                        <div class="colonna-scroll">
+                            <h2 class="titolo-colonna">Prossimi Eventi</h2>
+                            ${htmlFuturi}
+                        </div>
+                    </div>
+                `;
+
+                if (dashboard.innerHTML !== nuovoLayout) {
+                    dashboard.innerHTML = nuovoLayout;
+                }
+            } catch (errore) {
+                eraOffline = true;
+                dashboard.innerHTML = `
+                    <div class="stato-sistema offline">
+                        <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <br>${CONFIG_APP.messaggioErroreRete}
+                    </div>
+                `;
+            }
+        }
+
+        const advOverlay = document.getElementById('kiosk-adv');
+        async function riproduciLocandine() {
+            if (localStorage.getItem('disabilita_locandine') === 'true') return;
+
+            const isLandscape = window.innerWidth > window.innerHeight;
+            let immaginiValide = [];
+
+            try {
+                const res = await fetch('/lista_locandine.json');
+                if (res.ok) {
+                    const files = await res.json();
+                    for (let f of files) {
+                        const url = `/locandine/${f}?` + Date.now();
+                        const valid = await new Promise(resolve => {
+                            let img = new Image(); img.onload = () => resolve(url); img.onerror = () => resolve(null); img.src = url;
+                        });
+                        if (valid) immaginiValide.push(valid);
+                    }
+                }
+            } catch (e) {
+                console.error("Errore fetch locandine", e);
+            }
+
+            if (immaginiValide.length === 0) return;
+
+            const gruppi = [];
+            const imgPerGruppo = isLandscape ? 2 : 1;
+            for (let i = 0; i < immaginiValide.length; i += imgPerGruppo) {
+                gruppi.push(immaginiValide.slice(i, i + imgPerGruppo));
+            }
+
+            advOverlay.style.display = 'flex';
+            for (let i = 0; i < gruppi.length; i++) {
+                advOverlay.innerHTML = gruppi[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
+                await new Promise(r => setTimeout(r, 50));
+                advOverlay.style.opacity = '1';
+                await new Promise(r => setTimeout(r, CONFIG_APP.esposizioneLocandina));
+                advOverlay.style.opacity = '0';
+                await new Promise(r => setTimeout(r, 1500));
+            }
+            advOverlay.style.display = 'none';
+            advOverlay.innerHTML = '';
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await fetchConfigPubblica();
+
+            document.getElementById('titolo-sede').innerText = CONFIG_APP.titoloSede || "Impegni Aule";
+            document.title = "Dashboard - " + (CONFIG_APP.titoloSede || "Impegni Aule");
+            if (CONFIG_APP.urlLogo && CONFIG_APP.urlLogo !== "") {
+                document.getElementById('logo-sede').src = CONFIG_APP.urlLogo;
+                document.getElementById('banner-wrapper').style.display = 'block';
+            }
+
+            document.getElementById('link-calendario').href = CONFIG_APP.urlCalendario || "#";
+            document.getElementById('link-repo').href = CONFIG_APP.urlRepo || "#";
+            document.getElementById('link-licenza').href = CONFIG_APP.urlLicenza || "#";
+            document.getElementById('nome-autore').innerText = CONFIG_APP.autore || "Autore";
+            const testoInformativo = "Per suggerimenti, richieste di modifica o segnalazione di malfunzionamenti: ";
+            document.getElementById('link-autore').setAttribute('data-tooltip', testoInformativo + (CONFIG_APP.emailAutore || ""));
+
+            document.querySelector('.badge-icona').addEventListener('click', function () {
+                document.getElementById('info-badge').classList.toggle('aperto');
+            });
+
+            const toggleLocandine = document.getElementById('toggle-locandine');
+            const testoToggleLocandine = document.getElementById('testo-toggle-locandine');
+            function aggiornaUIToggleLocandine() {
+                const disabilitate = localStorage.getItem('disabilita_locandine') === 'true';
+                testoToggleLocandine.innerText = disabilitate ? "Locandine: OFF" : "Locandine: ON";
+                toggleLocandine.style.opacity = disabilitate ? "0.6" : "1";
+            }
+            aggiornaUIToggleLocandine();
+            toggleLocandine.addEventListener('click', (e) => {
+                e.preventDefault();
+                const disabilitate = localStorage.getItem('disabilita_locandine') === 'true';
+                localStorage.setItem('disabilita_locandine', !disabilitate);
+                aggiornaUIToggleLocandine();
+            });
+
+            setInterval(() => {
+                document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            }, 1000);
+
+            scaricaDatiServerLocale();
+            setInterval(scaricaDatiServerLocale, CONFIG_APP.intervalloAggiornamento || 5000);
+            
+            setInterval(fetchConfigPubblica, 15000);
+            
+            aggiornaNews();
+            fetchNewsInterval = setInterval(aggiornaNews, 15 * 60 * 1000);
+
+            // Regola dinamicamente il margine della dashboard in base all'altezza del footer
+            const footerObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    if (entry.target.style.display !== 'none') {
+                        document.getElementById('dashboard').style.marginBottom = entry.borderBoxSize[0].blockSize + 'px';
+                    } else {
+                        document.getElementById('dashboard').style.marginBottom = '0';
+                    }
+                }
+            });
+            footerObserver.observe(document.getElementById('kiosk-footer'));
+
+            if (CONFIG_APP.caroselloAttivo === true) {
+                setInterval(riproduciLocandine, CONFIG_APP.pausaTraCaroselli || 180000);
+            } else {
+                console.log("Carosello disattivato da configurazione.");
+            }
         });
     </script>
 </body>

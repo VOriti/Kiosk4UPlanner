@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pannello Amministrazione - Kiosk4UPlanner</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: #161b22;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --border-color: #30363d;
+            --accent-color: #58a6ff;
+            --accent-hover: #1f6feb;
+            --danger-color: #da3633;
+            --success-color: #238636;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--accent-color);
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="password"],
+        .form-group input[type="number"] {
+            padding: 10px;
+            background-color: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .form-group input[type="text"]:focus,
+        .form-group input[type="password"]:focus,
+        .form-group input[type="number"]:focus {
+            border-color: var(--accent-color);
+            outline: none;
+        }
+
+        .form-group-checkbox {
+            flex-direction: row;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-color);
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #fff;
+            background-color: var(--accent-color);
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+        }
+
+        .btn-danger:hover {
+            background-color: #b02a28;
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+        }
+
+        .btn-success:hover {
+            background-color: #2ea043;
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 15px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        #login-view,
+        #admin-view {
+            display: none;
+        }
+
+        #login-view.active,
+        #admin-view.active {
+            display: block;
+        }
+
+        .security-banner {
+            display: none;
+            background-color: var(--danger-color);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: var(--success-color);
+            color: #fff;
+            text-align: center;
+            border-radius: 4px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1;
+            right: 30px;
+            bottom: 30px;
+            font-size: 17px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+
+        @keyframes fadein {
+            from {
+                bottom: 0;
+                opacity: 0;
+            }
+
+            to {
+                bottom: 30px;
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeout {
+            from {
+                bottom: 30px;
+                opacity: 1;
+            }
+
+            to {
+                bottom: 0;
+                opacity: 0;
+            }
+        }
+
+        #restart-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(13, 17, 23, 0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+        }
+
+        #restart-modal h2 {
+            font-size: 2rem;
+            color: var(--accent-color);
+        }
+
+        .list-input {
+            width: 100%;
+        }
+
+        .panel-description {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+            margin-top: -10px;
+            line-height: 1.4;
+        }
+
+        .help-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 5px;
+            margin-bottom: 0;
+            line-height: 1.3;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <!-- Vista Login -->
+        <div id="login-view" class="panel">
+            <h2 style="text-align: center;">Kiosk4UPlanner - Autenticazione</h2>
+            <div class="form-group">
+                <label for="login-password">Password Amministratore</label>
+                <input type="password" id="login-password" placeholder="Inserisci la password"
+                    onkeypress="if(event.key === 'Enter') login()">
+            </div>
+            <button class="btn" style="width: 100%;" onclick="login()">Accedi</button>
+            <div id="login-error"
+                style="color: var(--danger-color); margin-top: 10px; display: none; text-align: center;">Password
+                errata.</div>
+        </div>
+
+        <!-- Vista Admin -->
+        <div id="admin-view">
+            <div id="security-banner" class="security-banner">
+                ⚠️ ATTENZIONE: Stai usando la password predefinita. Cambiala ora nella sezione "Rete e Sicurezza".
+            </div>
+
+            <h1>Pannello di Amministrazione</h1>
+
+            <div class="panel">
+                <h3>Rete e Sicurezza</h3>
+                <p class="panel-description">Configura i parametri di rete del server locale e la sicurezza del pannello
+                    di amministrazione.</p>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="admin_attivo">
+                    <label for="admin_attivo">Abilita l'accesso al pannello Admin remoto</label>
+                </div>
+                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Imposta su
+                    'true' SOLO se vuoi abilitare il pannello web per modificare queste impostazioni direttamente dal
+                    browser all'indirizzo /admin</p>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="debug_mode">
+                    <label for="debug_mode">Abilita Debug Mode</label>
+                </div>
+                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Registra eventi
+                    dettagliati nel file kiosk.log. Utile per risolvere problemi tecnici e leggere nei log i codici
+                    degli edifici disponibili.</p>
+                <div class="form-group">
+                    <label for="admin_ip_autorizzati">IP Autorizzati</label>
+                    <input type="text" id="admin_ip_autorizzati" class="list-input"
+                        placeholder="es. 127.0.0.1, 192.168.1.0/24">
+                    <p class="help-text">Quali IP possono accedere al pannello Admin? (Usa la notazione CIDR). 127.0.0.1
+                        permette l'accesso solo direttamente dalla macchina fisica. Puoi aggiungere la rete di ateneo, o
+                        altro range desiderato, ad es: "192.168.1.0/24", o un elenco di indirizzi IP (separati da
+                        virgola). Se lasci il campo vuoto, l'accesso sarà libero.</p>
+                </div>
+                <div class="form-group">
+                    <label for="admin_password">Nuova Password Admin</label>
+                    <input type="password" id="admin_password" placeholder="Nuova password">
+                    <p class="help-text">Lascia vuoto per non cambiarla.</p>
+                </div>
+                <div class="form-group">
+                    <label for="porta_server">Porta Server Locale</label>
+                    <input type="number" id="porta_server" placeholder="es. 8080">
+                    <p class="help-text">La porta su cui il server è in ascolto (modifica effettiva solo al riavvio).
+                    </p>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Credenziali e Connessione CINECA</h3>
+                <p class="panel-description">Parametri per connettersi alle API di U-Planner (CINECA) e recuperare gli
+                    impegni delle aule.</p>
+                <div class="form-group">
+                    <label for="cineca_username">Username CINECA</label>
+                    <input type="text" id="cineca_username">
+                    <p class="help-text">Account fornito dall'Ateneo</p>
+                </div>
+                <div class="form-group">
+                    <label for="cineca_password">Password CINECA</label>
+                    <input type="password" id="cineca_password" placeholder="Lascia ******** per non modificarla">
+                </div>
+                <div class="form-group">
+                    <label for="cineca_realm">Realm (Cliente ID)</label>
+                    <input type="text" id="cineca_realm">
+                    <p class="help-text">Il codice identificativo del tuo ateneo (farselo dare dall' help desk oppure
+                        recuperarlo come spiegato nel file readme.md).</p>
+                </div>
+                <div class="form-group">
+                    <label for="cineca_edificio">ID Edificio (Opzionale)</label>
+                    <input type="text" id="cineca_edificio" placeholder="es. 05">
+                    <p class="help-text">Filtra gli impegni mostrando solo quelli per uno specifico edificio. Lascia
+                        vuoto per mostrare tutti gli edifici.</p>
+                </div>
+                <div class="form-group">
+                    <label for="cineca_intervallo">Intervallo Aggiornamento (secondi)</label>
+                    <input type="number" id="cineca_intervallo">
+                    <p class="help-text">Ogni quanti secondi il server interroga CINECA per aggiornare i dati? (300 = 5
+                        minuti. Non scendere sotto i 60 per non sovraccaricare le API).</p>
+                </div>
+                <div class="form-group">
+                    <label for="cineca_url">URL Base API</label>
+                    <input type="text" id="cineca_url" placeholder="https://cineca.prod.up.cineca.it/api">
+                    <p class="help-text">L'URL di base per le API CINECA di UPlanner. Si consiglia di sostituire
+                        "cineca" prima di prod con il nome del proprio ateneo (es. https://unipv.prod.up.cineca.it/api).
+                    </p>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Interfaccia Frontend (Dashboard)</h3>
+                <p class="panel-description">Personalizza l'aspetto e il comportamento della schermata visibile al
+                    pubblico.</p>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="fe_mostra_confermati">
+                    <label for="fe_mostra_confermati">Mostra solo eventi Confermati (Stato C)</label>
+                </div>
+                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se impostato su
+                    'false', nasconde le aule che hanno stato C (Confermato ma non Pubblicato).</p>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="fe_mostra_stato">
+                    <label for="fe_mostra_stato">Mostra Badge Stato P/C</label>
+                </div>
+                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Mostra i pallini
+                    P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni. Imposta 'Mostra solo eventi
+                    Confermati' su true nel blocco CINECA per mostrare anche i Confermato (azzurro), altrimenti solo i
+                    Pubblicato (verde).</p>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="fe_carosello">
+                    <label for="fe_carosello">Abilita Carosello Locandine</label>
+                </div>
+                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se disabilitato,
+                    lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata.</p>
+                <div class="form-group">
+                    <label for="fe_titolo">Titolo Sede</label>
+                    <input type="text" id="fe_titolo">
+                    <p class="help-text">Intestazione principale mostrata in alto a sinistra nel Kiosk (default "Impegni
+                        Aule" perché il logo che usiamo in UNIPV contiene già il nome del palazzo).</p>
+                </div>
+                <div class="form-group">
+                    <label for="fe_logo">URL Logo</label>
+                    <input type="text" id="fe_logo" placeholder="/logo.png">
+                    <p class="help-text">Percorso del logo. Lasciare vuoto per nasconderlo del tutto.</p>
+                </div>
+                <div class="form-group">
+                    <label for="fe_url_calendario">URL Calendario Pubblico</label>
+                    <input type="text" id="fe_url_calendario">
+                    <p class="help-text">URL del Calendario Pubblico U-Planner - cambiarlo con il link del calendario
+                        pubblico di U-Planner della propria sede.</p>
+                </div>
+                <div class="form-group">
+                    <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
+                    <input type="number" id="fe_pausa_carosello">
+                    <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es.
+                        180000 = 3 minuti.</p>
+                </div>
+                <div class="form-group">
+                    <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
+                    <input type="number" id="fe_expo_locandina">
+                    <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000
+                        = 10 secondi).</p>
+                </div>
+                <div class="form-group">
+                    <label for="fe_intervallo">Intervallo ridisegno (ms)</label>
+                    <input type="number" id="fe_intervallo">
+                    <p class="help-text">Ogni quanti millisecondi l'interfaccia si aggiorna con i nuovi dati in memoria.
+                        Es. 5000 = 5 secondi.</p>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Footer e Notizie</h3>
+                <p class="panel-description">Configura la barra delle notizie scorrevoli a fondo pagina.</p>
+                
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="fn_abilitato">
+                    <label for="fn_abilitato">Abilita Footer News</label>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fn_stile">Stile Scorrimento</label>
+                    <select id="fn_stile" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                        <option value="orizzontale">Orizzontale (Telegiornale)</option>
+                        <option value="verticale">Verticale (Tabellone)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fn_velocita">Velocità Scorrimento (minore = più veloce)</label>
+                    <input type="number" id="fn_velocita" placeholder="Es. 50">
+                </div>
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <label for="fn_colore_testo" style="margin: 0; min-width: 150px;">Colore Testo</label>
+                    <input type="color" id="fn_colore_testo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                </div>
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <label for="fn_colore_sfondo" style="margin: 0; min-width: 150px;">Colore Sfondo</label>
+                    <input type="color" id="fn_colore_sfondo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                </div>
+                <div class="form-group">
+                    <label for="fn_dimensione_testo">Dimensione Testo</label>
+                    <input type="text" id="fn_dimensione_testo" placeholder="Es. 1.15rem">
+                </div>
+                
+                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+                
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="fn_alert_attivo">
+                    <label for="fn_alert_attivo">Attiva Alert Fisso</label>
+                </div>
+                <div class="form-group">
+                    <label for="fn_alert_testo">Testo dell'Alert</label>
+                    <input type="text" id="fn_alert_testo" placeholder="Es. ⚠️ Avviso: chiusura sede...">
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+                <p class="panel-description">Fonti per il recupero delle notizie (lascia URL vuoto per disabilitare una fonte).</p>
+
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
+                    <div class="form-group form-group-checkbox">
+                        <input type="checkbox" id="fn_f1_abilitata">
+                        <label for="fn_f1_abilitata">Attiva Fonte 1</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Nome Fonte 1</label>
+                        <input type="text" id="fn_f1_nome">
+                    </div>
+                    <div class="form-group">
+                        <label>Indirizzo Web (URL)</label>
+                        <input type="text" id="fn_f1_url">
+                    </div>
+                    <div class="form-group">
+                        <label>Formato Dati</label>
+                        <select id="fn_f1_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            <option value="rss">Feed RSS (XML)</option>
+                            <option value="rest">REST API (JSON WordPress/Drupal)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
+                    <div class="form-group form-group-checkbox">
+                        <input type="checkbox" id="fn_f2_abilitata">
+                        <label for="fn_f2_abilitata">Attiva Fonte 2</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Nome Fonte 2</label>
+                        <input type="text" id="fn_f2_nome">
+                    </div>
+                    <div class="form-group">
+                        <label>Indirizzo Web (URL)</label>
+                        <input type="text" id="fn_f2_url">
+                    </div>
+                    <div class="form-group">
+                        <label>Formato Dati</label>
+                        <select id="fn_f2_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            <option value="rss">Feed RSS (XML)</option>
+                            <option value="rest">REST API (JSON WordPress/Drupal)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px;">
+                    <div class="form-group form-group-checkbox">
+                        <input type="checkbox" id="fn_f3_abilitata">
+                        <label for="fn_f3_abilitata">Attiva Fonte 3</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Nome Fonte 3</label>
+                        <input type="text" id="fn_f3_nome">
+                    </div>
+                    <div class="form-group">
+                        <label>Indirizzo Web (URL)</label>
+                        <input type="text" id="fn_f3_url">
+                    </div>
+                    <div class="form-group">
+                        <label>Formato Dati</label>
+                        <select id="fn_f3_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            <option value="rss">Feed RSS (XML)</option>
+                            <option value="rest">REST API (JSON WordPress/Drupal)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="buttons-row">
+                <button class="btn" style="background-color: var(--text-secondary);" onclick="logout()">Logout</button>
+                <button class="btn" onclick="salvaConfigurazione(false)">Salva Configurazione</button>
+                <button class="btn btn-danger" onclick="salvaConfigurazione(true)">Salva e Riavvia Demone</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Salvato con successo!</div>
+
+    <!-- Modal Riavvio -->
+    <div id="restart-modal">
+        <h2>Riavvio in corso...</h2>
+        <p>Il demone si sta riavviando. La pagina si ricaricherà tra <span id="countdown">5</span> secondi.</p>
+    </div>
+
+    <script>
+        let currentConfig = {};
+
+        function getAuthHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'X-Admin-Token': sessionStorage.getItem('adminToken')
+            };
+        }
+
+        async function login() {
+            const pwd = document.getElementById('login-password').value;
+            if (!pwd) return;
+
+            try {
+                const res = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pwd })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    sessionStorage.setItem('adminToken', data.token);
+                    document.getElementById('login-error').style.display = 'none';
+                    loadAdminData();
+                } else {
+                    document.getElementById('login-error').style.display = 'block';
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Errore di rete durante il login.");
+            }
+        }
+
+        function logout() {
+            sessionStorage.removeItem('adminToken');
+            showView('login-view');
+        }
+
+        async function loadAdminData() {
+            const token = sessionStorage.getItem('adminToken');
+            if (!token) {
+                showView('login-view');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/config_full', { headers: getAuthHeaders() });
+                if (res.status === 401 || res.status === 403) {
+                    sessionStorage.removeItem('adminToken');
+                    showView('login-view');
+                    return;
+                }
+
+                if (res.ok) {
+                    currentConfig = await res.json();
+                    populateForm(currentConfig);
+                    showView('admin-view');
+                }
+            } catch (e) {
+                console.error(e);
+                showView('login-view');
+            }
+        }
+
+        function populateForm(config) {
+            // Banner sicurezza
+            const banner = document.getElementById('security-banner');
+            banner.style.display = config.avviso_sicurezza ? 'block' : 'none';
+
+            // Sicurezza
+            document.getElementById('admin_attivo').checked = config.sicurezza?.admin_attivo || false;
+            document.getElementById('debug_mode').checked = config.main?.debug_mode || false;
+            document.getElementById('admin_ip_autorizzati').value = (config.sicurezza?.admin_ip_autorizzati || []).join(', ');
+            document.getElementById('admin_password').value = '';
+            document.getElementById('porta_server').value = config.main?.porta_server || 8080;
+
+            // API CINECA
+            document.getElementById('cineca_username').value = config.api_cineca?.username || '';
+            document.getElementById('cineca_password').value = config.api_cineca?.password || '';
+            document.getElementById('cineca_realm').value = config.api_cineca?.realm || '';
+            document.getElementById('cineca_edificio').value = config.api_cineca?.id_edificio || '';
+            document.getElementById('cineca_intervallo').value = config.api_cineca?.intervallo_aggiornamento_sec || 300;
+            document.getElementById('cineca_url').value = config.api_cineca?.url_base || '';
+
+            // Frontend
+            document.getElementById('fe_mostra_confermati').checked = config.frontend?.mostra_confermati !== false;
+            document.getElementById('fe_mostra_stato').checked = config.frontend?.mostraStatoPC !== false;
+            document.getElementById('fe_carosello').checked = config.frontend?.caroselloAttivo !== false;
+            document.getElementById('fe_titolo').value = config.frontend?.titoloSede || '';
+            document.getElementById('fe_logo').value = config.frontend?.urlLogo || '';
+            document.getElementById('fe_url_calendario').value = config.frontend?.urlCalendario || '';
+            document.getElementById('fe_pausa_carosello').value = config.frontend?.pausaTraCaroselli || 180000;
+            document.getElementById('fe_expo_locandina').value = config.frontend?.esposizioneLocandina || 10000;
+            document.getElementById('fe_intervallo').value = config.frontend?.intervalloAggiornamento || 5000;
+
+            // Footer News
+            const fn = config.footer_news || {};
+            document.getElementById('fn_abilitato').checked = fn.abilitato !== false;
+            document.getElementById('fn_stile').value = fn.stile_scorrimento || 'orizzontale';
+            document.getElementById('fn_velocita').value = fn.velocita || 50;
+            document.getElementById('fn_colore_testo').value = fn.colore_testo || '#c9d1d9';
+            document.getElementById('fn_colore_sfondo').value = fn.colore_sfondo || '#161b22';
+            document.getElementById('fn_dimensione_testo').value = fn.dimensione_testo || '1.15rem';
+            document.getElementById('fn_alert_attivo').checked = fn.alert_fisso_attivo || false;
+            document.getElementById('fn_alert_testo').value = fn.alert_testo || '';
+            
+            const fonti = fn.fonti || [];
+            if (fonti[0]) {
+                document.getElementById('fn_f1_abilitata').checked = fonti[0].abilitata !== false;
+                document.getElementById('fn_f1_nome').value = fonti[0].nome || '';
+                document.getElementById('fn_f1_url').value = fonti[0].url || '';
+                document.getElementById('fn_f1_tipo').value = fonti[0].tipo || 'rss';
+            }
+            if (fonti[1]) {
+                document.getElementById('fn_f2_abilitata').checked = fonti[1].abilitata !== false;
+                document.getElementById('fn_f2_nome').value = fonti[1].nome || '';
+                document.getElementById('fn_f2_url').value = fonti[1].url || '';
+                document.getElementById('fn_f2_tipo').value = fonti[1].tipo || 'rss';
+            }
+            if (fonti[2]) {
+                document.getElementById('fn_f3_abilitata').checked = fonti[2].abilitata !== false;
+                document.getElementById('fn_f3_nome').value = fonti[2].nome || '';
+                document.getElementById('fn_f3_url').value = fonti[2].url || '';
+                document.getElementById('fn_f3_tipo').value = fonti[2].tipo || 'rss';
+            }
+        }
+
+        async function salvaConfigurazione(riavvia) {
+            const ips = document.getElementById('admin_ip_autorizzati').value.split(',').map(s => s.trim()).filter(s => s);
+
+            const payload = {
+                main: {
+                    ...currentConfig.main,
+                    porta_server: document.getElementById('porta_server').value,
+                    debug_mode: document.getElementById('debug_mode').checked
+                },
+                sicurezza: {
+                    admin_attivo: document.getElementById('admin_attivo').checked,
+                    admin_ip_autorizzati: ips
+                },
+                api_cineca: {
+                    username: document.getElementById('cineca_username').value,
+                    password: document.getElementById('cineca_password').value,
+                    realm: document.getElementById('cineca_realm').value,
+                    id_edificio: document.getElementById('cineca_edificio').value,
+                    intervallo_aggiornamento_sec: document.getElementById('cineca_intervallo').value,
+                    url_base: document.getElementById('cineca_url').value
+                },
+                frontend: {
+                    ...currentConfig.frontend,
+                    mostra_confermati: document.getElementById('fe_mostra_confermati').checked,
+                    mostraStatoPC: document.getElementById('fe_mostra_stato').checked,
+                    caroselloAttivo: document.getElementById('fe_carosello').checked,
+                    titoloSede: document.getElementById('fe_titolo').value,
+                    urlLogo: document.getElementById('fe_logo').value,
+                    urlCalendario: document.getElementById('fe_url_calendario').value,
+                    pausaTraCaroselli: parseInt(document.getElementById('fe_pausa_carosello').value),
+                    esposizioneLocandina: parseInt(document.getElementById('fe_expo_locandina').value),
+                    intervalloAggiornamento: parseInt(document.getElementById('fe_intervallo').value)
+                },
+                footer_news: {
+                    ...currentConfig.footer_news,
+                    abilitato: document.getElementById('fn_abilitato').checked,
+                    stile_scorrimento: document.getElementById('fn_stile').value,
+                    velocita: parseInt(document.getElementById('fn_velocita').value) || 50,
+                    colore_testo: document.getElementById('fn_colore_testo').value,
+                    colore_sfondo: document.getElementById('fn_colore_sfondo').value,
+                    dimensione_testo: document.getElementById('fn_dimensione_testo').value,
+                    alert_fisso_attivo: document.getElementById('fn_alert_attivo').checked,
+                    alert_testo: document.getElementById('fn_alert_testo').value,
+                    fonti: [
+                        {
+                            abilitata: document.getElementById('fn_f1_abilitata').checked,
+                            nome: document.getElementById('fn_f1_nome').value,
+                            url: document.getElementById('fn_f1_url').value,
+                            tipo: document.getElementById('fn_f1_tipo').value
+                        },
+                        {
+                            abilitata: document.getElementById('fn_f2_abilitata').checked,
+                            nome: document.getElementById('fn_f2_nome').value,
+                            url: document.getElementById('fn_f2_url').value,
+                            tipo: document.getElementById('fn_f2_tipo').value
+                        },
+                        {
+                            abilitata: document.getElementById('fn_f3_abilitata').checked,
+                            nome: document.getElementById('fn_f3_nome').value,
+                            url: document.getElementById('fn_f3_url').value,
+                            tipo: document.getElementById('fn_f3_tipo').value
+                        }
+                    ]
+                }
+            };
+
+            const nuovaPwd = document.getElementById('admin_password').value;
+            if (nuovaPwd) {
+                payload.admin_password = nuovaPwd;
+            }
+
+            try {
+                const res = await fetch('/api/admin/save', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    showToast();
+                    document.getElementById('admin_password').value = '';
+
+                    if (riavvia) {
+                        await fetch('/api/admin/restart', { method: 'POST', headers: getAuthHeaders() });
+                        startRestartCountdown();
+                    } else {
+                        loadAdminData();
+                    }
+                } else {
+                    alert("Errore durante il salvataggio");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Errore di rete");
+            }
+        }
+
+        function showView(viewId) {
+            document.getElementById('login-view').classList.remove('active');
+            document.getElementById('admin-view').classList.remove('active');
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        function showToast() {
+            const toast = document.getElementById("toast");
+            toast.classList.add("show");
+            setTimeout(() => { toast.classList.remove("show"); }, 3000);
+        }
+
+        function startRestartCountdown() {
+            const modal = document.getElementById('restart-modal');
+            const cd = document.getElementById('countdown');
+            modal.style.display = 'flex';
+            let seconds = 5;
+            const timer = setInterval(() => {
+                seconds--;
+                cd.innerText = seconds;
+                if (seconds <= 0) {
+                    clearInterval(timer);
+                    window.location.reload();
+                }
+            }, 1000);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (sessionStorage.getItem('adminToken')) {
+                loadAdminData();
+            } else {
+                showView('login-view');
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -2,7 +2,7 @@
 
 *Sviluppato per l'Università di Pavia (UNIPV)*
 
-**Versione:** 3.5 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
+**Versione:** 4.0 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
 
 ---
 
@@ -29,9 +29,11 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 | **Persistenza** | No (stato volatile) | **Sì (salvataggio locale e tag "annullato/spostato" per modifiche live)** |
 | **Risorse Hardware** | Elevato (Chrome è pesante) | **Minimo (Python Script)** |
 | **Interfaccia Utente (UI)** | Fissa a due colonne (Desktop) | **Responsive Mobile & Desktop, Info Badge (Menu fluttuante)** |
-| **Configurazione UI** | Modifica nel codice JS/HTML | **Blocco CONFIG_APP semplificato in remoto.html** |
+| **Configurazione UI** | Modifica nel codice JS/HTML | **File `config.yaml` o Pannello Web (`/admin`)** |
+| **Reattività Modifiche** | Riavvio fisico del Kiosk necessario | **Hot-Reload automatico in tempo reale senza interruzioni** |
+| **Ticker Notizie / Locandine** | Assente | **Sì, integrabile con RSS/REST, ampiamente personalizzabile** |
 | **Stati eventi UPlanner** | Mostra sempre solo P (Pubblicati) e C (Confermati), indisponibilità appaiono come "Attività Programmata" | **Mostra P (Pubblicati), C (Confermati), eventi Confermati sono disattivabili dalla vista, flagga eventi A (Annullati) come Annullati automaticamente, i pallini P e C sono visibili accanto al nome o disattivabili, gestisce le Indisponibilità mostrando il nome corretto** |
-| **Stato del Progetto** | Legacy (Backup) | **Produzione (Standard)** |
+| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.0)** |
 ---
 
 <br>
@@ -45,6 +47,15 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 ---
 
 # Changelog
+
+## [v4.0] - Gestione Remota, Hot-Reload e Footer Informativo
+Questa major release trasforma il Kiosk in uno strumento pienamente amministrabile da remoto.
+* **Unificazioni variabili in un unico file config.yaml** tutte le personalizzazioni risiedono in un unico file `config.yaml`.
+* **Pannello di Amministrazione Web:** Oltre alla scrittura manuale su config.yaml, è presente una **Nuova interfaccia grafica (`/admin`)** per modificare colori, testi, velocità e loghi senza toccare una riga di codice (il pannello di base è disattivato, ma può essere attivato da `config.yaml` in un secondo).
+* **Hot-Reload e Resilienza:** I Kiosk in rete si aggiornano automaticamente in tempo reale ("a caldo") non appena si salva la configurazione dal pannello, senza bisogno di riavvii. Migliorata anche la ripresa automatica dopo cali di rete. 
+* **Footer News Avanzato:** Introdotto un feed scorrevole personalizzabile (orizzontale o verticale) capace di integrarsi con API REST e RSS esterni. Le notizie sono cliccabili (con collegamento all'articolo originale). 
+* **Gestione Locandine Intelligente:** Il carosello pubblicitario può ora essere disabilitato selettivamente (solo per il proprio browser) tramite il comodo badge informazioni, senza influenzare i monitor Kiosk di ateneo.
+* **Log Centralizzati:** I file di log del sistema (`kiosk.log` e `server_api_sys.log`) sono ora generati direttamente nella cartella base `dashboard_aule` per un rapido accesso e agevolare il troubleshooting.
 
 ## [v3.5] - Gestione avanzata eventi UPlanner
 Questa release affina ulteriormente la gestione dei dati provenienti da U-Planner, introducendo un controllo più preciso sugli stati degli eventi e migliorando la chiarezza delle informazioni esposte sulla dashboard.
