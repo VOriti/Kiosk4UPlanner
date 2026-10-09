@@ -31,7 +31,7 @@ sicurezza:
   # Quali IP possono accedere al pannello Admin? (Usa la notazione CIDR)
   # 127.0.0.1 permette l'accesso solo direttamente dalla macchina fisica.
   # Puoi aggiungere la rete di ateneo, o altro range desiderato, ad es: - "192.168.1.0/24"
-  admin_ip_autorizzati:
+  admin_ip_autorizzati: []
   password_admin_hash: "a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0"
   # questo hash corrispode alla password "cambiami". Quando si usa questa password compare un alert che ricorda di cambiarla. Per cambiarla basta digitare una nuova password nel pannello Admin e il sistema genererà un nuovo hash.
 
@@ -46,6 +46,10 @@ api_cineca:
 
   # Codice numerico identificativo del palazzo (es. "05" per San Felice in UNIPV)
   id_edificio: "05"
+
+  # Identificativi (ID) interni di UPlanner per l'anno accademico e il contesto (ricavali esaminando le chiamate di rete su CINECA UP)
+  anno_accademico_id: ""
+  contesto_id: ""
 
   # Ogni quanti secondi il server interroga CINECA per aggiornare i dati? 
   # (300 = 5 minuti. Non scendere sotto i 60 per non sovraccaricare le API)

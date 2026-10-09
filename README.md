@@ -2,7 +2,7 @@
 
 *Sviluppato per l'Università di Pavia (UNIPV)*
 
-**Versione:** 4.0 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
+**Versione:** 4.5 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
 
 ---
 
@@ -33,7 +33,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 | **Reattività Modifiche** | Riavvio fisico del Kiosk necessario | **Hot-Reload automatico in tempo reale senza interruzioni** |
 | **Ticker Notizie / Locandine** | Assente | **Sì, integrabile con RSS/REST, ampiamente personalizzabile** |
 | **Stati eventi UPlanner** | Mostra sempre solo P (Pubblicati) e C (Confermati), indisponibilità appaiono come "Attività Programmata" | **Mostra P (Pubblicati), C (Confermati), eventi Confermati sono disattivabili dalla vista, flagga eventi A (Annullati) come Annullati automaticamente, i pallini P e C sono visibili accanto al nome o disattivabili, gestisce le Indisponibilità mostrando il nome corretto** |
-| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.0)** |
+| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.5)** |
 ---
 
 <br>
@@ -47,6 +47,16 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 ---
 
 # Changelog
+
+## [v4.5] - Parametri Dinamici, UI Fixing e Scrolling Invisibile
+Questa release rende l'applicazione completamente svincolata da parametri hardcoded, potenziando il limite di eventi caricati e raffinando il comportamento dell'interfaccia sia su schermi enormi che su smartphone.
+* **Parametri CINECA 100% Dinamici:** I codici dell'Anno Accademico e del Contesto (Sede), in precedenza incorporati nel codice sorgente, sono stati estratti e resi dinamici per un utilizzo universale.
+* **Aggiornamento Pannello Admin:** L'interfaccia di amministrazione Web (`/admin`) è stata arricchita con i nuovi campi dedicati per l'inserimento rapido di `Anno Accademico ID` e `Contesto ID`. 
+* **Aumento Limite Eventi:** Il numero massimo di eventi interrogabili singolarmente dalle API CINECA è stato innalzato in sicurezza da 150 a 500, garantendo che nessun impegno sfugga alla visualizzazione durante le giornate eccezionalmente cariche.
+* **Scrolling Invisibile e Fix Testi (Desktop):** Risolto il problema del "testo affettato" (in cui nomi di docenti lunghi venivano tagliati a metà dal layout in caso di colonna satura). È stato inoltre sbloccato lo scorrimento verticale naturale delle colonne tramite una scrollbar volutamente invisibile, perfetta per mantenere la pulizia visiva del digital signage.
+* **Fix Allineamenti e Footer (Mobile):** Ottimizzati drasticamente i calcoli per schermi piccoli: corretto il fastidioso "salto" della pagina provocato dall'alternanza di notizie sul ticker, ri-allineato chirurgicamente il box degli avvisi e impedito che frasi lunghe allungassero a dismisura l'intero footer.
+* **Titolo Agnostico:** Rimosso il suffisso accademico fisso dal tag `<title>` della pagina per completare il processo di universalità del progetto.
+* **Guida Parametri Inclusa:** Aggiornata la documentazione con istruzioni chiare e passo-passo su come reperire in autonomia i codici di configurazione necessari ispezionando la console di CINECA Up.
 
 ## [v4.0] - Gestione Remota, Hot-Reload e Footer Informativo
 Questa major release trasforma il Kiosk in uno strumento pienamente amministrabile da remoto.

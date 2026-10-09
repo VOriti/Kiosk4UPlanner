@@ -329,6 +329,16 @@
                         vuoto per mostrare tutti gli edifici.</p>
                 </div>
                 <div class="form-group">
+                    <label for="anno_accademico_id">ID Anno Accademico (Opzionale)</label>
+                    <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
+                    <p class="help-text">Identificativo interno U-Planner per l'anno accademico (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
+                </div>
+                <div class="form-group">
+                    <label for="contesto_id">ID Contesto (Opzionale)</label>
+                    <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
+                    <p class="help-text">Identificativo interno U-Planner per il contesto/dipartimento (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
+                </div>
+                <div class="form-group">
                     <label for="cineca_intervallo">Intervallo Aggiornamento (secondi)</label>
                     <input type="number" id="cineca_intervallo">
                     <p class="help-text">Ogni quanti secondi il server interroga CINECA per aggiornare i dati? (300 = 5
@@ -338,7 +348,7 @@
                     <label for="cineca_url">URL Base API</label>
                     <input type="text" id="cineca_url" placeholder="https://cineca.prod.up.cineca.it/api">
                     <p class="help-text">L'URL di base per le API CINECA di UPlanner. Si consiglia di sostituire
-                        "cineca" prima di prod con il nome del proprio ateneo (es. https://unipv.prod.up.cineca.it/api).
+                        "cineca" prima di prod con il nome del proprio ateneo (es. https://tuoateneo.prod.up.cineca.it/api).
                     </p>
                 </div>
             </div>
@@ -370,8 +380,7 @@
                 <div class="form-group">
                     <label for="fe_titolo">Titolo Sede</label>
                     <input type="text" id="fe_titolo">
-                    <p class="help-text">Intestazione principale mostrata in alto a sinistra nel Kiosk (default "Impegni
-                        Aule" perché il logo che usiamo in UNIPV contiene già il nome del palazzo).</p>
+                    <p class="help-text">Intestazione principale mostrata in alto a sinistra nel Kiosk (default "Impegni Aule").</p>
                 </div>
                 <div class="form-group">
                     <label for="fe_logo">URL Logo</label>
@@ -620,6 +629,8 @@
             document.getElementById('cineca_password').value = config.api_cineca?.password || '';
             document.getElementById('cineca_realm').value = config.api_cineca?.realm || '';
             document.getElementById('cineca_edificio').value = config.api_cineca?.id_edificio || '';
+            document.getElementById('anno_accademico_id').value = config.api_cineca?.anno_accademico_id || '';
+            document.getElementById('contesto_id').value = config.api_cineca?.contesto_id || '';
             document.getElementById('cineca_intervallo').value = config.api_cineca?.intervallo_aggiornamento_sec || 300;
             document.getElementById('cineca_url').value = config.api_cineca?.url_base || '';
 
@@ -667,7 +678,26 @@
         }
 
         async function salvaConfigurazione(riavvia) {
+            const sanitizeId = (val) => (val || '').replace(/^[\s"']+|[\s"']+$/g, '');
             const ips = document.getElementById('admin_ip_autorizzati').value.split(',').map(s => s.trim()).filter(s => s);
+            const annoId = sanitizeId(document.getElementById('anno_accademico_id').value);
+            const contestoId = sanitizeId(document.getElementById('contesto_id').value);
+            const realm = sanitizeId(document.getElementById('cineca_realm').value);
+            const edificio = sanitizeId(document.getElementById('cineca_edificio').value);
+            const intervallo = parseInt(document.getElementById('cineca_intervallo').value) || 300;
+            const hexPattern = /^[0-9a-fA-F]{24}$/;
+
+            if (annoId && !hexPattern.test(annoId)) {
+                if (!confirm("Attenzione: L'ID Anno Accademico inserito non sembra essere un identificativo CINECA valido (attesi 24 caratteri esadecimali).\n\nVuoi continuare comunque?")) {
+                    return;
+                }
+            }
+
+            if (contestoId && !hexPattern.test(contestoId)) {
+                if (!confirm("Attenzione: L'ID Contesto inserito non sembra essere un identificativo CINECA valido (attesi 24 caratteri esadecimali).\n\nVuoi continuare comunque?")) {
+                    return;
+                }
+            }
 
             const payload = {
                 main: {
@@ -680,12 +710,14 @@
                     admin_ip_autorizzati: ips
                 },
                 api_cineca: {
-                    username: document.getElementById('cineca_username').value,
+                    username: document.getElementById('cineca_username').value.trim(),
                     password: document.getElementById('cineca_password').value,
-                    realm: document.getElementById('cineca_realm').value,
-                    id_edificio: document.getElementById('cineca_edificio').value,
-                    intervallo_aggiornamento_sec: document.getElementById('cineca_intervallo').value,
-                    url_base: document.getElementById('cineca_url').value
+                    realm: realm,
+                    id_edificio: edificio,
+                    anno_accademico_id: annoId,
+                    contesto_id: contestoId,
+                    intervallo_aggiornamento_sec: intervallo,
+                    url_base: document.getElementById('cineca_url').value.trim()
                 },
                 frontend: {
                     ...currentConfig.frontend,

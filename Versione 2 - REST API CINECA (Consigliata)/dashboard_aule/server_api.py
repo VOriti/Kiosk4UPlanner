@@ -45,6 +45,8 @@ api_cineca:
   password: ''
   realm: ''
   id_edificio: ''
+  anno_accademico_id: ''
+  contesto_id: ''
   intervallo_aggiornamento_sec: 300
   url_base: 'https://cineca.prod.up.cineca.it/api'
 frontend:
@@ -58,11 +60,21 @@ frontend:
   pausaTraCaroselli: 180000
   esposizioneLocandina: 10000
   intervalloAggiornamento: 5000
-  urlCalendario: 'https://unipv.prod.up.cineca.it/calendarioPubblico/linkCalendarioId=5e3d320d8409120018939b0a'
+  urlCalendario: ''
   urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
   urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
   autore: 'Vincenzo Oriti'
   emailAutore: 'vincenzo.oriti@unipv.it'
+footer_news:
+  abilitato: true
+  stile_scorrimento: 'verticale'
+  velocita: 20
+  colore_testo: '#c9d1d9'
+  colore_sfondo: '#3e3c3d'
+  dimensione_testo: '1.20rem'
+  alert_fisso_attivo: false
+  alert_testo: ''
+  fonti: []
 """
 
 def load_config():
@@ -71,10 +83,10 @@ def load_config():
         with open(FILE_CONFIG, 'w', encoding='utf-8') as f:
             f.write(DEFAULT_CONFIG.replace('{PERCORSO}', PERCORSO_BASE))
     with open(FILE_CONFIG, 'r', encoding='utf-8') as f:
-        CONFIG = yaml.safe_load(f)
+        CONFIG = yaml.safe_load(f) or {}
         
-    if 'main' in CONFIG and 'percorso_base' in CONFIG['main']:
-        pb = CONFIG['main']['percorso_base'].strip("'\"")
+    if isinstance(CONFIG, dict) and 'main' in CONFIG and isinstance(CONFIG['main'], dict) and 'percorso_base' in CONFIG['main']:
+        pb = str(CONFIG['main']['percorso_base'] or '').strip("'\"")
         if os.path.exists(pb):
             PERCORSO_BASE = pb
 
@@ -105,19 +117,137 @@ def salva_stato():
     with open(os.path.join(PERCORSO_BASE, 'stato_impegni.json'), 'w', encoding='utf-8') as f:
         json.dump(storico_impegni, f, indent=4)
 
+def sanitize_id_str(val):
+    """Sanitizza gli identificativi CINECA rimuovendo spazi e apici accidentali ed evitando 'None'."""
+    if val is None:
+        return ''
+    import re
+    return re.sub(r"^[\s\'\"]+|[\s\'\"]+$", '', str(val))
+
+def salva_config_yaml(file_path=None, config_data=None):
+    """Salva il dizionario di configurazione preservando commenti e struttura YAML."""
+    if file_path is None:
+        file_path = FILE_CONFIG
+    if config_data is None:
+        config_data = CONFIG
+    import re
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    out_lines = []
+    curr_sec = None
+    skip_list = False
+    list_indent_len = 0
+    seen_keys = set()
+    for line in lines:
+        if skip_list:
+            stripped = line.strip()
+            line_indent = len(line) - len(line.lstrip(' '))
+            if stripped == '' or line_indent > list_indent_len:
+                continue
+            else:
+                skip_list = False
+        
+        m_sec = re.match(r'^([a-zA-Z0-9_]+):', line)
+        if m_sec:
+            if curr_sec and curr_sec in config_data and isinstance(config_data[curr_sec], dict):
+                for k, v in config_data[curr_sec].items():
+                    if k not in seen_keys:
+                        if isinstance(v, list):
+                            if not v:
+                                out_lines.append(f"  {k}: []\n")
+                            else:
+                                out_lines.append(f"  {k}:\n")
+                                for item in v:
+                                    if isinstance(item, dict):
+                                        out_lines.append(f"    - nome: {json.dumps(item.get('nome', ''))}\n")
+                                        out_lines.append(f"      url: {json.dumps(item.get('url', ''))}\n")
+                                        out_lines.append(f"      tipo: {json.dumps(item.get('tipo', 'rss'))}\n")
+                                        abilitata_str = 'true' if item.get('abilitata', True) else 'false'
+                                        out_lines.append(f"      abilitata: {abilitata_str}\n")
+                                    else:
+                                        out_lines.append(f"    - {json.dumps(item)}\n")
+                        elif not isinstance(v, dict):
+                            out_lines.append(f"  {k}: {json.dumps(v)}\n")
+            curr_sec = m_sec.group(1)
+            seen_keys = set()
+            out_lines.append(line)
+            continue
+        
+        if curr_sec and curr_sec in config_data:
+            m_key = re.match(r'^(\s+)([a-zA-Z0-9_]+):\s*(.*)', line)
+            if m_key:
+                indent, key, resto = m_key.group(1), m_key.group(2), m_key.group(3)
+                seen_keys.add(key)
+                if key in config_data[curr_sec]:
+                    val = config_data[curr_sec][key]
+                    comm = ""
+                    idx = resto.find('#')
+                    while idx != -1:
+                        if resto.count('"', 0, idx) % 2 == 0 and resto.count("'", 0, idx) % 2 == 0:
+                            comm = " " + resto[idx:]
+                            break
+                        idx = resto.find('#', idx + 1)
+                    
+                    if isinstance(val, bool):
+                        v_str = 'true' if val else 'false'
+                        out_lines.append(f"{indent}{key}: {v_str}{comm}\n")
+                    elif isinstance(val, list):
+                        skip_list = True
+                        list_indent_len = len(indent)
+                        if not val:
+                            out_lines.append(f"{indent}{key}: []{comm}\n")
+                        else:
+                            out_lines.append(f"{indent}{key}:{comm}\n")
+                            for item in val:
+                                if isinstance(item, dict):
+                                    out_lines.append(f"{indent}  - nome: {json.dumps(item.get('nome', ''))}\n")
+                                    out_lines.append(f"{indent}    url: {json.dumps(item.get('url', ''))}\n")
+                                    out_lines.append(f"{indent}    tipo: {json.dumps(item.get('tipo', 'rss'))}\n")
+                                    abilitata_str = 'true' if item.get('abilitata', True) else 'false'
+                                    out_lines.append(f"{indent}    abilitata: {abilitata_str}\n")
+                                else:
+                                    out_lines.append(f"{indent}  - {json.dumps(item)}\n")
+                    else:
+                        v_str = json.dumps(val)
+                        out_lines.append(f"{indent}{key}: {v_str}{comm}\n")
+                    continue
+        out_lines.append(line)
+    if curr_sec and curr_sec in config_data and isinstance(config_data[curr_sec], dict):
+        for k, v in config_data[curr_sec].items():
+            if k not in seen_keys:
+                if isinstance(v, list):
+                    if not v:
+                        out_lines.append(f"  {k}: []\n")
+                    else:
+                        out_lines.append(f"  {k}:\n")
+                        for item in v:
+                            if isinstance(item, dict):
+                                out_lines.append(f"    - nome: {json.dumps(item.get('nome', ''))}\n")
+                                out_lines.append(f"      url: {json.dumps(item.get('url', ''))}\n")
+                                out_lines.append(f"      tipo: {json.dumps(item.get('tipo', 'rss'))}\n")
+                                abilitata_str = 'true' if item.get('abilitata', True) else 'false'
+                                out_lines.append(f"      abilitata: {abilitata_str}\n")
+                            else:
+                                out_lines.append(f"    - {json.dumps(item)}\n")
+                elif not isinstance(v, dict):
+                    out_lines.append(f"  {k}: {json.dumps(v)}\n")
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.writelines(out_lines)
+
 def effettua_login():
     global token_cineca
     logging.info("Richiesta di un nuovo Token a CINECA (Admin) in corso...")
     
     api_cineca = CONFIG.get('api_cineca', {})
-    url_base = api_cineca.get('url_base', 'https://cineca.prod.up.cineca.it/api')
+    url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
     url_login = f"{url_base}/Utenti/login"
     
+    realm = sanitize_id_str(api_cineca.get('realm'))
     payload = {
         "username": api_cineca.get('username', ''), 
         "password": api_cineca.get('password', ''), 
-        "realm": api_cineca.get('realm', ''),
-        "clientId": api_cineca.get('realm', '')
+        "realm": realm,
+        "clientId": realm
     }
     try:
         risposta = requests.post(url_login, json=payload, timeout=10)   
@@ -148,11 +278,14 @@ def estrai_e_formatta_dati(impegni_grezzi):
             if not id_imp: continue
             
             aule = item.get('aule', [])
-            edifici_impegno = [a.get('edificio', {}).get('codice') for a in aule]
+            edifici_impegno = [sanitize_id_str(a.get('edificio', {}).get('codice')) for a in aule if isinstance(a, dict) and a.get('edificio')]
             
-            id_edificio = str(CONFIG.get('api_cineca', {}).get('id_edificio', ''))
-            if id_edificio not in edifici_impegno and id_edificio != "":
-                continue
+            id_edificio = sanitize_id_str(CONFIG.get('api_cineca', {}).get('id_edificio'))
+            if id_edificio != "":
+                edifici_norm = set(edifici_impegno) | {c.lstrip('0') or '0' for c in edifici_impegno}
+                id_norm = id_edificio.lstrip('0') or '0'
+                if id_edificio not in edifici_norm and id_norm not in edifici_norm:
+                    continue
 
             stato = item.get('stato', 'P')
             if isinstance(stato, dict):
@@ -254,10 +387,13 @@ def ciclo_aggiornamento_api():
     while True:
         try:
             api_cineca = CONFIG.get('api_cineca', {})
-            realm = api_cineca.get('realm', '')
-            url_base = api_cineca.get('url_base', 'https://cineca.prod.up.cineca.it/api')
+            realm = sanitize_id_str(api_cineca.get('realm'))
+            url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
             url_impegni = f"{url_base}/Impegni/getImpegniCalendario"
-            intervallo = int(api_cineca.get('intervallo_aggiornamento_sec', 300))
+            try:
+                intervallo = int(api_cineca.get('intervallo_aggiornamento_sec') or 300)
+            except (ValueError, TypeError):
+                intervallo = 300
             
             if not token_cineca:
                 if not effettua_login():
@@ -275,14 +411,21 @@ def ciclo_aggiornamento_api():
             fine_giornata = oggi.replace(hour=23, minute=59, second=59, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
             payload = {
-                "limit": 150,
+                "limit": 500,
                 "dataInizio": inizio_giornata,
                 "dataFine": fine_giornata,
-                "annoAccademicoId": "5e1553cac831d600172af6d0",
                 "mostraImpegniSenzaAula": False,
-                "nascondiIndisponibilitaParziali": False,
-                "contestoId": "5b97788424deec000e171a8f"
+                "nascondiIndisponibilitaParziali": False
             }
+            
+            anno_id = sanitize_id_str(api_cineca.get('anno_accademico_id'))
+            if anno_id:
+                payload["annoAccademicoId"] = anno_id
+                
+            contesto_id = sanitize_id_str(api_cineca.get('contesto_id'))
+            if contesto_id:
+                payload["contestoId"] = contesto_id
+
             
             logging.info(f"DEBUG: Richiesta impegni a {url_impegni}")
             risposta = requests.post(url_impegni, json=payload, headers=headers, timeout=15)
@@ -305,8 +448,13 @@ def ciclo_aggiornamento_api():
         except Exception as e:
             logging.error(f"❌ Errore critico nel ciclo API: {e}")
         
-        # Uso try per prendere l'intervallo aggiornato per via potenziale di restart non attivati, anche se i thread si uccidono.
-        intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec', 300))
+        # Intervallo aggiornato con fallback sicuro per evitare che il thread si interrompa
+        try:
+            intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec') or 300)
+            if intervallo <= 0:
+                intervallo = 300
+        except (ValueError, TypeError):
+            intervallo = 300
         time.sleep(intervallo)
 
 def NewsPollingDaemon():
@@ -540,6 +688,9 @@ class KioskServer(BaseHTTPRequestHandler):
                     nuova_pwd = payload['api_cineca'].get('password')
                     if nuova_pwd == '********':
                         payload['api_cineca']['password'] = CONFIG['api_cineca'].get('password', '')
+                    for field in ['realm', 'anno_accademico_id', 'contesto_id', 'id_edificio']:
+                        if field in payload['api_cineca']:
+                            payload['api_cineca'][field] = sanitize_id_str(payload['api_cineca'][field])
                     CONFIG['api_cineca'].update(payload['api_cineca'])
                     
                 if 'sicurezza' in payload:
@@ -558,61 +709,7 @@ class KioskServer(BaseHTTPRequestHandler):
                     CONFIG['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
                     
                 # Aggiornamento custom per preservare i commenti
-                import re
-                with open(FILE_CONFIG, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                out_lines = []
-                curr_sec = None
-                skip_list = False
-                for line in lines:
-                    if skip_list:
-                        if line.strip() == '' or line.startswith('    ') or line.strip().startswith('-') or line.strip().startswith('#'):
-                            continue
-                        else:
-                            skip_list = False
-                    
-                    m_sec = re.match(r'^([a-zA-Z0-9_]+):', line)
-                    if m_sec:
-                        curr_sec = m_sec.group(1)
-                        out_lines.append(line)
-                        continue
-                    
-                    if curr_sec and curr_sec in CONFIG:
-                        m_key = re.match(r'^(\s+)([a-zA-Z0-9_]+):\s*(.*)', line)
-                        if m_key:
-                            indent, key, resto = m_key.group(1), m_key.group(2), m_key.group(3)
-                            if key in CONFIG[curr_sec]:
-                                val = CONFIG[curr_sec][key]
-                                comm = ""
-                                idx = resto.find('#')
-                                while idx != -1:
-                                    if resto.count('"', 0, idx) % 2 == 0 and resto.count("'", 0, idx) % 2 == 0:
-                                        comm = " " + resto[idx:]
-                                        break
-                                    idx = resto.find('#', idx + 1)
-                                
-                                if isinstance(val, bool):
-                                    v_str = 'true' if val else 'false'
-                                    out_lines.append(f"{indent}{key}: {v_str}{comm}\n")
-                                elif isinstance(val, list):
-                                    skip_list = True
-                                    out_lines.append(f"{indent}{key}:{comm}\n")
-                                    for item in val:
-                                        if isinstance(item, dict):
-                                            out_lines.append(f"{indent}  - nome: \"{item.get('nome', '')}\"\n")
-                                            out_lines.append(f"{indent}    url: \"{item.get('url', '')}\"\n")
-                                            out_lines.append(f"{indent}    tipo: \"{item.get('tipo', 'rss')}\"\n")
-                                            abilitata_str = 'true' if item.get('abilitata', True) else 'false'
-                                            out_lines.append(f"{indent}    abilitata: {abilitata_str}\n")
-                                        else:
-                                            out_lines.append(f"{indent}  - {json.dumps(item)}\n")
-                                else:
-                                    v_str = json.dumps(val)
-                                    out_lines.append(f"{indent}{key}: {v_str}{comm}\n")
-                                continue
-                    out_lines.append(line)
-                with open(FILE_CONFIG, 'w', encoding='utf-8') as f:
-                    f.writelines(out_lines)
+                salva_config_yaml(FILE_CONFIG, CONFIG)
                 
                 load_config() # Ricarica per sicurezza
                 news_poll_event.set() # Sveglia il demone per rileggere subito la config delle fonti

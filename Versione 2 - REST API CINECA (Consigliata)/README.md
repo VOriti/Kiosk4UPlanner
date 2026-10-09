@@ -92,21 +92,42 @@ A partire dalla versione 4.0, tutta la configurazione strutturale (credenziali C
 Puoi procedere in due modi:
 - **Pannello Grafico:** Apri il file `config.yaml` con un editor di testo e imposta solo `admin_attivo: true`, poi riavvia il server e infine collegati al Pannello di Amministrazione web (`http://[IP_DEL_RASPBERRY]:8080/admin`). Da qui puoi modificare al volo l'interfaccia e le credenziali CINECA comprese.
 
-- **Modifica Manuale:** Apri il file `config.yaml` con un editor di testo e compila la primissima sezione `api_cineca` (inserendo username, password, realm e id_edificio) seguendo le precise istruzioni commentate all'interno del file.
+- **Modifica Manuale:** Apri il file `config.yaml` con un editor di testo e compila la primissima sezione `api_cineca` (inserendo username, password, realm, id_edificio, anno_accademico_id e contesto_id) seguendo le precise istruzioni commentate all'interno del file.
 
-**💡 Procedura extra per il Recupero dei parametri CINECA**
+**💡 Procedura per il Recupero dei parametri CINECA (Strumenti per Sviluppatori / F12)**
 
-- **Recupero `realm` (clienteId):**
-  1. Apri la pagina di login del portale U-Planner del tuo ateneo dal PC.
-  2. Apri gli Strumenti per Sviluppatori (F12) e seleziona la scheda **Rete (Network)**.
-  3. Effettua il login.
-  4. Cerca la richiesta chiamata `login?include=user`, selezionala, vai in **Risposta (Response)** e copia il valore della chiave `"clienteId"`.
+I parametri identificativi di CINECA U-Planner (`realm`, `anno_accademico_id`, `contesto_id`) possono essere recuperati facilmente analizzando il traffico di rete del browser durante l'uso del portale web U-Planner del proprio Ateneo:
+
+- **Recupero `realm` (Cliente ID dell'Ateneo):**
+  1. Apri la pagina di login del portale U-Planner del tuo ateneo (es. `https://[ateneo].prod.up.cineca.it/`) dal browser sul PC.
+  2. Apri gli Strumenti per Sviluppatori premendo **F12** (oppure tasto destro sulla pagina -> *Ispeziona*, o `Ctrl+Shift+I` / `Cmd+Option+I`).
+  3. Seleziona la scheda **Rete (Network)** e attiva il filtro **Fetch/XHR** per isolare le chiamate API.
+  4. Effettua l'accesso inserendo le tue credenziali.
+  5. Cerca tra le chiamate di rete la richiesta di autenticazione (solitamente denominata `login?include=user` o `login`).
+  6. Clicca sulla richiesta e apri la sottoscheda **Risposta (Response)**: copia il valore alfanumerico associato alla chiave `"clienteId"` (o `"realm"`), composto da 24 caratteri esadecimali (es. `5a6734b248e4aa0cdeaaf875`).
+  *Metodo alternativo:* In qualsiasi chiamata successiva verso le API CINECA, seleziona la richiesta, apri la scheda **Intestazioni (Headers)** e copia il valore dell'header di richiesta `X-Realm`.
+
+- **Recupero `anno_accademico_id` (ID Anno Accademico):**
+  1. All'interno del portale U-Planner, accedi alla visualizzazione del calendario/pianificazione delle lezioni o aule per l'anno accademico d'interesse.
+  2. Con gli Strumenti per Sviluppatori (**F12**) aperti sulla scheda **Rete (Network)** (filtro **Fetch/XHR**), digita `getImpegniCalendario` nella casella di filtro/ricerca.
+  3. Seleziona la richiesta POST denominata `getImpegniCalendario` (se non appare, cambia vista di calendario, giorno o settimana per forzare una richiesta).
+  4. Clicca sulla sottoscheda **Payload** (o *Carico utile / Richiesta*).
+  5. Individua il parametro **`annoAccademicoId`** e copia la stringa esadecimale di 24 caratteri (es. `5e1553cac831d600172af6d0`).
+  *Metodo alternativo:* Cerca la chiamata all'endpoint `AnniAccademici` (GET) e nella scheda **Risposta (Response)** individua l'anno accademico attivo copiando il relativo valore `"id"` o `"_id"`.
+
+- **Recupero `contesto_id` (ID Contesto / Dipartimento):**
+  1. Nel portale U-Planner, seleziona la struttura didattica o dipartimento di competenza per visualizzarne gli impegni.
+  2. Con la scheda **Rete (Network)** aperta (filtro **Fetch/XHR**), seleziona la medesima chiamata POST `getImpegniCalendario`.
+  3. Nella sottoscheda **Payload** (o *Carico utile / Richiesta*), individua il parametro **`contestoId`** e copia la stringa esadecimale di 24 caratteri (es. `5b97788424deec000e171a8f`).
+  *Metodo alternativo:* Filtra per `Contesti` nella scheda Rete: nella risposta JSON troverai l'elenco dei contesti/strutture con i corrispondenti identificativi `"id"`.
 
 - **Recupero `id_edificio`:**
-  1. Apri `config.yaml` e imposta `debug_mode: true`. Riavvia il server.
+  1. Apri `config.yaml` e imposta `debug_mode: true` (oppure attivalo dal Pannello Admin). Riavvia il server.
   2. Attendi un ciclo di aggiornamento completo (circa 1 minuto).
   3. Leggi il log di sistema eseguendo `cat /home/vincenzo/dashboard_aule/kiosk.log`. Troverai una riga speciale denominata "🕵️ DEBUG MAPPA EDIFICI" con tutti i codici numerici dei palazzi del tuo ateneo.
   4. Ricopia l'ID del tuo palazzo dentro `config.yaml` e rimetti `debug_mode: false`.
+
+*Nota:* Tutti questi identificativi possono essere inseriti sia a mano nel file `config.yaml`, sia comodamente tramite il **Pannello di Amministrazione Web** (`/admin`) nei rispettivi campi all'interno della sezione *Credenziali e Connessione CINECA*.
 
 
 #### 5. Personalizzazione Grafica (file YAML o Pannello Admin)
