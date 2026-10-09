@@ -164,6 +164,9 @@ def salva_config_yaml(file_path=None, config_data=None):
                                         out_lines.append(f"      tipo: {json.dumps(item.get('tipo', 'rss'))}\n")
                                         abilitata_str = 'true' if item.get('abilitata', True) else 'false'
                                         out_lines.append(f"      abilitata: {abilitata_str}\n")
+                                        visibile_str = 'true' if item.get('visibile_di_default', True) else 'false'
+                                        out_lines.append(f"      visibile_di_default: {visibile_str}\n")
+                                        out_lines.append(f"      peso: {item.get('peso', 1)}\n")
                                     else:
                                         out_lines.append(f"    - {json.dumps(item)}\n")
                         elif not isinstance(v, dict):
@@ -205,6 +208,9 @@ def salva_config_yaml(file_path=None, config_data=None):
                                     out_lines.append(f"{indent}    tipo: {json.dumps(item.get('tipo', 'rss'))}\n")
                                     abilitata_str = 'true' if item.get('abilitata', True) else 'false'
                                     out_lines.append(f"{indent}    abilitata: {abilitata_str}\n")
+                                    visibile_str = 'true' if item.get('visibile_di_default', True) else 'false'
+                                    out_lines.append(f"{indent}    visibile_di_default: {visibile_str}\n")
+                                    out_lines.append(f"{indent}    peso: {item.get('peso', 1)}\n")
                                 else:
                                     out_lines.append(f"{indent}  - {json.dumps(item)}\n")
                     else:
@@ -485,6 +491,8 @@ def NewsPollingDaemon():
                 tipo = fonte.get('tipo', '').lower()
                 nome = fonte.get('nome', 'Fonte')
                 abilitata = fonte.get('abilitata', True)
+                visibile = fonte.get('visibile_di_default', True)
+                peso = fonte.get('peso', 1)
                 
                 if not url or not abilitata:
                     continue
@@ -499,29 +507,49 @@ def NewsPollingDaemon():
                         for item in dati:
                             title = item.get('title', {}).get('rendered', '')
                             link = item.get('link', '')
+                            data = item.get('date', '')
                             if title:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link})
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link, "data": data, "visibile": visibile})
                     elif tipo == 'rss':
                         root = ET.fromstring(res.text)
                         for item in root.findall('./channel/item'):
                             title = item.find('title')
                             link_elem = item.find('link')
+                            date_elem = item.find('pubDate')
                             link = link_elem.text.strip() if link_elem is not None and link_elem.text else ''
+                            data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
                             if title is not None and title.text:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title.text), "link": link})
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title.text), "link": link, "data": data, "visibile": visibile})
                 except Exception as e:
-                    logging.error(f"❌ Errore recupero news da {nome} ({url}): {e}")
+                    logging.error(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
                 
                 if notizie_di_questa_fonte:
-                    notizie_per_fonte.append(notizie_di_questa_fonte)
+                    # Aggiungiamo un dizionario che contiene sia la lista di notizie sia il peso
+                    notizie_per_fonte.append({'notizie': notizie_di_questa_fonte, 'peso': peso})
             
             notizie_estratte = []
             if notizie_per_fonte:
-                max_len = max(len(l) for l in notizie_per_fonte)
-                for i in range(max_len):
-                    for l in notizie_per_fonte:
-                        if i < len(l):
-                            notizie_estratte.append(l[i])
+                max_len = max(len(f['notizie']) for f in notizie_per_fonte)
+                # Calcoliamo il numero di round massimi necessari (arrotondato per eccesso diviso il peso)
+                # Più semplicemente, iteriamo ciclicamente fino ad esaurire la fonte più lunga
+                
+                ancora_notizie = True
+                indici = [0] * len(notizie_per_fonte)
+                
+                while ancora_notizie:
+                    ancora_notizie = False
+                    for i, f in enumerate(notizie_per_fonte):
+                        peso = f['peso']
+                        notizie = f['notizie']
+                        idx = indici[i]
+                        
+                        # Aggiungi 'peso' notizie di questa fonte
+                        for k in range(peso):
+                            if idx < len(notizie):
+                                notizie_estratte.append(notizie[idx])
+                                idx += 1
+                                indici[i] = idx
+                                ancora_notizie = True
                             
             memoria_news = notizie_estratte
         except Exception as e:

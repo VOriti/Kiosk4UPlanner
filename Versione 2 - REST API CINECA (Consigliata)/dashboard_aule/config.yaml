@@ -123,6 +123,7 @@ footer_news:
   colore_testo: "#c9d1d9"
   dimensione_testo: "1.20rem"
   colore_sfondo: "#3e3c3d"
+  colore_btn: "#30363d"
   
   # Interruttore per l'avviso di emergenza/servizio fisso a lato del ticker
   alert_fisso_attivo: true
@@ -130,7 +131,7 @@ footer_news:
   # Testo dell'avviso. Viene conservato in memoria anche se alert_fisso_attivo è false
   alert_testo: "\u26a0\ufe0f Avviso: Domani 09/12/2026 chiusura sede per festivit\u00e0 patronale."
   
-  # Fonti per il recupero delle notizie (Massimo 3). 
+  # Fonti per il recupero delle notizie (Fino a 6). 
   # Se l'URL è lasciato vuoto (""), la fonte viene ignorata dal backend.
   # Valori ammessi per 'tipo': "rss" (Feed XML standard) oppure "rest" (Endpoint JSON WordPress/Drupal)
   fonti:
@@ -138,11 +139,35 @@ footer_news:
       url: "https://www.agendadigitale.eu/wp-json/wp/v2/posts"
       tipo: "rest"
       abilitata: true
+      visibile_di_default: true
+      peso: 3
     - nome: "Dipartimento - Test RSS con ANSA"
       url: "https://www.ansa.it/sito/notizie/topnews/topnews_rss.xml"
       tipo: "rss"
       abilitata: true
+      visibile_di_default: true
+      peso: 1
     - nome: ""
       url: ""
       tipo: "rss"
       abilitata: false
+      visibile_di_default: true
+      peso: 1
+    - nome: ""
+      url: ""
+      tipo: "rss"
+      abilitata: false
+      visibile_di_default: true
+      peso: 1
+    - nome: ""
+      url: ""
+      tipo: "rss"
+      abilitata: false
+      visibile_di_default: true
+      peso: 1
+    - nome: ""
+      url: ""
+      tipo: "rss"
+      abilitata: false
+      visibile_di_default: true
+      peso: 1

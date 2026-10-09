@@ -34,7 +34,8 @@
                 };
             }
         }
-    </script>
+    
+</script>
 
     <style>
         :root {
@@ -655,6 +656,44 @@
             transition: opacity 0.5s ease-in-out;
             padding: 0 15px;
         }
+        /* News Hub Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background: var(--bg-base);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            width: 90%;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .modal-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #161b22;
+        }
+        .modal-header h2 { margin: 0; font-size: 1.5rem; }
+        .close-btn {
+            background: none; border: none; color: var(--text-primary);
+            font-size: 2rem; cursor: pointer; padding: 0 10px;
+        }
+        .close-btn:hover { color: #f85149; }
+        .panel { padding: 20px; }
+        .help-text { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px; }
     </style>
 </head>
 
@@ -737,6 +776,9 @@
 
     <div id="kiosk-footer">
         <div id="alert-box"></div>
+        <div id="news-hub-btn" onclick="openNewsHub()" style="cursor: pointer; padding: 5px 15px; margin: 8px 10px; border-radius: 6px; color: var(--text-primary); transition: filter 0.2s; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.filter='brightness(1.5)'" onmouseout="this.style.filter='none'" title="News Hub">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </div>
         <div id="ticker-wrapper"></div>
     </div>
 
@@ -745,6 +787,7 @@
         let fetchNewsInterval;
         let notizieCorrenti = [];
         let indexVerticale = 0;
+        let newsPreferences = JSON.parse(localStorage.getItem('newsPreferences') || '{}');
 
         async function aggiornaNews() {
             if (!CONFIG_APP.footer_news || !CONFIG_APP.footer_news.abilitato) {
@@ -755,6 +798,11 @@
             document.getElementById('kiosk-footer').style.display = 'flex';
             if (CONFIG_APP.footer_news.colore_sfondo) {
                 document.getElementById('kiosk-footer').style.backgroundColor = CONFIG_APP.footer_news.colore_sfondo;
+            }
+            if (CONFIG_APP.footer_news.colore_btn) {
+                document.getElementById('news-hub-btn').style.backgroundColor = CONFIG_APP.footer_news.colore_btn;
+            } else {
+                document.getElementById('news-hub-btn').style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
             
             const alertBox = document.getElementById('alert-box');
@@ -780,7 +828,14 @@
             const wrapper = document.getElementById('ticker-wrapper');
             clearInterval(tickerInterval);
             
-            if (notizieCorrenti.length === 0) {
+            const notizieFiltrate = notizieCorrenti.filter(n => {
+                if (newsPreferences[n.fonte] !== undefined) {
+                    return newsPreferences[n.fonte];
+                }
+                return n.visibile !== false;
+            });
+            
+            if (notizieFiltrate.length === 0) {
                 wrapper.innerHTML = '';
                 return;
             }
@@ -790,7 +845,7 @@
             const dimTesto = CONFIG_APP.footer_news.dimensione_testo || '1.15rem';
             
             if (stile === 'orizzontale') {
-                const testi = notizieCorrenti.map(n => {
+                const testi = notizieFiltrate.map(n => {
                     const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
                     return n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                 });
@@ -813,7 +868,7 @@
                         const htmlContenuto = n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                         divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
                         divVert.style.opacity = 1;
-                        indexVerticale = (indexVerticale + 1) % notizieCorrenti.length;
+                        indexVerticale = (indexVerticale + 1) % notizieFiltrate.length;
                     }, 500);
                 };
                 
@@ -1021,7 +1076,141 @@
                 console.log("Carosello disattivato da configurazione.");
             }
         });
-    </script>
+    
+        function openNewsHub() {
+            document.getElementById('news-hub-modal').style.display = 'flex';
+            
+            const fontiInfo = {};
+            notizieCorrenti.forEach(n => {
+                if (fontiInfo[n.fonte] === undefined) fontiInfo[n.fonte] = n.visibile !== false;
+            });
+            
+            const filterContainer = document.getElementById('news-filters-container');
+            filterContainer.innerHTML = '';
+            
+            Object.keys(fontiInfo).forEach(fonte => {
+                let isChecked = false;
+                if (newsPreferences[fonte] !== undefined) {
+                    isChecked = newsPreferences[fonte];
+                } else {
+                    isChecked = fontiInfo[fonte];
+                }
+                
+                const idCheck = `filter_${fonte.replace(/\s+/g, '_')}`;
+                
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <input type="checkbox" id="${idCheck}" ${isChecked ? 'checked' : ''} onchange="toggleNewsSource('${fonte}', this.checked)">
+                    <label for="${idCheck}" style="margin-left: 5px;">${fonte}</label>
+                `;
+                filterContainer.appendChild(div);
+            });
+            
+            renderNewsTable();
+        }
+
+        function closeNewsHub() {
+            document.getElementById('news-hub-modal').style.display = 'none';
+        }
+
+        function toggleNewsSource(fonte, isChecked) {
+            newsPreferences[fonte] = isChecked;
+            localStorage.setItem('newsPreferences', JSON.stringify(newsPreferences));
+            renderTicker();
+        }
+
+        let currentSortCol = null;
+        let currentSortDir = 1;
+
+        function sortNewsTable(col) {
+            if (currentSortCol === col) {
+                currentSortDir *= -1;
+            } else {
+                currentSortCol = col;
+                currentSortDir = 1;
+            }
+            
+            // Aggiorna icone freccia
+            const headers = {
+                'data': 'Data',
+                'fonte': 'Fonte',
+                'titolo': 'Titolo'
+            };
+            Object.keys(headers).forEach(k => {
+                const el = document.getElementById(`th-sort-${k}`);
+                if (el) {
+                    if (k === col) {
+                        el.innerText = headers[k] + (currentSortDir === 1 ? ' ▲' : ' ▼');
+                    } else {
+                        el.innerText = headers[k] + ' ↕';
+                    }
+                }
+            });
+
+            notizieCorrenti.sort((a, b) => {
+                let valA = a[col] || '';
+                let valB = b[col] || '';
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                
+                if (valA < valB) return -1 * currentSortDir;
+                if (valA > valB) return 1 * currentSortDir;
+                return 0;
+            });
+            renderNewsTable();
+        }
+
+        function renderNewsTable() {
+            const tbody = document.getElementById('news-table-body');
+            tbody.innerHTML = '';
+            notizieCorrenti.forEach(n => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid var(--border-color)';
+                const link = n.link ? `<a href="${n.link}" target="_blank" style="color: #58a6ff; text-decoration: none;">${n.titolo}</a>` : n.titolo;
+                tr.innerHTML = `
+                    <td style="padding: 10px; white-space: nowrap;">${n.data || '-'}</td>
+                    <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${n.fonte}</span></td>
+                    <td style="padding: 10px;">${link}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+</script>
+    <!-- News Hub Modal -->
+    <div id="news-hub-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>News Hub & Preferenze</h2>
+                <button class="close-btn" onclick="closeNewsHub()">×</button>
+            </div>
+            
+            <div class="panel" style="margin-top: 15px;">
+                <h3 style="margin-top: 0;">Filtri Fonti</h3>
+                <p class="help-text">Seleziona quali fonti mostrare nel nastro scorrevole su questo dispositivo. Le preferenze vengono salvate nel browser corrente.</p>
+                <div id="news-filters-container" style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <!-- Checkboxes inseriti dinamicamente via JS -->
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3 style="margin-top: 0;">News disponibili</h3>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary);">
+                        <thead style="position: sticky; top: 0; background-color: #161b22; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;">
+                            <tr>
+                                <th onclick="sortNewsTable('data')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-data">Data ↕</th>
+                                <th onclick="sortNewsTable('fonte')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-fonte">Fonte ↕</th>
+                                <th onclick="sortNewsTable('titolo')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-titolo">Titolo ↕</th>
+                            </tr>
+                        </thead>
+                        <tbody id="news-table-body">
+                            <!-- Righe inserite dinamicamente -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

@@ -2,7 +2,7 @@
 
 *Sviluppato per l'Università di Pavia (UNIPV)*
 
-**Versione:** 4.5 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
+**Versione:** 4.6 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
 
 ---
 
@@ -33,7 +33,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 | **Reattività Modifiche** | Riavvio fisico del Kiosk necessario | **Hot-Reload automatico in tempo reale senza interruzioni** |
 | **Ticker Notizie / Locandine** | Assente | **Sì, integrabile con RSS/REST, ampiamente personalizzabile** |
 | **Stati eventi UPlanner** | Mostra sempre solo P (Pubblicati) e C (Confermati), indisponibilità appaiono come "Attività Programmata" | **Mostra P (Pubblicati), C (Confermati), eventi Confermati sono disattivabili dalla vista, flagga eventi A (Annullati) come Annullati automaticamente, i pallini P e C sono visibili accanto al nome o disattivabili, gestisce le Indisponibilità mostrando il nome corretto** |
-| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.5)** |
+| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.6)** |
 ---
 
 <br>
@@ -47,6 +47,12 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 ---
 
 # Changelog
+
+## [v4.6] - News Hub interattivo, Multi-Fonti e Fix Backend
+Questa release introduce un'esperienza di consultazione delle notizie profondamente migliorata e risolve alcune criticità di salvataggio.
+* **News Hub Modale:** Aggiunto un pulsante flottante `+` (con restyling in formato "pillola" SVG) così da permettere a chi accede da browser di aprire una finestra interattiva dove consultare tutte le notizie scaricate in una comoda tabella ordinabile alfabeticamente e per data (con frecce dinamiche ▲ / ▼).
+* **Fonti Espansive e Peso:** Il sistema supporta ora l'immissione di fino a 6 fonti distinte contemporaneamente tramite il file YAML o dal pannello Admin. È stato aggiunto il parametro `peso` (da 1 a 5) per far apparire più o meno frequentemente una specifica fonte all'interno del nastro scorrevole.
+* **Preferenze Locali (LocalStorage):** Gli utenti che accedono da PC o Smartphone possono disattivare alcune fonti news per la loro sessione locale. Le preferenze vengono salvate nel browser tramite LocalStorage senza impattare il totem pubblico, che continuerà a seguire le regole `visibile_di_default` dettate dall'amministratore.
 
 ## [v4.5] - Parametri Dinamici, UI Fixing e Scrolling Invisibile
 Questa release rende l'applicazione completamente svincolata da parametri hardcoded, potenziando il limite di eventi caricati e raffinando il comportamento dell'interfaccia sia su schermi enormi che su smartphone.

@@ -442,6 +442,10 @@
                     <label for="fn_colore_sfondo" style="margin: 0; min-width: 150px;">Colore Sfondo</label>
                     <input type="color" id="fn_colore_sfondo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
                 </div>
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <label for="fn_colore_btn" style="margin: 0; min-width: 150px;">Colore Tasto (+)</label>
+                    <input type="color" id="fn_colore_btn" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                </div>
                 <div class="form-group">
                     <label for="fn_dimensione_testo">Dimensione Testo</label>
                     <input type="text" id="fn_dimensione_testo" placeholder="Es. 1.15rem">
@@ -459,73 +463,8 @@
                 </div>
 
                 <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                <p class="panel-description">Fonti per il recupero delle notizie (lascia URL vuoto per disabilitare una fonte).</p>
-
-                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
-                    <div class="form-group form-group-checkbox">
-                        <input type="checkbox" id="fn_f1_abilitata">
-                        <label for="fn_f1_abilitata">Attiva Fonte 1</label>
-                    </div>
-                    <div class="form-group">
-                        <label>Nome Fonte 1</label>
-                        <input type="text" id="fn_f1_nome">
-                    </div>
-                    <div class="form-group">
-                        <label>Indirizzo Web (URL)</label>
-                        <input type="text" id="fn_f1_url">
-                    </div>
-                    <div class="form-group">
-                        <label>Formato Dati</label>
-                        <select id="fn_f1_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                            <option value="rss">Feed RSS (XML)</option>
-                            <option value="rest">REST API (JSON WordPress/Drupal)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
-                    <div class="form-group form-group-checkbox">
-                        <input type="checkbox" id="fn_f2_abilitata">
-                        <label for="fn_f2_abilitata">Attiva Fonte 2</label>
-                    </div>
-                    <div class="form-group">
-                        <label>Nome Fonte 2</label>
-                        <input type="text" id="fn_f2_nome">
-                    </div>
-                    <div class="form-group">
-                        <label>Indirizzo Web (URL)</label>
-                        <input type="text" id="fn_f2_url">
-                    </div>
-                    <div class="form-group">
-                        <label>Formato Dati</label>
-                        <select id="fn_f2_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                            <option value="rss">Feed RSS (XML)</option>
-                            <option value="rest">REST API (JSON WordPress/Drupal)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px;">
-                    <div class="form-group form-group-checkbox">
-                        <input type="checkbox" id="fn_f3_abilitata">
-                        <label for="fn_f3_abilitata">Attiva Fonte 3</label>
-                    </div>
-                    <div class="form-group">
-                        <label>Nome Fonte 3</label>
-                        <input type="text" id="fn_f3_nome">
-                    </div>
-                    <div class="form-group">
-                        <label>Indirizzo Web (URL)</label>
-                        <input type="text" id="fn_f3_url">
-                    </div>
-                    <div class="form-group">
-                        <label>Formato Dati</label>
-                        <select id="fn_f3_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                            <option value="rss">Feed RSS (XML)</option>
-                            <option value="rest">REST API (JSON WordPress/Drupal)</option>
-                        </select>
-                    </div>
-                </div>
+                <p class="panel-description">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga.</p>
+                <div id="fonti_container"></div>
             </div>
 
             <div class="buttons-row">
@@ -652,28 +591,55 @@
             document.getElementById('fn_velocita').value = fn.velocita || 50;
             document.getElementById('fn_colore_testo').value = fn.colore_testo || '#c9d1d9';
             document.getElementById('fn_colore_sfondo').value = fn.colore_sfondo || '#161b22';
+            document.getElementById('fn_colore_btn').value = fn.colore_btn || '#30363d';
             document.getElementById('fn_dimensione_testo').value = fn.dimensione_testo || '1.15rem';
             document.getElementById('fn_alert_attivo').checked = fn.alert_fisso_attivo || false;
             document.getElementById('fn_alert_testo').value = fn.alert_testo || '';
             
             const fonti = fn.fonti || [];
-            if (fonti[0]) {
-                document.getElementById('fn_f1_abilitata').checked = fonti[0].abilitata !== false;
-                document.getElementById('fn_f1_nome').value = fonti[0].nome || '';
-                document.getElementById('fn_f1_url').value = fonti[0].url || '';
-                document.getElementById('fn_f1_tipo').value = fonti[0].tipo || 'rss';
-            }
-            if (fonti[1]) {
-                document.getElementById('fn_f2_abilitata').checked = fonti[1].abilitata !== false;
-                document.getElementById('fn_f2_nome').value = fonti[1].nome || '';
-                document.getElementById('fn_f2_url').value = fonti[1].url || '';
-                document.getElementById('fn_f2_tipo').value = fonti[1].tipo || 'rss';
-            }
-            if (fonti[2]) {
-                document.getElementById('fn_f3_abilitata').checked = fonti[2].abilitata !== false;
-                document.getElementById('fn_f3_nome').value = fonti[2].nome || '';
-                document.getElementById('fn_f3_url').value = fonti[2].url || '';
-                document.getElementById('fn_f3_tipo').value = fonti[2].tipo || 'rss';
+            const container = document.getElementById('fonti_container');
+            container.innerHTML = '';
+            for (let i = 0; i < 6; i++) {
+                const f = fonti[i] || { abilitata: false, nome: '', url: '', tipo: 'rss', visibile_di_default: true, peso: 1 };
+                const html = `
+                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
+                        <h4 style="margin-top:0; color:var(--text-secondary);">Fonte ${i + 1}</h4>
+                        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                            <div class="form-group form-group-checkbox" style="margin-bottom:0;">
+                                <input type="checkbox" id="fn_f${i}_abilitata" ${f.abilitata !== false ? 'checked' : ''}>
+                                <label for="fn_f${i}_abilitata">Abilitata (Scarica news)</label>
+                            </div>
+                            <div class="form-group form-group-checkbox" style="margin-bottom:0;">
+                                <input type="checkbox" id="fn_f${i}_visibile" ${f.visibile_di_default !== false ? 'checked' : ''}>
+                                <label for="fn_f${i}_visibile">Visibile di default sul Kiosk</label>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Nome Fonte</label>
+                                <input type="text" id="fn_f${i}_nome" value="${f.nome || ''}">
+                            </div>
+                            <div class="form-group" style="flex: 2;">
+                                <label>URL</label>
+                                <input type="text" id="fn_f${i}_url" value="${f.url || ''}">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 5px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Formato Dati</label>
+                                <select id="fn_f${i}_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; width: 100%;">
+                                    <option value="rss" ${f.tipo === 'rss' ? 'selected' : ''}>Feed RSS (XML)</option>
+                                    <option value="rest" ${f.tipo === 'rest' ? 'selected' : ''}>REST API (JSON)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label title="Valore da 1 a 5. Determina quante volte ripetere le news di questa fonte (es. 5 = priorità massima, mostrate più spesso).">Peso (1-5) ℹ️</label>
+                                <input type="number" id="fn_f${i}_peso" min="1" max="5" value="${f.peso || 1}" style="width:100%; padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
             }
         }
 
@@ -738,29 +704,18 @@
                     velocita: parseInt(document.getElementById('fn_velocita').value) || 50,
                     colore_testo: document.getElementById('fn_colore_testo').value,
                     colore_sfondo: document.getElementById('fn_colore_sfondo').value,
+                    colore_btn: document.getElementById('fn_colore_btn').value,
                     dimensione_testo: document.getElementById('fn_dimensione_testo').value,
                     alert_fisso_attivo: document.getElementById('fn_alert_attivo').checked,
                     alert_testo: document.getElementById('fn_alert_testo').value,
-                    fonti: [
-                        {
-                            abilitata: document.getElementById('fn_f1_abilitata').checked,
-                            nome: document.getElementById('fn_f1_nome').value,
-                            url: document.getElementById('fn_f1_url').value,
-                            tipo: document.getElementById('fn_f1_tipo').value
-                        },
-                        {
-                            abilitata: document.getElementById('fn_f2_abilitata').checked,
-                            nome: document.getElementById('fn_f2_nome').value,
-                            url: document.getElementById('fn_f2_url').value,
-                            tipo: document.getElementById('fn_f2_tipo').value
-                        },
-                        {
-                            abilitata: document.getElementById('fn_f3_abilitata').checked,
-                            nome: document.getElementById('fn_f3_nome').value,
-                            url: document.getElementById('fn_f3_url').value,
-                            tipo: document.getElementById('fn_f3_tipo').value
-                        }
-                    ]
+                    fonti: Array.from({length: 6}).map((_, i) => ({
+                            abilitata: document.getElementById(`fn_f${i}_abilitata`).checked,
+                            nome: document.getElementById(`fn_f${i}_nome`).value.trim(),
+                            url: document.getElementById(`fn_f${i}_url`).value.trim(),
+                            tipo: document.getElementById(`fn_f${i}_tipo`).value,
+                            visibile_di_default: document.getElementById(`fn_f${i}_visibile`).checked,
+                            peso: parseInt(document.getElementById(`fn_f${i}_peso`).value) || 1
+                        }))
                 }
             };
 
