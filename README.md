@@ -2,7 +2,7 @@
 
 *Sviluppato per l'Università di Pavia (UNIPV)*
 
-**Versione:** 4.6 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
+**Versione:** 4.7 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
 
 ---
 
@@ -33,7 +33,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 | **Reattività Modifiche** | Riavvio fisico del Kiosk necessario | **Hot-Reload automatico in tempo reale senza interruzioni** |
 | **Ticker Notizie / Locandine** | Assente | **Sì, integrabile con RSS/REST, ampiamente personalizzabile** |
 | **Stati eventi UPlanner** | Mostra sempre solo P (Pubblicati) e C (Confermati), indisponibilità appaiono come "Attività Programmata" | **Mostra P (Pubblicati), C (Confermati), eventi Confermati sono disattivabili dalla vista, flagga eventi A (Annullati) come Annullati automaticamente, i pallini P e C sono visibili accanto al nome o disattivabili, gestisce le Indisponibilità mostrando il nome corretto** |
-| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.6)** |
+| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.7)** |
 ---
 
 <br>
@@ -47,6 +47,11 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 ---
 
 # Changelog
+
+## [v4.7] - Guida Porta HTTP 80, Integrazione Rete e Sicurezza Avvio Kiosk
+Questa release semplifica l'accesso alla dashboard tramite porta standard (`80`) e previene disallineamenti di porta all'avvio del chiosco.
+* **Guida Porta HTTP Standard (80):** Aggiunta sezione dedicata nel README della Versione 2 con tre metodologie (Port Redirection con `iptables`, Capability Linux `setcap`, e Reverse Proxy `nginx`) per accedere al totem via IP o DNS senza specificare la porta `:8080`.
+* **Sincronizzazione Porta e `~/.xinitrc`:** Introdotto promemoria critico nella documentazione e nell'interfaccia di amministrazione web (`admin.html`) per ricordare di allineare l'URL del comando Chromium in `~/.xinitrc` ogni volta che viene modificata la porta server locale, prevenendo schermate di errore `ERR_CONNECTION_REFUSED` sul monitor fisico del Kiosk.
 
 ## [v4.6] - News Hub interattivo, Multi-Fonti e Fix Backend
 Questa release introduce un'esperienza di consultazione delle notizie profondamente migliorata e risolve alcune criticità di salvataggio.

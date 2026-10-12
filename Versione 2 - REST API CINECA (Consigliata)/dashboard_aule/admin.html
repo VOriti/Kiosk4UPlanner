@@ -298,7 +298,8 @@
                 <div class="form-group">
                     <label for="porta_server">Porta Server Locale</label>
                     <input type="number" id="porta_server" placeholder="es. 8080">
-                    <p class="help-text">La porta su cui il server è in ascolto (modifica effettiva solo al riavvio).
+                    <p class="help-text">La porta su cui il server è in ascolto (modifica effettiva solo al riavvio).<br>
+                        <strong style="color: #f85149;">⚠️ IMPORTANTE:</strong> Se cambi porta, aggiorna manualmente anche l'URL nell'ultima riga di <code>~/.xinitrc</code> sul Raspberry Pi, altrimenti il Kiosk fisico mostrerà errore all'avvio. Per usare la porta 80 vedi la sezione dedicata nel README per i permessi Linux.
                     </p>
                 </div>
             </div>

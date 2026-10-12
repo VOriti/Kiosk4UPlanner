@@ -51,6 +51,7 @@ In questa sezione ti guideremo passo-passo attraverso le seguenti fasi:
 4. **Configurazione Base:** Inserimento delle credenziali per collegarsi alle API di CINECA.
 5. **Personalizzazione Grafica:** Utilizzo del Pannello di Amministrazione web.
 6. **Riavvio e Spegnimento:** Impostazione dei cronjob per salvaguardare il dispositivo spegnendolo automaticamente ad una certa ora (e riaccendendolo ad un'altra).
+7. **Uso della Porta 80 (Opzionale):** Come evitare di dover inserire la porta nell'URL.
 
 #### 1. Requisiti e Dipendenze (Raspberry Pi OS Lite)
 Oltre all'ambiente grafico base, per questa versione sono necessarie alcune librerie Python per le chiamate HTTP e la lettura dei file di configurazione (YAML).
@@ -161,6 +162,73 @@ Il sistema ora si spegnerà in modo sicuro ogni giorno all'orario stabilito, pre
 
 **Modalità avanzata: RTC (Real-Time Clock)**
 Su alcune board avanzate, come il Pi 5, è possibile installare un modulo RTC (Real-Time Clock) hardware per gestire oltre allo spegnimento, anche un riavvio ad un determinato orario, evitando del tutto l'uso della ciabatta. Ci sono molte guide su come farlo online.
+
+#### 7. Come usare la porta 80 per evitare di dover inserire [IP]:[porta]
+
+Di default il server risponde sulla porta `8080` (es. `http://192.168.1.50:8080` o `http://totem.unipv.it:8080`). Se desideri che gli utenti possano accedere digitando unicamente l'indirizzo IP o il nome DNS (es. `http://192.168.1.50` o `http://totem.unipv.it`), è necessario utilizzare la porta HTTP standard `80`.
+
+Su Linux tutte le porte inferiori alla 1024 sono **porte privilegiate** riservate all'utente `root`: se si imposta semplicemente la porta `80` in `config.yaml` senza i permessi necessari, il server Python fallirà l'avvio con l'errore `PermissionError: [Errno 13] Permission denied`, causando un errore `ERR_CONNECTION_REFUSED` nel browser.
+
+Per abilitare la porta 80 sono disponibili tre metodi:
+
+* **Metodo 1 (Consigliato): Port Redirection con `iptables`**  
+  È il metodo più pulito e consigliato: il server Python rimane in ascolto sulla porta non privilegiata `8080` (senza toccare permessi di sistema), mentre il firewall del kernel Linux reindirizza in modo trasparente tutto il traffico in arrivo sulla porta 80 verso la porta 8080.
+  1. Mantieni `porta_server: 8080` nel file `config.yaml` (o nel pannello `/admin`).
+  2. Sul terminale del Raspberry Pi, applica la regola di redirezione:
+     ```bash
+     sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080
+     ```
+  3. Rendi persistente la regola anche dopo i riavvii della scheda:
+     ```bash
+     sudo apt install iptables-persistent -y
+     sudo netfilter-persistent save
+     ```
+  > **Vantaggio:** Funzionano contemporaneamente sia `http://[IP]` sia `http://[IP]:8080`, e **non è necessario modificare** lo script `~/.xinitrc`.
+
+* **Metodo 2: Assegnazione Capability a Python (`setcap`)**  
+  Se preferisci che Python si metta direttamente in ascolto sulla porta 80, puoi concedere all'eseguibile di Python la capability Linux `CAP_NET_BIND_SERVICE`, che gli permette di aprire porte privilegiate anche se eseguito come utente standard.
+  1. Dal terminale del Raspberry Pi, esegui:
+     ```bash
+     sudo setcap 'cap_net_bind_service=+ep' $(readlink -f $(which python3))
+     ```
+  2. Modifica la porta impostando `porta_server: 80` all'interno di `config.yaml` o dalla sezione *Rete e Sicurezza* del pannello `/admin`.
+  3. ⚠️ **Aggiorna `~/.xinitrc`:** Modifica l'ultima riga del file `~/.xinitrc` per far puntare Chromium alla nuova porta:
+     ```bash
+     # Sostituisci http://localhost:8080/remoto.html con:
+     exec chromium --noerrdialogs --disable-infobars --kiosk --start-fullscreen --incognito http://localhost/remoto.html
+     ```
+  4. Riavvia la board con `sudo reboot`.
+
+* **Metodo 3: Reverse Proxy con Nginx (Ambienti di Rete Strutturati)**  
+  Se il Raspberry risiede in una rete universitaria o d'ufficio complessa, la soluzione di livello Enterprise consiste nell'installare **Nginx** sulla porta 80 e fargli inoltrare le richieste verso Python (che rimane sulla `8080`). Questo approccio è ideale anche se in futuro vorrai aggiungere la crittografia HTTPS con certificato SSL d'Ateneo.
+  1. Installa Nginx:
+     ```bash
+     sudo apt install nginx -y
+     ```
+  2. Modifica la configurazione del sito predefinito (`sudo nano /etc/nginx/sites-available/default`) impostando il proxy pass nel blocco `location /`:
+     ```nginx
+     server {
+         listen 80;
+         server_name _;
+
+         location / {
+             proxy_pass http://127.0.0.1:8080;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         }
+     }
+     ```
+  3. Riavvia Nginx:
+     ```bash
+     sudo systemctl restart nginx
+     ```
+
+> ⚠️ **REGOLA D'ORO PER IL CAMBIO PORTA E `~/.xinitrc`:**  
+> Qualsiasi sia la nuova porta scelta (sia la `80`, sia una porta alternativa come `12345`), ricordati che **se cambi la porta in `config.yaml` o su `/admin`, devi SEMPRE aggiornarla anche nell'ultima riga del file `~/.xinitrc`** (es. `http://localhost:12345/remoto.html`).  
+> Se ti dimentichi di farlo, il server Python funzionerà, ma il monitor fisico del totem mostrerà una schermata bianca di errore `ERR_CONNECTION_REFUSED` perché continuerà a cercare la vecchia porta `8080`.  
+> *(L'unica eccezione è il Metodo 1 con `iptables`, dove la porta interna resta 8080 e non richiede modifiche a `~/.xinitrc`).*
+
 
 ### 💾 Gestione Stato e Persistenza
 Il sistema genera automaticamente il file `stato_impegni.json` nella cartella di progetto.
