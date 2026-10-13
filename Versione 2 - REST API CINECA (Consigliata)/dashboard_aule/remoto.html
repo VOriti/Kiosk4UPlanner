@@ -8,30 +8,37 @@
 
     <script>
         let CONFIG_APP = {};
+        let configCaricataDaServer = false;
 
         async function fetchConfigPubblica() {
             try {
-                const response = await fetch('/config_pubblica');
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const response = await fetch('/config_pubblica', { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if (!response.ok) throw new Error("Errore config_pubblica");
                 const newConfig = await response.json();
-                if (Object.keys(CONFIG_APP).length > 0 && JSON.stringify(CONFIG_APP) !== JSON.stringify(newConfig)) {
+                if (configCaricataDaServer && Object.keys(CONFIG_APP).length > 0 && JSON.stringify(CONFIG_APP) !== JSON.stringify(newConfig)) {
                     window.location.reload();
                     return;
                 }
                 CONFIG_APP = newConfig;
+                configCaricataDaServer = true;
             } catch (e) {
-                console.error("Impossibile caricare configurazione, utilizzo fallback:", e);
-                CONFIG_APP = {
-                    titoloSede: "Impegni Aule",
-                    urlLogo: "/logo.png",
-                    intervalloAggiornamento: 5000,
-                    messaggioNessunaLezione: "Nessun impegno programmato.",
-                    messaggioErroreRete: "Connessione API persa.",
-                    pausaTraCaroselli: 180000,
-                    esposizioneLocandina: 10000,
-                    mostraStatoPC: true,
-                    caroselloAttivo: true
-                };
+                console.warn("Impossibile caricare configurazione, utilizzo fallback:", e);
+                if (!configCaricataDaServer) {
+                    CONFIG_APP = {
+                        titoloSede: "Impegni Aule",
+                        urlLogo: "/logo.png",
+                        intervalloAggiornamento: 5000,
+                        messaggioNessunaLezione: "Nessun impegno programmato.",
+                        messaggioErroreRete: "Connessione persa col Server API. Tentativo di riconnessione...",
+                        pausaTraCaroselli: 180000,
+                        esposizioneLocandina: 10000,
+                        mostraStatoPC: true,
+                        caroselloAttivo: true
+                    };
+                }
             }
         }
     
@@ -114,12 +121,22 @@
             overflow: hidden;
         }
 
+        .colonna-sezione {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
+        }
+
         .colonna-scroll {
             display: flex;
             flex-direction: column;
             gap: 12px;
             overflow-y: auto;
-            height: 100%;
+            flex-grow: 1;
+            min-height: 0;
+            scrollbar-width: none;
         }
 
         .colonna-scroll::-webkit-scrollbar {
@@ -131,11 +148,16 @@
             font-size: 1.3rem;
             color: var(--colore-testo-secondario);
             border-bottom: 2px solid #30363d;
+            padding-top: 4px;
             padding-bottom: 8px;
             margin-top: 0;
-            margin-bottom: 5px;
+            margin-bottom: 12px;
             text-transform: uppercase;
             flex-shrink: 0;
+            position: sticky;
+            top: 0;
+            background-color: var(--colore-sfondo);
+            z-index: 10;
         }
 
         .card {
@@ -456,6 +478,7 @@
 
             #kiosk-footer {
                 flex-direction: column;
+                min-height: auto;
                 padding: 0;
             }
 
@@ -468,13 +491,59 @@
                 margin: 0;
             }
 
-            #ticker-wrapper {
+            #ticker-row {
                 width: 100%;
+                height: 48px;
+                display: flex;
+                align-items: center;
+                box-sizing: border-box;
+                padding: 0 38px 0 8px;
+            }
+
+            #settings-hub-btn {
+                position: static !important;
+                margin: 0 8px 0 0 !important;
+                padding: 4px !important;
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #ticker-wrapper {
+                flex: 1;
+                min-width: 0;
+                height: 100%;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .ticker-verticale {
+                font-size: 0.90rem !important;
+                line-height: 1.25;
+                padding: 0 !important;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-height: 40px;
+            }
+
+            .ticker-orizzontale {
+                font-size: 0.95rem !important;
             }
 
             .layout-colonne {
                 grid-template-columns: minmax(0, 1fr);
                 gap: 20px;
+                overflow: visible;
+            }
+
+            .colonna-sezione {
+                height: auto;
                 overflow: visible;
             }
 
@@ -624,6 +693,14 @@
             align-self: stretch;
         }
 
+        #ticker-row {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+            height: 100%;
+        }
+
         #ticker-wrapper {
             flex-grow: 1;
             overflow: hidden;
@@ -666,12 +743,15 @@
             align-items: center;
             justify-content: center;
             backdrop-filter: blur(5px);
+            padding: 10px;
+            box-sizing: border-box;
         }
         .modal-content {
-            background: var(--bg-base);
-            border: 1px solid var(--border-color);
+            background: #161b22;
+            border: 1px solid #30363d;
             border-radius: 12px;
             width: 90%;
+            max-width: 800px;
             max-height: 90vh;
             display: flex;
             flex-direction: column;
@@ -679,21 +759,79 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
         .modal-header {
-            padding: 15px 20px;
-            border-bottom: 1px solid var(--border-color);
+            padding: 14px 20px;
+            border-bottom: 1px solid #30363d;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #161b22;
+            background: #1c2128;
+            flex-shrink: 0;
         }
-        .modal-header h2 { margin: 0; font-size: 1.5rem; }
+        .modal-header h2 { margin: 0; font-size: 1.35rem; color: #58a6ff; }
         .close-btn {
-            background: none; border: none; color: var(--text-primary);
-            font-size: 2rem; cursor: pointer; padding: 0 10px;
+            background: none; border: none; color: #c9d1d9;
+            font-size: 1.8rem; cursor: pointer; padding: 0 8px; line-height: 1;
         }
         .close-btn:hover { color: #f85149; }
-        .panel { padding: 20px; }
-        .help-text { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px; }
+        .modal-body {
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0;
+            padding: 15px 20px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .panel {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 16px 18px;
+            box-sizing: border-box;
+        }
+        .help-text { color: #8b949e; font-size: 0.88rem; margin-bottom: 12px; line-height: 1.4; }
+        .news-table-wrapper {
+            overflow-y: auto;
+            overflow-x: auto;
+            max-height: 380px;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            -webkit-overflow-scrolling: touch;
+        }
+        @media (max-width: 768px) {
+            .modal-content {
+                width: 96%;
+                max-height: 94vh;
+                border-radius: 10px;
+            }
+            .modal-header {
+                padding: 10px 14px;
+            }
+            .modal-header h2 {
+                font-size: 1.1rem;
+            }
+            .modal-body {
+                padding: 10px 10px 15px;
+                gap: 10px;
+            }
+            .panel {
+                padding: 12px;
+                border-radius: 6px;
+            }
+            .help-text {
+                font-size: 0.8rem;
+                margin-bottom: 8px;
+                line-height: 1.35;
+            }
+            .news-table-wrapper {
+                max-height: 48vh;
+            }
+            #news-hub-modal table th, #news-hub-modal table td {
+                padding: 8px 6px !important;
+                font-size: 0.82rem !important;
+            }
+        }
     </style>
 </head>
 
@@ -762,24 +900,20 @@
                 </svg>
                 <span id="nome-autore" style="font-weight:600;"></span>
             </a>
-            <span style="opacity:0.3">|</span>
-            <a id="toggle-locandine" href="#" style="cursor: pointer;" data-tooltip="Attiva o disattiva le locandine solo su questo dispositivo">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                    <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-                <span id="testo-toggle-locandine">Locandine: ON</span>
-            </a>
         </div>
     </div>
 
     <div id="kiosk-footer">
         <div id="alert-box"></div>
-        <div id="news-hub-btn" onclick="openNewsHub()" style="cursor: pointer; padding: 5px 15px; margin: 8px 10px; border-radius: 6px; color: var(--text-primary); transition: filter 0.2s; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.filter='brightness(1.5)'" onmouseout="this.style.filter='none'" title="News Hub">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        <div id="ticker-row">
+            <div id="settings-hub-btn" onclick="openSettingsHub()" style="cursor: pointer; padding: 5px 15px; margin: 8px 10px; border-radius: 6px; color: var(--text-primary); transition: filter 0.2s; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.filter='brightness(1.5)'" onmouseout="this.style.filter='none'" title="Preferenze Dashboard">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </div>
+            <div id="ticker-wrapper"></div>
         </div>
-        <div id="ticker-wrapper"></div>
     </div>
 
     <script>
@@ -799,10 +933,13 @@
             if (CONFIG_APP.footer_news.colore_sfondo) {
                 document.getElementById('kiosk-footer').style.backgroundColor = CONFIG_APP.footer_news.colore_sfondo;
             }
-            if (CONFIG_APP.footer_news.colore_btn) {
-                document.getElementById('news-hub-btn').style.backgroundColor = CONFIG_APP.footer_news.colore_btn;
-            } else {
-                document.getElementById('news-hub-btn').style.backgroundColor = 'rgba(255,255,255,0.1)';
+            const hubBtn = document.getElementById('settings-hub-btn') || document.getElementById('news-hub-btn');
+            if (hubBtn) {
+                if (CONFIG_APP.footer_news.colore_btn) {
+                    hubBtn.style.backgroundColor = CONFIG_APP.footer_news.colore_btn;
+                } else {
+                    hubBtn.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }
             }
             
             const alertBox = document.getElementById('alert-box');
@@ -863,7 +1000,7 @@
                 const mostraProssima = () => {
                     divVert.style.opacity = 0;
                     setTimeout(() => {
-                        const n = notizieCorrenti[indexVerticale];
+                        const n = notizieFiltrate[indexVerticale];
                         const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
                         const htmlContenuto = n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                         divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
@@ -913,17 +1050,23 @@
         }
 
         let eraOffline = false;
+        let erroriConsecutivi = 0;
+        let datiCaricatiAlmenoUnaVolta = false;
+
         async function scaricaDatiServerLocale() {
             const dashboard = document.getElementById('dashboard');
             try {
-                const risposta = await fetch('/dati.json');
-                if (!risposta.ok) throw new Error('Errore HTTP');
-                
-                if (eraOffline) {
-                    window.location.reload();
-                    return;
-                }
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const risposta = await fetch('/dati.json', { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!risposta.ok) throw new Error('Errore HTTP ' + risposta.status);
                 const datiAule = await risposta.json();
+
+                erroriConsecutivi = 0;
+                eraOffline = false;
+                datiCaricatiAlmenoUnaVolta = true;
 
                 if (!datiAule || datiAule.length === 0) {
                     dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
@@ -941,13 +1084,17 @@
 
                 const nuovoLayout = `
                     <div class="layout-colonne">
-                        <div class="colonna-scroll">
+                        <div class="colonna-sezione">
                             <h2 class="titolo-colonna">In Corso</h2>
-                            ${htmlInCorso}
+                            <div class="colonna-scroll">
+                                ${htmlInCorso}
+                            </div>
                         </div>
-                        <div class="colonna-scroll">
+                        <div class="colonna-sezione">
                             <h2 class="titolo-colonna">Prossimi Eventi</h2>
-                            ${htmlFuturi}
+                            <div class="colonna-scroll">
+                                ${htmlFuturi}
+                            </div>
                         </div>
                     </div>
                 `;
@@ -956,19 +1103,24 @@
                     dashboard.innerHTML = nuovoLayout;
                 }
             } catch (errore) {
-                eraOffline = true;
-                dashboard.innerHTML = `
-                    <div class="stato-sistema offline">
-                        <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <br>${CONFIG_APP.messaggioErroreRete}
-                    </div>
-                `;
+                erroriConsecutivi++;
+                console.warn("Errore scaricaDatiServerLocale:", errore);
+                // Non cancellare la schermata se abbiamo già dati visualizzati e l'errore è transitorio
+                if (!datiCaricatiAlmenoUnaVolta || erroriConsecutivi >= 4) {
+                    eraOffline = true;
+                    dashboard.innerHTML = `
+                        <div class="stato-sistema offline">
+                            <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            <br>${CONFIG_APP.messaggioErroreRete}
+                        </div>
+                    `;
+                }
             }
         }
 
         const advOverlay = document.getElementById('kiosk-adv');
         async function riproduciLocandine() {
-            if (localStorage.getItem('disabilita_locandine') === 'true') return;
+            if (!isLocandineActiveOnDevice()) return;
 
             const isLandscape = window.innerWidth > window.innerHeight;
             let immaginiValide = [];
@@ -1031,20 +1183,8 @@
                 document.getElementById('info-badge').classList.toggle('aperto');
             });
 
-            const toggleLocandine = document.getElementById('toggle-locandine');
-            const testoToggleLocandine = document.getElementById('testo-toggle-locandine');
-            function aggiornaUIToggleLocandine() {
-                const disabilitate = localStorage.getItem('disabilita_locandine') === 'true';
-                testoToggleLocandine.innerText = disabilitate ? "Locandine: OFF" : "Locandine: ON";
-                toggleLocandine.style.opacity = disabilitate ? "0.6" : "1";
-            }
-            aggiornaUIToggleLocandine();
-            toggleLocandine.addEventListener('click', (e) => {
-                e.preventDefault();
-                const disabilitate = localStorage.getItem('disabilita_locandine') === 'true';
-                localStorage.setItem('disabilita_locandine', !disabilitate);
-                aggiornaUIToggleLocandine();
-            });
+            // Inizializza lo stato delle locandine per il dispositivo
+            isLocandineActiveOnDevice();
 
             setInterval(() => {
                 document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -1076,37 +1216,114 @@
                 console.log("Carosello disattivato da configurazione.");
             }
         });
-    
-        function openNewsHub() {
+
+        function isKioskEnvironment() {
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const params = new URLSearchParams(window.location.search);
+            const isKioskFlag = params.has('kiosk') && params.get('kiosk') !== 'false' && params.get('kiosk') !== '0';
+            return isLocalhost || isKioskFlag;
+        }
+
+        function isLocandineActiveOnDevice() {
+            if (CONFIG_APP.caroselloAttivo === false) {
+                return false;
+            }
+            const savedPref = localStorage.getItem('disabilita_locandine');
+            if (savedPref !== null) {
+                return savedPref !== 'true';
+            }
+            return isKioskEnvironment();
+        }
+
+        function toggleLocandinePreference(attivo) {
+            localStorage.setItem('disabilita_locandine', attivo ? 'false' : 'true');
+            aggiornaUILocandineModal();
+        }
+
+        function aggiornaUILocandineModal() {
+            const isGlobalActive = CONFIG_APP.caroselloAttivo !== false;
+            const toggleEl = document.getElementById('pref_toggle_locandine');
+            const badgeEl = document.getElementById('locandine-badge-stato');
+            const noticeEl = document.getElementById('locandine-disabled-notice');
+            const containerEl = document.getElementById('locandine-control-container');
+
+            if (!toggleEl || !badgeEl) return;
+
+            if (!isGlobalActive) {
+                toggleEl.checked = false;
+                toggleEl.disabled = true;
+                if (containerEl) {
+                    containerEl.style.opacity = '0.5';
+                    containerEl.style.pointerEvents = 'none';
+                }
+                badgeEl.innerText = 'DISATTIVATE DALL\'ADMIN';
+                badgeEl.style.background = '#6e7681';
+                if (noticeEl) noticeEl.style.display = 'block';
+            } else {
+                toggleEl.disabled = false;
+                if (containerEl) {
+                    containerEl.style.opacity = '1';
+                    containerEl.style.pointerEvents = 'auto';
+                }
+                if (noticeEl) noticeEl.style.display = 'none';
+
+                const isActive = isLocandineActiveOnDevice();
+                toggleEl.checked = isActive;
+                if (isActive) {
+                    badgeEl.innerText = 'ATTIVE';
+                    badgeEl.style.background = '#238636';
+                } else {
+                    badgeEl.innerText = 'DISATTIVATE';
+                    badgeEl.style.background = '#da3633';
+                }
+            }
+        }
+
+        function openSettingsHub() {
             document.getElementById('news-hub-modal').style.display = 'flex';
+            aggiornaUILocandineModal();
             
             const fontiInfo = {};
+            if (CONFIG_APP.footer_news && Array.isArray(CONFIG_APP.footer_news.fonti)) {
+                CONFIG_APP.footer_news.fonti.forEach(f => {
+                    if (f && f.nome && f.nome.trim() !== '' && f.abilitata !== false) {
+                        fontiInfo[f.nome.trim()] = f.visibile_di_default !== false;
+                    }
+                });
+            }
             notizieCorrenti.forEach(n => {
-                if (fontiInfo[n.fonte] === undefined) fontiInfo[n.fonte] = n.visibile !== false;
+                if (n && n.fonte && fontiInfo[n.fonte] === undefined) {
+                    fontiInfo[n.fonte] = n.visibile !== false;
+                }
             });
             
             const filterContainer = document.getElementById('news-filters-container');
-            filterContainer.innerHTML = '';
-            
-            Object.keys(fontiInfo).forEach(fonte => {
-                let isChecked = false;
-                if (newsPreferences[fonte] !== undefined) {
-                    isChecked = newsPreferences[fonte];
-                } else {
-                    isChecked = fontiInfo[fonte];
-                }
-                
-                const idCheck = `filter_${fonte.replace(/\s+/g, '_')}`;
-                
-                const div = document.createElement('div');
-                div.innerHTML = `
-                    <input type="checkbox" id="${idCheck}" ${isChecked ? 'checked' : ''} onchange="toggleNewsSource('${fonte}', this.checked)">
-                    <label for="${idCheck}" style="margin-left: 5px;">${fonte}</label>
-                `;
-                filterContainer.appendChild(div);
-            });
+            if (filterContainer) {
+                filterContainer.innerHTML = '';
+                Object.keys(fontiInfo).forEach(fonte => {
+                    let isChecked = false;
+                    if (newsPreferences[fonte] !== undefined) {
+                        isChecked = newsPreferences[fonte];
+                    } else {
+                        isChecked = fontiInfo[fonte];
+                    }
+                    
+                    const conteggio = notizieCorrenti.filter(n => n.fonte === fonte).length;
+                    const idCheck = `filter_${fonte.replace(/\s+/g, '_')}`;
+                    const div = document.createElement('div');
+                    div.innerHTML = `
+                        <input type="checkbox" id="${idCheck}" ${isChecked ? 'checked' : ''} onchange="toggleNewsSource('${fonte}', this.checked)">
+                        <label for="${idCheck}" style="margin-left: 5px;">${fonte} <span style="font-size: 0.85em; opacity: 0.7;">(${conteggio})</span></label>
+                    `;
+                    filterContainer.appendChild(div);
+                });
+            }
             
             renderNewsTable();
+        }
+
+        function openNewsHub() {
+            openSettingsHub();
         }
 
         function closeNewsHub() {
@@ -1176,37 +1393,58 @@
             });
         }
 </script>
-    <!-- News Hub Modal -->
-    <div id="news-hub-modal" class="modal-overlay">
+    <!-- Preferenze & News Hub Modal -->
+    <div id="news-hub-modal" class="modal-overlay" onclick="if(event.target === this) closeNewsHub()">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
-                <h2>News Hub & Preferenze</h2>
-                <button class="close-btn" onclick="closeNewsHub()">×</button>
+                <h2>Preferenze Dashboard & News Hub</h2>
+                <button class="close-btn" onclick="closeNewsHub()" aria-label="Chiudi">&times;</button>
             </div>
             
-            <div class="panel" style="margin-top: 15px;">
-                <h3 style="margin-top: 0;">Filtri Fonti</h3>
-                <p class="help-text">Seleziona quali fonti mostrare nel nastro scorrevole su questo dispositivo. Le preferenze vengono salvate nel browser corrente.</p>
-                <div id="news-filters-container" style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <!-- Checkboxes inseriti dinamicamente via JS -->
+            <div class="modal-body">
+                <!-- Sezione Preferenze Locandine -->
+                <div class="panel">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <h3 style="margin: 0; font-size: 1.15rem;">Visualizzazione Locandine</h3>
+                        <span id="locandine-badge-stato" style="font-size: 0.75em; padding: 2px 8px; border-radius: 12px; font-weight: bold; background: #238636; color: #fff;">ATTIVE</span>
+                    </div>
+                    <p class="help-text" style="margin-top: 0;">Attiva o disattiva la riproduzione periodica a tutto schermo delle locandine informative ed avvisi su questo dispositivo.</p>
+                    
+                    <div id="locandine-control-container" style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="pref_toggle_locandine" onchange="toggleLocandinePreference(this.checked)" style="transform: scale(1.2); cursor: pointer;">
+                        <label for="pref_toggle_locandine" style="cursor: pointer; font-size: 0.95em;">Mostra locandine su questo schermo</label>
+                    </div>
+                    <div id="locandine-disabled-notice" style="display: none; margin-top: 8px; padding: 8px 12px; background: rgba(218, 54, 51, 0.15); border: 1px solid rgba(218, 54, 51, 0.4); border-radius: 6px; font-size: 0.85em; color: #f85149;">
+                        ⚠️ La riproduzione delle locandine è disattivata globalmente nelle impostazioni di sistema (/admin).
+                    </div>
                 </div>
-            </div>
 
-            <div class="panel">
-                <h3 style="margin-top: 0;">News disponibili</h3>
-                <div style="max-height: 400px; overflow-y: auto;">
-                    <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary);">
-                        <thead style="position: sticky; top: 0; background-color: #161b22; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;">
-                            <tr>
-                                <th onclick="sortNewsTable('data')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-data">Data ↕</th>
-                                <th onclick="sortNewsTable('fonte')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-fonte">Fonte ↕</th>
-                                <th onclick="sortNewsTable('titolo')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-titolo">Titolo ↕</th>
-                            </tr>
-                        </thead>
-                        <tbody id="news-table-body">
-                            <!-- Righe inserite dinamicamente -->
-                        </tbody>
-                    </table>
+                <!-- Sezione Filtri Fonti News -->
+                <div class="panel">
+                    <h3 style="margin-top: 0; font-size: 1.15rem;">Filtri Fonti News</h3>
+                    <p class="help-text" style="margin-top: 0;">Seleziona quali fonti mostrare nel nastro scorrevole su questo dispositivo. Le preferenze vengono salvate nel browser corrente.</p>
+                    <div id="news-filters-container" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 5px;">
+                        <!-- Checkboxes inseriti dinamicamente via JS -->
+                    </div>
+                </div>
+
+                <!-- Sezione Tabella News -->
+                <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                    <h3 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 10px;">News disponibili</h3>
+                    <div class="news-table-wrapper">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary); font-size: 0.9rem;">
+                            <thead style="position: sticky; top: 0; background-color: #161b22; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;">
+                                <tr>
+                                    <th onclick="sortNewsTable('data')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none; width: 85px;" id="th-sort-data">Data ↕</th>
+                                    <th onclick="sortNewsTable('fonte')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none; min-width: 110px;" id="th-sort-fonte">Fonte ↕</th>
+                                    <th onclick="sortNewsTable('titolo')" style="padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" id="th-sort-titolo">Titolo ↕</th>
+                                </tr>
+                            </thead>
+                            <tbody id="news-table-body">
+                                <!-- Righe inserite dinamicamente -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

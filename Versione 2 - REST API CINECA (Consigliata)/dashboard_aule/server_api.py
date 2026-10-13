@@ -10,8 +10,27 @@ import yaml
 import hashlib
 import ipaddress
 import secrets
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import socketserver
+import ssl
+
+try:
+    from http.server import ThreadingHTTPServer
+except ImportError:
+    class ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+class KioskHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Ignora disconnessioni fisiologiche dei client remoti o bot scanner internet
+        exc = sys.exception() if hasattr(sys, 'exception') else sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
 
 PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
 FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
@@ -40,6 +59,12 @@ sicurezza:
   admin_ip_autorizzati:
     - '127.0.0.1'
   password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+https:
+  abilitato: false
+  porta_https: 8443
+  file_certificato: 'cert.pem'
+  file_chiave: 'key.pem'
+  forza_redirect_http: false
 api_cineca:
   username: ''
   password: ''
@@ -91,6 +116,7 @@ def load_config():
             PERCORSO_BASE = pb
 
 load_config()
+server_https_attivo = False
 
 file_log = os.path.join(PERCORSO_BASE, CONFIG.get('main', {}).get('file_log', 'kiosk.log'))
 logging.basicConfig(
@@ -138,6 +164,7 @@ def salva_config_yaml(file_path=None, config_data=None):
     skip_list = False
     list_indent_len = 0
     seen_keys = set()
+    seen_secs = set()
     for line in lines:
         if skip_list:
             stripped = line.strip()
@@ -172,6 +199,7 @@ def salva_config_yaml(file_path=None, config_data=None):
                         elif not isinstance(v, dict):
                             out_lines.append(f"  {k}: {json.dumps(v)}\n")
             curr_sec = m_sec.group(1)
+            seen_secs.add(curr_sec)
             seen_keys = set()
             out_lines.append(line)
             continue
@@ -235,6 +263,22 @@ def salva_config_yaml(file_path=None, config_data=None):
                                 out_lines.append(f"      abilitata: {abilitata_str}\n")
                             else:
                                 out_lines.append(f"    - {json.dumps(item)}\n")
+                elif not isinstance(v, dict):
+                    out_lines.append(f"  {k}: {json.dumps(v)}\n")
+    for sec, sec_val in config_data.items():
+        if sec not in seen_secs and isinstance(sec_val, dict):
+            out_lines.append(f"\n{sec}:\n")
+            for k, v in sec_val.items():
+                if isinstance(v, bool):
+                    v_str = 'true' if v else 'false'
+                    out_lines.append(f"  {k}: {v_str}\n")
+                elif isinstance(v, list):
+                    if not v:
+                        out_lines.append(f"  {k}: []\n")
+                    else:
+                        out_lines.append(f"  {k}:\n")
+                        for item in v:
+                            out_lines.append(f"    - {json.dumps(item)}\n")
                 elif not isinstance(v, dict):
                     out_lines.append(f"  {k}: {json.dumps(v)}\n")
     with open(file_path, 'w', encoding='utf-8') as f:
@@ -433,7 +477,10 @@ def ciclo_aggiornamento_api():
                 payload["contestoId"] = contesto_id
 
             
-            logging.info(f"DEBUG: Richiesta impegni a {url_impegni}")
+            is_debug = bool(CONFIG.get('main', {}).get('debug_mode', False))
+            if is_debug:
+                logging.info(f"🕵️ DEBUG: Richiesta impegni a {url_impegni} (Payload: {payload})")
+            
             risposta = requests.post(url_impegni, json=payload, headers=headers, timeout=15)
             
             if risposta.status_code == 401:
@@ -443,8 +490,20 @@ def ciclo_aggiornamento_api():
                 continue
             elif risposta.status_code == 200:
                 dati_grezzi = risposta.json()
-                if CONFIG.get('main', {}).get('debug_mode', False):
+                if is_debug:
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")
+                    edifici_scoperti = set()
+                    for imp in dati_grezzi:
+                        for a in imp.get('aule', []):
+                            if isinstance(a, dict):
+                                ed = a.get('edificio', {})
+                                if isinstance(ed, dict) and ed.get('codice'):
+                                    desc = ed.get('descrizione') or 'Nessuna descrizione'
+                                    edifici_scoperti.add(f"Codice '{ed.get('codice')}': {desc}")
+                    if edifici_scoperti:
+                        logging.info(f"🕵️ DEBUG MAPPA EDIFICI RILEVATI ({len(edifici_scoperti)}): {sorted(list(edifici_scoperti))}")
+                    else:
+                        logging.info("🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.")
                 with lock_memoria:
                     memoria_dati = estrai_e_formatta_dati(dati_grezzi)
                 logging.info(f"✅ Dati ricevuti! Trovati {len(memoria_dati)} impegni.")
@@ -518,8 +577,14 @@ def NewsPollingDaemon():
                             date_elem = item.find('pubDate')
                             link = link_elem.text.strip() if link_elem is not None and link_elem.text else ''
                             data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
-                            if title is not None and title.text:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title.text), "link": link, "data": data, "visibile": visibile})
+                            
+                            titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
+                            if not link and title is not None:
+                                a_elem = title.find('.//a')
+                                if a_elem is not None and a_elem.get('href'):
+                                    link = a_elem.get('href')
+                            if titolo_raw:
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(titolo_raw), "link": link, "data": data, "visibile": visibile})
                 except Exception as e:
                     logging.error(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
                 
@@ -601,12 +666,32 @@ class KioskServer(BaseHTTPRequestHandler):
         return True
         
     def do_GET(self):
+        is_ssl = getattr(self.server, 'is_ssl', False)
+        https_cfg = CONFIG.get('https', {})
+        if not is_ssl and server_https_attivo and https_cfg.get('forza_redirect_http'):
+            host = self.headers.get('Host', '')
+            has_explicit_port = ':' in host
+            host_clean = host.split(':')[0] if host else 'localhost'
+            if host_clean not in ['localhost', '127.0.0.1']:
+                porta_https = int(https_cfg.get('porta_https', 8443))
+                # Se la richiesta è arrivata sulla porta 80 standard (iptables), reindirizza a 443 standard (senza porta)
+                if not has_explicit_port or porta_https == 443:
+                    redirect_port = ""
+                else:
+                    redirect_port = f":{porta_https}"
+                target_url = f"https://{host_clean}{redirect_port}{self.path}"
+                self.send_response(307)
+                self.send_header('Location', target_url)
+                self.end_headers()
+                return
+
         parsed_path = self.path.split('?')[0]
         if parsed_path == '/':
             self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html')
         elif parsed_path == '/remoto.html':
+            qs = ('?' + self.path.split('?', 1)[1]) if '?' in self.path else ''
             self.send_response(301)
-            self.send_header('Location', '/')
+            self.send_header('Location', '/' + qs)
             self.end_headers()
         elif parsed_path == '/config_pubblica':
             self.send_response(200)
@@ -732,6 +817,10 @@ class KioskServer(BaseHTTPRequestHandler):
                     if 'footer_news' not in CONFIG: CONFIG['footer_news'] = {}
                     CONFIG['footer_news'].update(payload['footer_news'])
                 
+                if 'https' in payload:
+                    if 'https' not in CONFIG: CONFIG['https'] = {}
+                    CONFIG['https'].update(payload['https'])
+                
                 nuova_admin_pwd = payload.get('admin_password', '').strip()
                 if nuova_admin_pwd:
                     CONFIG['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
@@ -781,12 +870,52 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+def avvia_server_https():
+    global server_https_attivo
+    https_cfg = CONFIG.get('https', {})
+    if not https_cfg.get('abilitato', False):
+        server_https_attivo = False
+        return
+    
+    cert_file = str(https_cfg.get('file_certificato', 'cert.pem') or 'cert.pem').strip()
+    key_file = str(https_cfg.get('file_chiave', 'key.pem') or 'key.pem').strip()
+    
+    cert_path = cert_file if os.path.isabs(cert_file) else os.path.join(PERCORSO_BASE, cert_file)
+    key_path = key_file if os.path.isabs(key_file) else os.path.join(PERCORSO_BASE, key_file)
+    
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        server_https_attivo = False
+        logging.warning(f"⚠️ HTTPS abilitato ma file certificato o chiave non trovati ({cert_path}, {key_path}). Server HTTPS non avviato.")
+        return
+
+    try:
+        porta_https = int(https_cfg.get('porta_https', 8443))
+        logging.info(f"Avvio KioskServer HTTPS (SSL) sulla porta {porta_https}")
+        
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
+        
+        httpd_ssl = KioskHTTPServer(('0.0.0.0', porta_https), KioskServer)
+        httpd_ssl.is_ssl = True
+        httpd_ssl.socket = ctx.wrap_socket(httpd_ssl.socket, server_side=True)
+        server_https_attivo = True
+        httpd_ssl.serve_forever()
+    except Exception as e:
+        server_https_attivo = False
+        logging.error(f"Errore critico avvio server HTTPS: {e}")
+
 if __name__ == '__main__':
     threading.Thread(target=ciclo_aggiornamento_api, daemon=True).start()
     threading.Thread(target=NewsPollingDaemon, daemon=True).start()
+    
+    if CONFIG.get('https', {}).get('abilitato', False):
+        threading.Thread(target=avvia_server_https, daemon=True).start()
+        
     try:
         porta = int(CONFIG.get('main', {}).get('porta_server', 8080))
-        logging.info(f"Avvio KioskServer sulla porta {porta}")
-        HTTPServer(('0.0.0.0', porta), KioskServer).serve_forever()
+        logging.info(f"Avvio KioskServer HTTP sulla porta {porta}")
+        httpd = KioskHTTPServer(('0.0.0.0', porta), KioskServer)
+        httpd.is_ssl = False
+        httpd.serve_forever()
     except Exception as e:
-        logging.error(f"Errore critico avvio server: {e}")
+        logging.error(f"Errore critico avvio server HTTP: {e}")

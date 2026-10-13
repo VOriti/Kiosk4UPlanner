@@ -2,7 +2,7 @@
 
 *Sviluppato per l'Università di Pavia (UNIPV)*
 
-**Versione:** 4.7 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4Uplanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
+**Versione:** 5.0 | **Autore:** [Vincenzo Oriti](https://oriti.net) ([vincenzo.oriti@unipv.it](mailto:vincenzo.oriti@unipv.it)) | **Progetto:** [GitHub](https://github.com/VOriti/Kiosk4UPlanner) | **Licenza:** [CC BY-NC-SA 4.0](LICENSE.txt) ([Testo completo](https://creativecommons.org/licenses/by-nc-sa/4.0/))
 
 ---
 
@@ -17,7 +17,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 
 * 📖 [**Versione 1: Scraping DOM (Senza API)**](Versione%201%20-%20Scraping%20DOM%20(Senza%20API)/README.md) - Soluzione fai-da-te. Intercetta l'interfaccia web originale iniettando codice tramite Chromium. Consigliata solo se non disponi di alcuna credenziale di accesso a CINECA. Ideale se *non* si dispone di un'utenza API CINECA. *Necessita di un calendario pubblico da aprire per fare lo scraping dei dati.*
 
-* 🚀 [**Versione 2: REST API CINECA (Consigliata)**](Versione%202%20-%20REST%20API%20CINECA%20(Consigliata)/README.md) - Metodo 'Native'. Interroga direttamente il DB di CINECA. Scelta consigliata per stabilità e prestazioni. Include persistenza degli annullamenti, mappatura dinamica degli edifici e un layout Responsive con menù interattivo. *Necessita delle credenziali di accesso a U-Planner.*
+* 🚀 [**Versione 2: REST API CINECA (Consigliata)**](Versione%202%20-%20REST%20API%20CINECA%20(Consigliata)/README.md) ([Guida Installazione Passo-Passo](Versione%202%20-%20REST%20API%20CINECA%20(Consigliata)/INSTALL.md)) - Metodo 'Native'. Interroga direttamente il DB di CINECA. Scelta consigliata per stabilità e prestazioni. Include persistenza degli annullamenti, mappatura dinamica degli edifici e un layout Responsive con menù interattivo. *Necessita delle credenziali di accesso a U-Planner.*
 
 ## Quale versione scegliere?
 
@@ -33,7 +33,7 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 | **Reattività Modifiche** | Riavvio fisico del Kiosk necessario | **Hot-Reload automatico in tempo reale senza interruzioni** |
 | **Ticker Notizie / Locandine** | Assente | **Sì, integrabile con RSS/REST, ampiamente personalizzabile** |
 | **Stati eventi UPlanner** | Mostra sempre solo P (Pubblicati) e C (Confermati), indisponibilità appaiono come "Attività Programmata" | **Mostra P (Pubblicati), C (Confermati), eventi Confermati sono disattivabili dalla vista, flagga eventi A (Annullati) come Annullati automaticamente, i pallini P e C sono visibili accanto al nome o disattivabili, gestisce le Indisponibilità mostrando il nome corretto** |
-| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v4.7)** |
+| **Stato del Progetto** | Legacy (Backup v1.x) | **Produzione Attiva (v5.0 - FINAL)** |
 ---
 
 <br>
@@ -47,6 +47,54 @@ Il repository è diviso in **due versioni** indipendenti, per adattarsi ai livel
 ---
 
 # Changelog
+
+## [v5.0 - FINAL] - Produzione Live, Sicurezza HTTPS Nativa, Multi Monitor Support, Hub Preferenze e Nuovo Pannello Admin
+Questa major release segna il completamento dello sviluppo e la prima versione ufficiale destinata alla messa in produzione live.
+
+Introduce il supporto crittografico nativo HTTPS a doppio canale, rinnova totalmente il pannello di amministrazione e l'hub preferenze, ottimizza il Digital Signage multi-schermo, potenzia l'architettura con il multi-threading concorrente e introduce la nuova documentazione modulare e diagnostica.
+
+### 🔒 Rete, Sicurezza & Crittografia HTTPS Nativa
+* **Server Multi-Thread & Dual-Stack (`ThreadingHTTPServer` / `KioskHTTPServer`):** Gestione contemporanea non bloccante di connessioni HTTP (`8080`) e connessioni crittografate HTTPS/SSL (`8443`) con thread daemon nello stesso processo Python. Elimina i colli di bottiglia e i blocchi I/O quando più client (totem, browser desktop, smartphone) interrogano contemporaneamente la dashboard.
+* **Filtro Anti-Bot & Soppressione Disconnessioni Fisiologiche:** Gestione personalizzata degli errori socket (`handle_error`) per filtrare e sopprimere i traceback di disconnessioni premature (`ConnectionResetError`, `BrokenPipeError`, `ConnectionAbortedError`) provocate da bot scanner internet o chiusure anticipate dei browser mobili, mantenendo pulito `server_api_sys.log`.
+* **Protezione Fail-Safe Anti-Blocco:** Se i certificati SSL (`cert.pem`, `key.pem`) non sono presenti su disco, il server inibisce automaticamente qualsiasi reindirizzamento forzato verso HTTPS e continua a servire la dashboard in chiaro su HTTP, prevenendo schermate di errore `ERR_CONNECTION_REFUSED` sul totem.
+* **Bypass Intelligente per Totem Locale:** Le richieste provenienti da `localhost`, `127.0.0.1` e `::1` non vengono mai reindirizzate a HTTPS, garantendo massime prestazioni ed evitando avvisi di certificati autofirmati sul browser locale del totem.
+* **Port Redirection Completa con `iptables` (80 & 443):** Documentata e testata la configurazione a 4 regole per mappare in modo trasparente la porta 80 su 8080 e la 443 su 8443, sia per client esterni in ingresso sulla LAN (`PREROUTING`), sia per processi locali a bordo del Raspberry Pi (`OUTPUT`).
+* **Allineamento Porte & `~/.xinitrc`:** Introdotte protezioni e avvisi mirati sia nel codice che nella documentazione per prevenire disallineamenti di porta all'avvio del chiosco.
+
+### 🎛️ Pannello di Amministrazione Web (`/admin`)
+* **Architettura a Due Macro-Schede:** Interfaccia utente riprogettata e suddivisa in due sezioni logiche:
+  - **🎨 Personalizzazione:** Sezione rapida per l'uso quotidiano (avvisi di emergenza, grafica, locandine, notizie).
+  - **⚙️ Sistema e Rete:** Sezione protetta con badge visivo *"Area Tecnica"* per credenziali CINECA, porte di ascolto e certificati SSL.
+* **Layout ad Accordion (Tendine Collassabili):** Tutte le sezioni sono racchiuse in tendine a fisarmonica, chiuse di default all'accesso per garantire una panoramica pulita e ordinata ("colpo d'occhio").
+* **Badge Dinamici di Stato:** Ogni tendina mostra un indicatore colorato in tempo reale sullo stato della configurazione (*NON ATTIVO / ATTIVO*, *Locandine: ON*, *Configurato*, *Porta 8080*, *DISABILITATO*).
+* **Comandi Espandi/Comprimi Contestuali:** Pulsanti rapidi per aprire o chiudere tutte le tendine della scheda attualmente attiva.
+* **Avviso di Emergenza (Alert Giallo) in Primo Piano:** Posizionato in cima alla scheda Personalizzazione con campo dedicato e box di **anteprima grafica live in tempo reale**.
+* **Banner Sicurezza Interattivo:** Il promemoria sulla password predefinita è ora cliccabile e dirotta automaticamente l'amministratore alla scheda Sistema aprendo la tendina di sicurezza.
+
+### 🖥️ Dashboard, Frontend & Digital Signage (`remoto.html`)
+* **Resilienza Frontend & Tolleranza Errori Transitori:** Eliminato il distruttivo `window.location.reload()` in caso di interruzione temporanea di connettività: il frontend ora tollera brevi latenze o riavvii del server senza cancellare la vista a video, recuperando automaticamente i dati. Introdotto timeout dedicato (`AbortController`) a 10s per scongiurare chiamate HTTP appese.
+* **News Hub Modale Responsive & Scroll Ottimizzato:** Riprogettato completamente il layout del modale delle preferenze con struttura flex-body e contenitore a scorrimento indipendente (`.news-table-wrapper`). Su schermi compatti e smartphone il modale si adatta fluidamente fino all'85% dell'altezza schermo garantendo una consultazione agevole della tabella notizie.
+* **Intestazioni Colonne Fisse (Sticky):** I titoli delle colonne "In Corso" e "Prossimi Eventi" rimangono sempre ancorati in alto sotto l'orologio e il logo, mentre le card delle lezioni scorrono verticalmente in modo fluido e indipendente.
+* **Hub Preferenze e Icona Ingranaggio (⚙):** Sostituito il vecchio pulsante `+` nel footer con un'icona universale a ingranaggio (`⚙`), che apre il modale unificato per la gestione di notizie e visualizzazione.
+* **Ottimizzazione Ticker Notizie su Mobile:** Introdotto text-clamping su due righe per la modalità verticale e centratura Flexbox dell'icona ingranaggio per scongiurare tagli visivi del testo sui display compatti degli smartphone. Aggiunto inoltre il conteggio numerico delle notizie disponibili per ciascuna fonte attiva nel modale.
+* **Controllo Condizionale Locandine nel Modale:** Il comando di attivazione/disattivazione locandine per utenti web è disabilitato e oscurato con badge esplicativo qualora l'amministratore abbia disattivato globalmente il carosello.
+* **Modalità Smart Multi-Schermo & Parametro `?kiosk=1`:**
+  - **Totem Fisico e Smart TV (`?kiosk=1`):** Locandine attive per impostazione predefinita per l'uso come Digital Signage informativo.
+  - **Utenti Web (PC / Smartphone):** Locandine disattivate di default per consultare immediatamente gli orari delle aule, con possibilità di salvarle nelle preferenze locali (`localStorage`).
+* **Allineamento Script `.xinitrc`:** Aggiornato il comando di lancio di Chromium a bordo del Raspberry Pi per includere il parametro `?kiosk=1`.
+
+### 🛠️ Motore Dati, Debug & Diagnostica (`server_api.py`)
+* **Parser RSS Universale (WordPress & Drupal Views):** Estrazione del testo ricorsiva da tutti i sotto-elementi del tag `<title>` e fallback automatico sui link racchiusi per garantire piena interoperabilità sia con feed generati da WordPress che con viste esportate da Drupal Views.
+* **Ripristino Mappatura Dinamica Edifici in Debug Mode:** Quando `debug_mode: true` è attivo, il motore ispeziona il payload CINECA e stampa nei log la mappa esaustiva con tutti i codici edificio e relative descrizioni rilevate (`🕵️ DEBUG MAPPA EDIFICI RILEVATI`), facilitando la configurazione iniziale anche se un edificio è già impostato.
+
+### 📚 Documentazione & Architettura Modulare
+* **Guida e Legenda Completa dei Log (`LEGENDA_LOG.md`):** Creato un manuale di riferimento completo che spiega la distinzione tra `kiosk.log` (applicativo/dashboard) e `server_api_sys.log` (stdout/stderr di sistema/systemd), con la legenda di tutti i prefissi, codici di errore, anatomia dei traceback Python e relative procedure di risoluzione.
+* **Separazione dei File di Documentazione:**
+  - **`README.md`:** Panoramica concettuale, architettura Self-Healing del token CINECA e sintesi delle novità.
+  - **`INSTALL.md`:** Guida operativa passo-passo numerata dall'inizio alla fine (Fasi 1–9) per installazione da zero.
+* **Guida Multi-Utente Linux:** Documentazione dettagliata su come configurare l'utente di autologin per installazioni con account multipli.
+* **Best Practice QR Code e URL:** Linee guida per la stampa di materiale promozionale/cartaceo con protocollo `http://` per transizione automatica e trasparente a HTTPS senza dover ristampare i codici.
+* **Autorilevamento `percorso_base`:** Pulizia della variabile in `config.yaml` e documentazione del fallback automatico al percorso di esecuzione dello script Python.
 
 ## [v4.7] - Guida Porta HTTP 80, Integrazione Rete e Sicurezza Avvio Kiosk
 Questa release semplifica l'accesso alla dashboard tramite porta standard (`80`) e previene disallineamenti di porta all'avvio del chiosco.

@@ -1,5 +1,5 @@
 # ==============================================================================
-# CONFIGURAZIONE KIOSK U-PLANNER v4.0
+# CONFIGURAZIONE KIOSK U-PLANNER v5.0 - FINAL
 # ==============================================================================
 # Attenzione: Questo file usa la sintassi YAML. 
 # Mantieni l'allineamento degli spazi a sinistra e usa le virgolette per i testi.
@@ -10,7 +10,10 @@ main:
 # ============================================================================
   porta_server: "8080" # porta del server locale. L'indirizzo base per raggiungere il kiosk è http://[IP_RASPBERRY]:[PORTA]
 
-  percorso_base: "'/home/vincenzo/dashboard_aule"
+  # Percorso base della cartella di progetto.
+  # Di default Python rileva automaticamente la cartella corretta in cui risiede lo script.
+  # Se il tuo utente Linux è diverso da 'vincenzo', puoi specificarlo qui (es. "/home/pi/dashboard_aule"):
+  percorso_base: "/home/vincenzo/dashboard_aule"
   file_log: "kiosk.log" # nome del file di log (verrà creato nel percorso base)
 
   # ----------------------------------------------------------------------------
@@ -34,6 +37,16 @@ sicurezza:
   admin_ip_autorizzati: []
   password_admin_hash: "a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0"
   # questo hash corrispode alla password "cambiami". Quando si usa questa password compare un alert che ricorda di cambiarla. Per cambiarla basta digitare una nuova password nel pannello Admin e il sistema genererà un nuovo hash.
+
+# ==============================================================================
+# CONFIGURAZIONE SERVER HTTPS (SSL)
+# ==============================================================================
+https:
+  abilitato: false # Abilita server HTTPS su thread parallelo (true / false)
+  porta_https: 8443 # Porta interna con SSL (consigliata 8443, reindirizzabile con iptables da 443)
+  file_certificato: "cert.pem" # Percorso relativo o assoluto al certificato pubblico (.pem o .crt)
+  file_chiave: "key.pem" # Percorso relativo o assoluto alla chiave privata (.pem o .key)
+  forza_redirect_http: false # Se true, reindirizza automaticamente le connessioni HTTP verso HTTPS
 
 api_cineca:
   # ----------------------------------------------------------------------------

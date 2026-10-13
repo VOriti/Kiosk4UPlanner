@@ -234,6 +234,242 @@
             margin-bottom: 0;
             line-height: 1.3;
         }
+
+        .accordion-panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .accordion-panel.highlight-warning {
+            border-left: 4px solid #d29922;
+        }
+
+        .accordion-panel.highlight-security {
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .accordion-header {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            background-color: rgba(255, 255, 255, 0.02);
+            transition: background-color 0.2s;
+        }
+
+        .accordion-header:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .accordion-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .accordion-icon {
+            font-size: 1.4rem;
+            line-height: 1;
+        }
+
+        .accordion-title-box h3 {
+            margin: 0;
+            font-size: 1.15rem;
+            color: var(--text-primary);
+        }
+
+        .accordion-title-box p {
+            margin: 3px 0 0 0;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .accordion-header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-badge {
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 12px;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
+        .status-badge.badge-off {
+            background-color: #30363d;
+            color: #8b949e;
+        }
+
+        .status-badge.badge-on {
+            background-color: rgba(35, 134, 54, 0.25);
+            color: #3fb950;
+            border: 1px solid rgba(63, 185, 80, 0.4);
+        }
+
+        .status-badge.badge-warn {
+            background-color: rgba(210, 153, 34, 0.25);
+            color: #e3b341;
+            border: 1px solid rgba(227, 179, 65, 0.4);
+        }
+
+        .status-badge.badge-info {
+            background-color: rgba(56, 139, 253, 0.15);
+            color: #58a6ff;
+            border: 1px solid rgba(88, 166, 255, 0.4);
+        }
+
+        .chevron-icon {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            transition: transform 0.25s ease;
+            display: inline-block;
+        }
+
+        .accordion-panel.open .chevron-icon {
+            transform: rotate(180deg);
+        }
+
+        .accordion-body {
+            display: none;
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--panel-bg);
+        }
+
+        .accordion-panel.open .accordion-body {
+            display: block;
+        }
+
+        .sticky-actions {
+            position: sticky;
+            bottom: 15px;
+            background-color: rgba(22, 27, 34, 0.95);
+            backdrop-filter: blur(8px);
+            padding: 14px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            margin-top: 25px;
+        }
+
+        /* Navigazione Schede (Tabs) */
+        .admin-tabs-nav {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 22px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 14px;
+        }
+
+        .admin-tab-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 12px;
+            padding: 12px 18px;
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+            position: relative;
+        }
+
+        .admin-tab-btn:hover {
+            background-color: #21262d;
+            border-color: #8b949e;
+        }
+
+        .admin-tab-btn.active {
+            background-color: rgba(88, 166, 255, 0.08);
+            border-color: var(--accent-color);
+            box-shadow: 0 0 10px rgba(88, 166, 255, 0.12);
+        }
+
+        .admin-tab-btn .tab-icon {
+            font-size: 1.6rem;
+            line-height: 1;
+        }
+
+        .admin-tab-btn .tab-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+        }
+
+        .admin-tab-btn .tab-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            transition: color 0.2s;
+        }
+
+        .admin-tab-btn.active .tab-title {
+            color: var(--accent-color);
+        }
+
+        .admin-tab-btn .tab-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .tab-badge-tech {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            background-color: rgba(210, 153, 34, 0.15);
+            color: #e3b341;
+            border: 1px solid rgba(227, 179, 65, 0.3);
+            white-space: nowrap;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: tabFadeIn 0.2s ease;
+        }
+
+        @keyframes tabFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .admin-tabs-nav {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .admin-tab-btn {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 
@@ -257,221 +493,401 @@
 
         <!-- Vista Admin -->
         <div id="admin-view">
-            <div id="security-banner" class="security-banner">
-                ⚠️ ATTENZIONE: Stai usando la password predefinita. Cambiala ora nella sezione "Rete e Sicurezza".
+            <div id="security-banner" class="security-banner" style="cursor: pointer;" onclick="switchTab('sistema'); toggleAccordion('panel-rete'); document.getElementById('panel-rete')?.scrollIntoView({ behavior: 'smooth' });">
+                ⚠️ ATTENZIONE: Stai usando la password predefinita. Clicca qui per cambiarla nella scheda "Sistema e Rete".
             </div>
 
-            <h1>Pannello di Amministrazione</h1>
-
-            <div class="panel">
-                <h3>Rete e Sicurezza</h3>
-                <p class="panel-description">Configura i parametri di rete del server locale e la sicurezza del pannello
-                    di amministrazione.</p>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="admin_attivo">
-                    <label for="admin_attivo">Abilita l'accesso al pannello Admin remoto</label>
+            <!-- Intestazione Pannello e Azioni Rapide -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1 style="margin: 0; font-size: 1.8rem;">Pannello di Amministrazione</h1>
+                    <p style="margin: 5px 0 0 0; color: var(--text-secondary); font-size: 0.95rem;">Configura le impostazioni della dashboard Kiosk in tempo reale</p>
                 </div>
-                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Imposta su
-                    'true' SOLO se vuoi abilitare il pannello web per modificare queste impostazioni direttamente dal
-                    browser all'indirizzo /admin</p>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="debug_mode">
-                    <label for="debug_mode">Abilita Debug Mode</label>
-                </div>
-                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Registra eventi
-                    dettagliati nel file kiosk.log. Utile per risolvere problemi tecnici e leggere nei log i codici
-                    degli edifici disponibili.</p>
-                <div class="form-group">
-                    <label for="admin_ip_autorizzati">IP Autorizzati</label>
-                    <input type="text" id="admin_ip_autorizzati" class="list-input"
-                        placeholder="es. 127.0.0.1, 192.168.1.0/24">
-                    <p class="help-text">Quali IP possono accedere al pannello Admin? (Usa la notazione CIDR). 127.0.0.1
-                        permette l'accesso solo direttamente dalla macchina fisica. Puoi aggiungere la rete di ateneo, o
-                        altro range desiderato, ad es: "192.168.1.0/24", o un elenco di indirizzi IP (separati da
-                        virgola). Se lasci il campo vuoto, l'accesso sarà libero.</p>
-                </div>
-                <div class="form-group">
-                    <label for="admin_password">Nuova Password Admin</label>
-                    <input type="password" id="admin_password" placeholder="Nuova password">
-                    <p class="help-text">Lascia vuoto per non cambiarla.</p>
-                </div>
-                <div class="form-group">
-                    <label for="porta_server">Porta Server Locale</label>
-                    <input type="number" id="porta_server" placeholder="es. 8080">
-                    <p class="help-text">La porta su cui il server è in ascolto (modifica effettiva solo al riavvio).<br>
-                        <strong style="color: #f85149;">⚠️ IMPORTANTE:</strong> Se cambi porta, aggiorna manualmente anche l'URL nell'ultima riga di <code>~/.xinitrc</code> sul Raspberry Pi, altrimenti il Kiosk fisico mostrerà errore all'avvio. Per usare la porta 80 vedi la sezione dedicata nel README per i permessi Linux.
-                    </p>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn" style="background-color: #21262d; border: 1px solid var(--border-color); font-size: 0.85rem; padding: 6px 12px;" onclick="setAllAccordions(true)">
+                        ▼ Espandi tutto
+                    </button>
+                    <button type="button" class="btn" style="background-color: #21262d; border: 1px solid var(--border-color); font-size: 0.85rem; padding: 6px 12px;" onclick="setAllAccordions(false)">
+                        ▲ Comprimi tutto
+                    </button>
                 </div>
             </div>
 
-            <div class="panel">
-                <h3>Credenziali e Connessione CINECA</h3>
-                <p class="panel-description">Parametri per connettersi alle API di U-Planner (CINECA) e recuperare gli
-                    impegni delle aule.</p>
-                <div class="form-group">
-                    <label for="cineca_username">Username CINECA</label>
-                    <input type="text" id="cineca_username">
-                    <p class="help-text">Account fornito dall'Ateneo</p>
-                </div>
-                <div class="form-group">
-                    <label for="cineca_password">Password CINECA</label>
-                    <input type="password" id="cineca_password" placeholder="Lascia ******** per non modificarla">
-                </div>
-                <div class="form-group">
-                    <label for="cineca_realm">Realm (Cliente ID)</label>
-                    <input type="text" id="cineca_realm">
-                    <p class="help-text">Il codice identificativo del tuo ateneo (farselo dare dall' help desk oppure
-                        recuperarlo come spiegato nel file readme.md).</p>
-                </div>
-                <div class="form-group">
-                    <label for="cineca_edificio">ID Edificio (Opzionale)</label>
-                    <input type="text" id="cineca_edificio" placeholder="es. 05">
-                    <p class="help-text">Filtra gli impegni mostrando solo quelli per uno specifico edificio. Lascia
-                        vuoto per mostrare tutti gli edifici.</p>
-                </div>
-                <div class="form-group">
-                    <label for="anno_accademico_id">ID Anno Accademico (Opzionale)</label>
-                    <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
-                    <p class="help-text">Identificativo interno U-Planner per l'anno accademico (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
-                </div>
-                <div class="form-group">
-                    <label for="contesto_id">ID Contesto (Opzionale)</label>
-                    <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
-                    <p class="help-text">Identificativo interno U-Planner per il contesto/dipartimento (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
-                </div>
-                <div class="form-group">
-                    <label for="cineca_intervallo">Intervallo Aggiornamento (secondi)</label>
-                    <input type="number" id="cineca_intervallo">
-                    <p class="help-text">Ogni quanti secondi il server interroga CINECA per aggiornare i dati? (300 = 5
-                        minuti. Non scendere sotto i 60 per non sovraccaricare le API).</p>
-                </div>
-                <div class="form-group">
-                    <label for="cineca_url">URL Base API</label>
-                    <input type="text" id="cineca_url" placeholder="https://cineca.prod.up.cineca.it/api">
-                    <p class="help-text">L'URL di base per le API CINECA di UPlanner. Si consiglia di sostituire
-                        "cineca" prima di prod con il nome del proprio ateneo (es. https://tuoateneo.prod.up.cineca.it/api).
-                    </p>
-                </div>
+            <!-- Navigazione Schede (Tabs) -->
+            <div class="admin-tabs-nav">
+                <button type="button" class="admin-tab-btn active" id="tab-btn-personalizzazione" onclick="switchTab('personalizzazione')">
+                    <span class="tab-icon">🎨</span>
+                    <div class="tab-info">
+                        <span class="tab-title">Personalizzazione</span>
+                        <span class="tab-desc">Avvisi di emergenza, grafica, locandine e notizie</span>
+                    </div>
+                </button>
+                <button type="button" class="admin-tab-btn" id="tab-btn-sistema" onclick="switchTab('sistema')">
+                    <span class="tab-icon">⚙️</span>
+                    <div class="tab-info">
+                        <span class="tab-title">Sistema e Rete</span>
+                        <span class="tab-desc">Credenziali CINECA, porte server e certificati SSL</span>
+                    </div>
+                    <span class="tab-badge-tech">Area Tecnica</span>
+                </button>
             </div>
 
-            <div class="panel">
-                <h3>Interfaccia Frontend (Dashboard)</h3>
-                <p class="panel-description">Personalizza l'aspetto e il comportamento della schermata visibile al
-                    pubblico.</p>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="fe_mostra_confermati">
-                    <label for="fe_mostra_confermati">Mostra solo eventi Confermati (Stato C)</label>
+            <!-- ============================================================ -->
+            <!-- SCHEDA 1: PERSONALIZZAZIONE (Grafica, Avvisi, Locandine, News)-->
+            <!-- ============================================================ -->
+            <div id="tab-content-personalizzazione" class="tab-content active">
+
+                <!-- TENDINA: Avviso di Emergenza / Alert Giallo (In Evidenza) -->
+                <div class="accordion-panel highlight-warning" id="panel-alert">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-alert')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">📢</span>
+                            <div class="accordion-title-box">
+                                <h3>Avviso di Emergenza (Alert Giallo)</h3>
+                                <p>Messaggio fisso mostrato in sovrimpressione nel footer per comunicazioni urgenti o festività</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-alert" class="status-badge badge-off">NON ATTIVO</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Attiva questo messaggio per mostrare un banner ad alta priorità sul footer della dashboard (visibile sia sul totem fisico che a chi consulta il sito da remoto).</p>
+                        
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fn_alert_attivo" onchange="aggiornaBadgesSommario()">
+                            <label for="fn_alert_attivo" style="font-weight: bold; color: #e3b341;">Attiva Avviso di Emergenza Fisso</label>
+                        </div>
+                        
+                        <div class="form-group" style="margin-top: 15px;">
+                            <label for="fn_alert_testo">Testo dell'Avviso</label>
+                            <input type="text" id="fn_alert_testo" placeholder="Es. ⚠️ Avviso: Domani 09/12 chiusura sede per festività patronale." oninput="aggiornaBadgesSommario()">
+                            <p class="help-text">Puoi inserire emoji come ⚠️, 📢, ℹ️ per aumentare l'impatto visivo.</p>
+                        </div>
+
+                        <div id="alert-preview-container" style="display: none; margin-top: 15px; padding: 12px 16px; background: rgba(210, 153, 34, 0.15); border: 1px solid rgba(210, 153, 34, 0.4); border-radius: 6px;">
+                            <div style="font-size: 0.75rem; color: #e3b341; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 5px;">ANTEPRIMA LIVE SULLA DASHBOARD:</div>
+                            <div id="alert-preview-text" style="font-size: 0.95rem; color: #f0f6fc; font-weight: 500;"></div>
+                        </div>
+                    </div>
                 </div>
-                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se impostato su
-                    'false', nasconde le aule che hanno stato C (Confermato ma non Pubblicato).</p>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="fe_mostra_stato">
-                    <label for="fe_mostra_stato">Mostra Badge Stato P/C</label>
+
+                <!-- TENDINA: Interfaccia Frontend (Dashboard & Locandine) -->
+                <div class="accordion-panel" id="panel-frontend">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-frontend')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">🖥️</span>
+                            <div class="accordion-title-box">
+                                <h3>Interfaccia Dashboard & Digital Signage</h3>
+                                <p>Aspetto grafico impegni, carosello locandine e modalità schermo secondario</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-frontend" class="status-badge badge-on">Locandine: ON</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Personalizza l'aspetto e il comportamento della schermata visibile al pubblico.</p>
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fe_mostra_confermati">
+                            <label for="fe_mostra_confermati">Mostra solo eventi Confermati (Stato C)</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se impostato su 'false', nasconde le aule che hanno stato C (Confermato ma non Pubblicato).</p>
+                        
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fe_mostra_stato">
+                            <label for="fe_mostra_stato">Mostra Badge Stato P/C</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Mostra i pallini P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni.</p>
+                        
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fe_carosello" onchange="aggiornaBadgesSommario()">
+                            <label for="fe_carosello">Abilita Carosello Locandine (Globale)</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
+
+                        <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-left: 4px solid var(--accent-color); border-radius: 6px; padding: 12px 15px; margin: 10px 0 20px 0;">
+                            <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent-color); margin-bottom: 5px;">
+                                <span>📺 Schermi Secondari / Smart TV (Digital Signage)</span>
+                            </div>
+                            <p class="help-text" style="margin: 0; color: var(--text-primary); line-height: 1.4;">
+                                Se installi monitor secondari o Smart TV privi di Raspberry Pi, configurali per aprire l'indirizzo con il parametro <code>?kiosk=1</code>:<br>
+                                <code style="display: inline-block; background-color: #161b22; padding: 4px 8px; border-radius: 4px; margin-top: 6px; color: #58a6ff; font-size: 0.95rem;" id="kiosk-url-preview">http://[IP_DEL_SERVER]:[PORTA]/?kiosk=1</code>
+                            </p>
+                            <p class="help-text" style="margin-top: 6px; margin-bottom: 0;">
+                                Questo parametro fa partire le locandine <strong>attive di default</strong> sui display pubblici, mentre per i docenti/studenti che accedono da browser normale le locandine partono disattivate per consultare subito le aule.
+                            </p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fe_titolo">Titolo Sede</label>
+                            <input type="text" id="fe_titolo">
+                            <p class="help-text">Intestazione principale mostrata in alto a sinistra nel Kiosk (default "Impegni Aule").</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="fe_logo">URL Logo</label>
+                            <input type="text" id="fe_logo" placeholder="/logo.png">
+                            <p class="help-text">Percorso del logo. Lasciare vuoto per nasconderlo del tutto.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="fe_url_calendario">URL Calendario Pubblico</label>
+                            <input type="text" id="fe_url_calendario">
+                            <p class="help-text">URL del Calendario Pubblico U-Planner - cambiarlo con il link del calendario pubblico di U-Planner della propria sede.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
+                            <input type="number" id="fe_pausa_carosello">
+                            <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es. 180000 = 3 minuti.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
+                            <input type="number" id="fe_expo_locandina">
+                            <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000 = 10 secondi).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="fe_intervallo">Intervallo ridisegno (ms)</label>
+                            <input type="number" id="fe_intervallo">
+                            <p class="help-text">Ogni quanti millisecondi l'interfaccia si aggiorna con i nuovi dati in memoria. Es. 5000 = 5 secondi.</p>
+                        </div>
+                    </div>
                 </div>
-                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Mostra i pallini
-                    P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni. Imposta 'Mostra solo eventi
-                    Confermati' su true nel blocco CINECA per mostrare anche i Confermato (azzurro), altrimenti solo i
-                    Pubblicato (verde).</p>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="fe_carosello">
-                    <label for="fe_carosello">Abilita Carosello Locandine</label>
+
+                <!-- TENDINA: Footer e Notizie -->
+                <div class="accordion-panel" id="panel-footer">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-footer')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">📰</span>
+                            <div class="accordion-title-box">
+                                <h3>Footer Notizie & Feed Fonti</h3>
+                                <p>Nastro scorrevole, stile animazione, colori e fino a 6 fonti RSS/REST</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-footer" class="status-badge badge-on">Attivo</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Configura la barra delle notizie scorrevoli a fondo pagina.</p>
+                        
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fn_abilitato" onchange="aggiornaBadgesSommario()">
+                            <label for="fn_abilitato">Abilita Footer News</label>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="fn_stile">Stile Scorrimento</label>
+                            <select id="fn_stile" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                                <option value="orizzontale">Orizzontale (Telegiornale)</option>
+                                <option value="verticale">Verticale (Tabellone)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="fn_velocita">Velocità Scorrimento (minore = più veloce)</label>
+                            <input type="number" id="fn_velocita" placeholder="Es. 50">
+                        </div>
+                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                            <label for="fn_colore_testo" style="margin: 0; min-width: 150px;">Colore Testo</label>
+                            <input type="color" id="fn_colore_testo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                        </div>
+                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                            <label for="fn_colore_sfondo" style="margin: 0; min-width: 150px;">Colore Sfondo</label>
+                            <input type="color" id="fn_colore_sfondo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                        </div>
+                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                            <label for="fn_colore_btn" style="margin: 0; min-width: 150px;">Colore Tasto Preferenze</label>
+                            <input type="color" id="fn_colore_btn" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                        </div>
+                        <div class="form-group">
+                            <label for="fn_dimensione_testo">Dimensione Testo</label>
+                            <input type="text" id="fn_dimensione_testo" placeholder="Es. 1.15rem">
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 25px 0 20px 0;">
+                        <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 5px;">Fonti Notizie (Fino a 6)</h4>
+                        <p class="panel-description" style="margin-bottom: 15px;">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga.</p>
+                        <div id="fonti_container"></div>
+                    </div>
                 </div>
-                <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se disabilitato,
-                    lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata.</p>
-                <div class="form-group">
-                    <label for="fe_titolo">Titolo Sede</label>
-                    <input type="text" id="fe_titolo">
-                    <p class="help-text">Intestazione principale mostrata in alto a sinistra nel Kiosk (default "Impegni Aule").</p>
-                </div>
-                <div class="form-group">
-                    <label for="fe_logo">URL Logo</label>
-                    <input type="text" id="fe_logo" placeholder="/logo.png">
-                    <p class="help-text">Percorso del logo. Lasciare vuoto per nasconderlo del tutto.</p>
-                </div>
-                <div class="form-group">
-                    <label for="fe_url_calendario">URL Calendario Pubblico</label>
-                    <input type="text" id="fe_url_calendario">
-                    <p class="help-text">URL del Calendario Pubblico U-Planner - cambiarlo con il link del calendario
-                        pubblico di U-Planner della propria sede.</p>
-                </div>
-                <div class="form-group">
-                    <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
-                    <input type="number" id="fe_pausa_carosello">
-                    <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es.
-                        180000 = 3 minuti.</p>
-                </div>
-                <div class="form-group">
-                    <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
-                    <input type="number" id="fe_expo_locandina">
-                    <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000
-                        = 10 secondi).</p>
-                </div>
-                <div class="form-group">
-                    <label for="fe_intervallo">Intervallo ridisegno (ms)</label>
-                    <input type="number" id="fe_intervallo">
-                    <p class="help-text">Ogni quanti millisecondi l'interfaccia si aggiorna con i nuovi dati in memoria.
-                        Es. 5000 = 5 secondi.</p>
-                </div>
+
             </div>
 
-            <div class="panel">
-                <h3>Footer e Notizie</h3>
-                <p class="panel-description">Configura la barra delle notizie scorrevoli a fondo pagina.</p>
-                
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="fn_abilitato">
-                    <label for="fn_abilitato">Abilita Footer News</label>
-                </div>
-                
-                <div class="form-group">
-                    <label for="fn_stile">Stile Scorrimento</label>
-                    <select id="fn_stile" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                        <option value="orizzontale">Orizzontale (Telegiornale)</option>
-                        <option value="verticale">Verticale (Tabellone)</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="fn_velocita">Velocità Scorrimento (minore = più veloce)</label>
-                    <input type="number" id="fn_velocita" placeholder="Es. 50">
-                </div>
-                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <label for="fn_colore_testo" style="margin: 0; min-width: 150px;">Colore Testo</label>
-                    <input type="color" id="fn_colore_testo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
-                </div>
-                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <label for="fn_colore_sfondo" style="margin: 0; min-width: 150px;">Colore Sfondo</label>
-                    <input type="color" id="fn_colore_sfondo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
-                </div>
-                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <label for="fn_colore_btn" style="margin: 0; min-width: 150px;">Colore Tasto (+)</label>
-                    <input type="color" id="fn_colore_btn" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
-                </div>
-                <div class="form-group">
-                    <label for="fn_dimensione_testo">Dimensione Testo</label>
-                    <input type="text" id="fn_dimensione_testo" placeholder="Es. 1.15rem">
-                </div>
-                
-                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="fn_alert_attivo">
-                    <label for="fn_alert_attivo">Attiva Alert Fisso</label>
-                </div>
-                <div class="form-group">
-                    <label for="fn_alert_testo">Testo dell'Alert</label>
-                    <input type="text" id="fn_alert_testo" placeholder="Es. ⚠️ Avviso: chiusura sede...">
+            <!-- ============================================================ -->
+            <!-- SCHEDA 2: SISTEMA (Credenziali CINECA, Rete, Server HTTPS)   -->
+            <!-- ============================================================ -->
+            <div id="tab-content-sistema" class="tab-content">
+
+                <div style="background-color: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.88rem; color: #e3b341; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.3rem;">⚠️</span>
+                    <div><strong>Area Tecnica e Parametri di Connessione:</strong> Modificare questi campi solo se necessario (ad es. cambio password CINECA, cambio porte del server o configurazione certificati SSL). Errori in questa sezione possono interrompere la sincronizzazione del totem.</div>
                 </div>
 
-                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                <p class="panel-description">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga.</p>
-                <div id="fonti_container"></div>
+                <!-- TENDINA: Credenziali e Connessione CINECA -->
+                <div class="accordion-panel" id="panel-cineca">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-cineca')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">🎓</span>
+                            <div class="accordion-title-box">
+                                <h3>Credenziali e Connessione CINECA</h3>
+                                <p>Parametri U-Planner, ID Ateneo (Realm), Edificio, Contesto e Anno Accademico</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-cineca" class="status-badge badge-info">Configurato</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Parametri per connettersi alle API di U-Planner (CINECA) e recuperare gli impegni delle aule.</p>
+                        <div class="form-group">
+                            <label for="cineca_username">Username CINECA</label>
+                            <input type="text" id="cineca_username" oninput="aggiornaBadgesSommario()">
+                            <p class="help-text">Account fornito dall'Ateneo</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="cineca_password">Password CINECA</label>
+                            <input type="password" id="cineca_password" placeholder="Lascia ******** per non modificarla">
+                        </div>
+                        <div class="form-group">
+                            <label for="cineca_realm">Realm (Cliente ID)</label>
+                            <input type="text" id="cineca_realm">
+                            <p class="help-text">Il codice identificativo del tuo ateneo (farselo dare dall' help desk oppure recuperarlo come spiegato nel file readme.md).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="cineca_edificio">ID Edificio (Opzionale)</label>
+                            <input type="text" id="cineca_edificio" placeholder="es. 05" oninput="aggiornaBadgesSommario()">
+                            <p class="help-text">Filtra gli impegni mostrando solo quelli per uno specifico edificio. Lascia vuoto per mostrare tutti gli edifici.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="anno_accademico_id">ID Anno Accademico (Opzionale)</label>
+                            <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
+                            <p class="help-text">Identificativo interno U-Planner per l'anno accademico (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="contesto_id">ID Contesto (Opzionale)</label>
+                            <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
+                            <p class="help-text">Identificativo interno U-Planner per il contesto/dipartimento (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="cineca_intervallo">Intervallo Aggiornamento (secondi)</label>
+                            <input type="number" id="cineca_intervallo">
+                            <p class="help-text">Ogni quanti secondi il server interroga CINECA per aggiornare i dati? (300 = 5 minuti. Non scendere sotto i 60 per non sovraccaricare le API).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="cineca_url">URL Base API</label>
+                            <input type="text" id="cineca_url" placeholder="https://cineca.prod.up.cineca.it/api">
+                            <p class="help-text">L'URL di base per le API CINECA di UPlanner. Si consiglia di sostituire "cineca" prima di prod con il nome del proprio ateneo (es. https://tuoateneo.prod.up.cineca.it/api).</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TENDINA: Rete e Sicurezza del Server -->
+                <div class="accordion-panel highlight-security" id="panel-rete">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-rete')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">🌐</span>
+                            <div class="accordion-title-box">
+                                <h3>Rete e Sicurezza del Server</h3>
+                                <p>Porta server locale HTTP, accesso remoto al pannello e protezione IP</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-rete" class="status-badge badge-info">Porta 8080</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Configura i parametri di rete del server locale e la sicurezza del pannello di amministrazione.</p>
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="admin_attivo" onchange="aggiornaBadgesSommario()">
+                            <label for="admin_attivo">Abilita l'accesso al pannello Admin remoto</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Imposta su 'true' SOLO se vuoi abilitare il pannello web per modificare queste impostazioni direttamente dal browser all'indirizzo /admin</p>
+                        
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="debug_mode">
+                            <label for="debug_mode">Abilita Debug Mode</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Registra eventi dettagliati nel file kiosk.log. Utile per risolvere problemi tecnici e leggere nei log i codici degli edifici disponibili.</p>
+                        
+                        <div class="form-group">
+                            <label for="admin_ip_autorizzati">IP Autorizzati</label>
+                            <input type="text" id="admin_ip_autorizzati" class="list-input" placeholder="es. 127.0.0.1, 192.168.1.0/24">
+                            <p class="help-text">Quali IP possono accedere al pannello Admin? (Usa la notazione CIDR). 127.0.0.1 permette l'accesso solo direttamente dalla macchina fisica. Puoi aggiungere la rete di ateneo, o altro range desiderato, ad es: "192.168.1.0/24", o un elenco di indirizzi IP (separati da virgola). Se lasci il campo vuoto, l'accesso sarà libero.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="admin_password">Nuova Password Admin</label>
+                            <input type="password" id="admin_password" placeholder="Nuova password">
+                            <p class="help-text">Lascia vuoto per non cambiarla.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="porta_server">Porta Server Locale (HTTP)</label>
+                            <input type="number" id="porta_server" placeholder="es. 8080" oninput="aggiornaBadgesSommario()">
+                            <p class="help-text">La porta su cui il server HTTP è in ascolto (modifica effettiva solo al riavvio).<br>
+                                <strong style="color: #f85149;">⚠️ IMPORTANTE:</strong> Se cambi porta, aggiorna manualmente anche l'URL nell'ultima riga di <code>~/.xinitrc</code> sul Raspberry Pi, altrimenti il Kiosk fisico mostrerà errore all'avvio. Per usare la porta 80 vedi la sezione dedicata nel README per i permessi Linux.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TENDINA: Server HTTPS (SSL Nativo) -->
+                <div class="accordion-panel" id="panel-https">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-https')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">🔒</span>
+                            <div class="accordion-title-box">
+                                <h3>Server HTTPS (SSL Nativo)</h3>
+                                <p>Crittografia end-to-end, porta parallela e redirect automatico HTTP ➔ HTTPS</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-https" class="status-badge badge-off">DISABILITATO</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Avvia un server crittografato SSL/TLS in parallelo al server HTTP standard all'interno dello stesso processo Python.</p>
+                        
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="https_abilitato" onchange="toggleHttpsFields(); aggiornaBadgesSommario();">
+                            <label for="https_abilitato">Abilita Server HTTPS parallelo</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Attiva l'ascolto crittografato su thread dedicato (modifica effettiva al riavvio del server).</p>
+                        
+                        <div id="https-fields-container" style="display: none; padding-left: 15px; border-left: 2px solid var(--accent-color); margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label for="https_porta">Porta HTTPS Locale</label>
+                                <input type="number" id="https_porta" placeholder="es. 8443" oninput="aggiornaBadgesSommario()">
+                                <p class="help-text">La porta su cui il server HTTPS è in ascolto (consigliata: 8443). Se desideri usare la porta standard 443 esterna senza permessi root, usa <code>sudo iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-port 8443</code>.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="https_certificato">File Certificato SSL (.pem / .crt)</label>
+                                <input type="text" id="https_certificato" placeholder="es. cert.pem">
+                                <p class="help-text">Percorso relativo alla cartella di progetto oppure percorso assoluto del certificato pubblico.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="https_chiave">File Chiave Privata SSL (.key / .pem)</label>
+                                <input type="text" id="https_chiave" placeholder="es. key.pem">
+                                <p class="help-text">Percorso relativo alla cartella di progetto oppure percorso assoluto della chiave privata.</p>
+                            </div>
+                            <div class="form-group form-group-checkbox">
+                                <input type="checkbox" id="https_forza_redirect">
+                                <label for="https_forza_redirect">Reindirizza automaticamente le connessioni da HTTP a HTTPS</label>
+                            </div>
+                            <p class="help-text" style="margin-left: 28px; margin-top: -10px;">Se attivo, qualsiasi client che accede via HTTP verrà reindirizzato automaticamente alla versione crittografata HTTPS (le connessioni da localhost/totem non vengono forzate per sicurezza).</p>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
-            <div class="buttons-row">
-                <button class="btn" style="background-color: var(--text-secondary);" onclick="logout()">Logout</button>
-                <button class="btn" onclick="salvaConfigurazione(false)">Salva Configurazione</button>
-                <button class="btn btn-danger" onclick="salvaConfigurazione(true)">Salva e Riavvia Demone</button>
+            <div class="buttons-row sticky-actions">
+                <button type="button" class="btn" style="background-color: var(--text-secondary);" onclick="logout()">Logout</button>
+                <button type="button" class="btn btn-success" onclick="salvaConfigurazione(false)">💾 Salva Modifiche</button>
+                <button type="button" class="btn btn-danger" onclick="salvaConfigurazione(true)">⚡ Salva e Riavvia Demone</button>
             </div>
         </div>
 
@@ -564,6 +980,25 @@
             document.getElementById('admin_password').value = '';
             document.getElementById('porta_server').value = config.main?.porta_server || 8080;
 
+            // HTTPS
+            const httpsCfg = config.https || {};
+            document.getElementById('https_abilitato').checked = httpsCfg.abilitato === true;
+            document.getElementById('https_porta').value = httpsCfg.porta_https || 8443;
+            document.getElementById('https_certificato').value = httpsCfg.file_certificato || 'cert.pem';
+            document.getElementById('https_chiave').value = httpsCfg.file_chiave || 'key.pem';
+            document.getElementById('https_forza_redirect').checked = httpsCfg.forza_redirect_http === true;
+            toggleHttpsFields();
+
+            // Preview URL Schermi Secondari Digital Signage
+            const srvPort = config.main?.porta_server || '8080';
+            const srvHost = window.location.hostname || 'IP_RASPBERRY';
+            const srvProto = window.location.protocol || 'http:';
+            const previewEl = document.getElementById('kiosk-url-preview');
+            if (previewEl) {
+                const portSuffix = (srvPort == '80' && srvProto == 'http:') || (srvPort == '443' && srvProto == 'https:') ? '' : `:${srvPort}`;
+                previewEl.innerText = `${srvProto}//${srvHost}${portSuffix}/?kiosk=1`;
+            }
+
             // API CINECA
             document.getElementById('cineca_username').value = config.api_cineca?.username || '';
             document.getElementById('cineca_password').value = config.api_cineca?.password || '';
@@ -642,6 +1077,134 @@
                 `;
                 container.insertAdjacentHTML('beforeend', html);
             }
+            
+            aggiornaBadgesSommario();
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            const btn = document.getElementById(`tab-btn-${tabId}`);
+            const content = document.getElementById(`tab-content-${tabId}`);
+            if (btn) btn.classList.add('active');
+            if (content) content.classList.add('active');
+        }
+
+        function toggleAccordion(id) {
+            const panel = document.getElementById(id);
+            if (panel) {
+                panel.classList.toggle('open');
+            }
+        }
+
+        function setAllAccordions(open) {
+            const activeTab = document.querySelector('.tab-content.active') || document;
+            activeTab.querySelectorAll('.accordion-panel').forEach(p => {
+                if (open) p.classList.add('open');
+                else p.classList.remove('open');
+            });
+        }
+
+        function aggiornaBadgesSommario() {
+            // 1. Alert Giallo
+            const alertAttivo = document.getElementById('fn_alert_attivo')?.checked;
+            const alertTesto = document.getElementById('fn_alert_testo')?.value.trim();
+            const badgeAlert = document.getElementById('badge-summary-alert');
+            const previewContainer = document.getElementById('alert-preview-container');
+            const previewText = document.getElementById('alert-preview-text');
+            if (badgeAlert) {
+                if (alertAttivo) {
+                    badgeAlert.className = 'status-badge badge-warn';
+                    badgeAlert.innerText = 'ATTIVO';
+                    if (previewContainer) previewContainer.style.display = 'block';
+                    if (previewText) previewText.innerText = alertTesto || '(Nessun testo inserito)';
+                } else {
+                    badgeAlert.className = 'status-badge badge-off';
+                    badgeAlert.innerText = 'NON ATTIVO';
+                    if (previewContainer) previewContainer.style.display = 'none';
+                }
+            }
+
+            // 2. Rete e Sicurezza
+            const porta = document.getElementById('porta_server')?.value || '8080';
+            const adminAttivo = document.getElementById('admin_attivo')?.checked;
+            const badgeRete = document.getElementById('badge-summary-rete');
+            if (badgeRete) {
+                badgeRete.className = 'status-badge badge-info';
+                badgeRete.innerText = `Porta ${porta} ${adminAttivo ? '• Admin ON' : '• Admin OFF'}`;
+            }
+
+            // 3. HTTPS
+            const httpsAttivo = document.getElementById('https_abilitato')?.checked;
+            const httpsPorta = document.getElementById('https_porta')?.value || '8443';
+            const badgeHttps = document.getElementById('badge-summary-https');
+            if (badgeHttps) {
+                if (httpsAttivo) {
+                    badgeHttps.className = 'status-badge badge-on';
+                    badgeHttps.innerText = `ATTIVO: ${httpsPorta}`;
+                } else {
+                    badgeHttps.className = 'status-badge badge-off';
+                    badgeHttps.innerText = 'DISABILITATO';
+                }
+            }
+
+            // 4. CINECA
+            const edificio = document.getElementById('cineca_edificio')?.value.trim();
+            const userCineca = document.getElementById('cineca_username')?.value.trim();
+            const badgeCineca = document.getElementById('badge-summary-cineca');
+            if (badgeCineca) {
+                if (edificio) {
+                    badgeCineca.className = 'status-badge badge-info';
+                    badgeCineca.innerText = `Edificio: ${edificio}`;
+                } else if (userCineca) {
+                    badgeCineca.className = 'status-badge badge-info';
+                    badgeCineca.innerText = 'Tutti gli edifici';
+                } else {
+                    badgeCineca.className = 'status-badge badge-off';
+                    badgeCineca.innerText = 'Non configurato';
+                }
+            }
+
+            // 5. Frontend
+            const carosello = document.getElementById('fe_carosello')?.checked;
+            const badgeFrontend = document.getElementById('badge-summary-frontend');
+            if (badgeFrontend) {
+                if (carosello) {
+                    badgeFrontend.className = 'status-badge badge-on';
+                    badgeFrontend.innerText = 'Locandine: ON';
+                } else {
+                    badgeFrontend.className = 'status-badge badge-off';
+                    badgeFrontend.innerText = 'Locandine: OFF';
+                }
+            }
+
+            // 6. Footer News
+            const fnAttivo = document.getElementById('fn_abilitato')?.checked;
+            let numFontiAttive = 0;
+            for (let i = 0; i < 6; i++) {
+                const chk = document.getElementById(`fn_f${i}_abilitata`);
+                const nome = document.getElementById(`fn_f${i}_nome`);
+                if (chk && chk.checked && nome && nome.value.trim()) numFontiAttive++;
+            }
+            const badgeFooter = document.getElementById('badge-summary-footer');
+            if (badgeFooter) {
+                if (fnAttivo) {
+                    badgeFooter.className = 'status-badge badge-on';
+                    badgeFooter.innerText = `Attivo (${numFontiAttive} ${numFontiAttive === 1 ? 'fonte' : 'fonti'})`;
+                } else {
+                    badgeFooter.className = 'status-badge badge-off';
+                    badgeFooter.innerText = 'DISABILITATO';
+                }
+            }
+        }
+
+        function toggleHttpsFields() {
+            const isChecked = document.getElementById('https_abilitato').checked;
+            const container = document.getElementById('https-fields-container');
+            if (container) {
+                container.style.display = isChecked ? 'block' : 'none';
+            }
         }
 
         async function salvaConfigurazione(riavvia) {
@@ -671,6 +1234,14 @@
                     ...currentConfig.main,
                     porta_server: document.getElementById('porta_server').value,
                     debug_mode: document.getElementById('debug_mode').checked
+                },
+                https: {
+                    ...currentConfig.https,
+                    abilitato: document.getElementById('https_abilitato').checked,
+                    porta_https: parseInt(document.getElementById('https_porta').value) || 8443,
+                    file_certificato: document.getElementById('https_certificato').value.trim() || 'cert.pem',
+                    file_chiave: document.getElementById('https_chiave').value.trim() || 'key.pem',
+                    forza_redirect_http: document.getElementById('https_forza_redirect').checked
                 },
                 sicurezza: {
                     admin_attivo: document.getElementById('admin_attivo').checked,
@@ -779,6 +1350,12 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            const adminView = document.getElementById('admin-view');
+            if (adminView) {
+                adminView.addEventListener('input', aggiornaBadgesSommario);
+                adminView.addEventListener('change', aggiornaBadgesSommario);
+            }
+
             if (sessionStorage.getItem('adminToken')) {
                 loadAdminData();
             } else {

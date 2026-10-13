@@ -39,4 +39,4 @@ sleep 5
 
 # Lancia Chromium a tutto schermo, disabilitando gli avvisi di sicurezza,
 # e lo punta all'interfaccia unificata servita dal nostro server locale
-exec chromium --noerrdialogs --disable-infobars --kiosk --start-fullscreen --incognito http://localhost:8080/remoto.html
+exec chromium --noerrdialogs --disable-infobars --kiosk --start-fullscreen --incognito http://localhost:8080/remoto.html?kiosk=1
