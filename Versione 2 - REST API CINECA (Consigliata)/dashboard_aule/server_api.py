@@ -14,6 +14,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import socketserver
 import ssl
+import copy
 
 try:
     from http.server import ThreadingHTTPServer
@@ -36,6 +37,7 @@ PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
 FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
 CONFIG = {}
+lock_config = threading.Lock()
 SESSIONS = {}
 LOGIN_ATTEMPTS = {}
 lock_login = threading.Lock()
@@ -828,8 +830,9 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            frontend_config = CONFIG.get('frontend', {})
-            footer_news_config = CONFIG.get('footer_news', {})
+            with lock_config:
+                frontend_config = dict(CONFIG.get('frontend', {}))
+                footer_news_config = dict(CONFIG.get('footer_news', {}))
             self.wfile.write(json.dumps({**frontend_config, "footer_news": footer_news_config}).encode('utf-8'))
         elif parsed_path == '/api/news':
             self.send_response(200)
@@ -870,7 +873,8 @@ class KioskServer(BaseHTTPRequestHandler):
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 
-                safe_config = json.loads(json.dumps(CONFIG))
+                with lock_config:
+                    safe_config = json.loads(json.dumps(CONFIG))
                 if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
                     safe_config['api_cineca']['password'] = '********'
                 
@@ -945,48 +949,56 @@ class KioskServer(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(body)
                 
+                # Copy-on-Write: prepariamo la nuova configurazione su una copia isolata
+                with lock_config:
+                    nuova_config = copy.deepcopy(CONFIG)
+                
                 if 'main' in payload:
-                    if 'main' not in CONFIG: CONFIG['main'] = {}
-                    CONFIG['main'].update(payload['main'])
+                    if 'main' not in nuova_config: nuova_config['main'] = {}
+                    nuova_config['main'].update(payload['main'])
                 
                 if 'frontend' in payload:
-                    if 'frontend' not in CONFIG: CONFIG['frontend'] = {}
-                    CONFIG['frontend'].update(payload['frontend'])
+                    if 'frontend' not in nuova_config: nuova_config['frontend'] = {}
+                    nuova_config['frontend'].update(payload['frontend'])
                     
                 if 'api_cineca' in payload:
-                    if 'api_cineca' not in CONFIG: CONFIG['api_cineca'] = {}
+                    if 'api_cineca' not in nuova_config: nuova_config['api_cineca'] = {}
                     nuova_pwd = payload['api_cineca'].get('password')
                     if nuova_pwd == '********':
-                        payload['api_cineca']['password'] = CONFIG['api_cineca'].get('password', '')
+                        payload['api_cineca']['password'] = nuova_config['api_cineca'].get('password', '')
                     for field in ['realm', 'anno_accademico_id', 'contesto_id', 'id_edificio']:
                         if field in payload['api_cineca']:
                             payload['api_cineca'][field] = sanitize_id_str(payload['api_cineca'][field])
-                    CONFIG['api_cineca'].update(payload['api_cineca'])
+                    nuova_config['api_cineca'].update(payload['api_cineca'])
                     
                 if 'sicurezza' in payload:
-                    if 'sicurezza' not in CONFIG: CONFIG['sicurezza'] = {}
+                    if 'sicurezza' not in nuova_config: nuova_config['sicurezza'] = {}
                     if 'admin_ip_autorizzati' in payload['sicurezza']:
-                        CONFIG['sicurezza']['admin_ip_autorizzati'] = payload['sicurezza']['admin_ip_autorizzati']
+                        nuova_config['sicurezza']['admin_ip_autorizzati'] = payload['sicurezza']['admin_ip_autorizzati']
                     if 'admin_attivo' in payload['sicurezza']:
-                        CONFIG['sicurezza']['admin_attivo'] = payload['sicurezza']['admin_attivo']
+                        nuova_config['sicurezza']['admin_attivo'] = payload['sicurezza']['admin_attivo']
                         
                 if 'footer_news' in payload:
-                    if 'footer_news' not in CONFIG: CONFIG['footer_news'] = {}
-                    CONFIG['footer_news'].update(payload['footer_news'])
+                    if 'footer_news' not in nuova_config: nuova_config['footer_news'] = {}
+                    nuova_config['footer_news'].update(payload['footer_news'])
                 
                 if 'https' in payload:
-                    if 'https' not in CONFIG: CONFIG['https'] = {}
-                    CONFIG['https'].update(payload['https'])
+                    if 'https' not in nuova_config: nuova_config['https'] = {}
+                    nuova_config['https'].update(payload['https'])
                 
                 nuova_admin_pwd = payload.get('admin_password', '').strip()
                 if nuova_admin_pwd:
-                    CONFIG['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
+                    nuova_config['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
                     
-                # Aggiornamento custom per preservare i commenti
-                salva_config_yaml(FILE_CONFIG, CONFIG)
+                # Aggiornamento custom su disco per preservare commenti YAML
+                salva_config_yaml(FILE_CONFIG, nuova_config)
                 
-                load_config() # Ricarica per sicurezza
+                # Riassegnazione atomica thread-safe della configurazione in RAM
+                with lock_config:
+                    CONFIG = nuova_config
+                
                 news_poll_event.set() # Sveglia il demone per rileggere subito la config delle fonti
+                logging.info("💾 Configurazione salvata e applicata con successo da /admin.")
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
