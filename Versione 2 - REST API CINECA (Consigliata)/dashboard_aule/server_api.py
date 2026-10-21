@@ -512,10 +512,16 @@ def estrai_e_formatta_dati(impegni_grezzi):
             
             imp_storico.update(imp_nuovo)
 
-    for id_storico, imp_storico in storico_impegni.items():
-        if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
-            imp_storico["cancellato"] = True
-            imp_storico["avviso"] = "ANNULLATO"
+    # Protezione anti-falso annullamento:
+    # Se la risposta da CINECA e vuota ma avevamo gia impegni validi nello storico,
+    # non marchiamo gli eventi come annullati per evitare falsi allarmi sul totem.
+    if len(nuovi_estratti) == 0 and len(storico_impegni) > 0:
+        logging.warning("⚠️ Rilevato payload CINECA vuoto a fronte di impegni validi in memoria. Preservo lo stato per evitare falsi annullamenti.")
+    else:
+        for id_storico, imp_storico in storico_impegni.items():
+            if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
+                imp_storico["cancellato"] = True
+                imp_storico["avviso"] = "ANNULLATO"
 
     dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(ora_attuale), datetime.time(0, 0, 0), tzinfo=tz_roma)
     mezzanotte_oggi = dt_inizio_giorno.timestamp()
