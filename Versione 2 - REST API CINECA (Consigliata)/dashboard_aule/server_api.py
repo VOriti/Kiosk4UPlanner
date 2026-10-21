@@ -848,7 +848,25 @@ class KioskServer(BaseHTTPRequestHandler):
         elif parsed_path == '/logo.png': 
             self.serve_file(os.path.join(PERCORSO_BASE, 'logo.png'), 'image/png')
         elif parsed_path.startswith('/locandine/'): 
-            self.serve_file(os.path.join(PERCORSO_BASE, 'locandine', os.path.basename(parsed_path)), 'image/jpeg')
+            nome_file = os.path.basename(parsed_path)
+            cartella_locandine = os.path.abspath(os.path.join(PERCORSO_BASE, 'locandine'))
+            percorso_file = os.path.abspath(os.path.join(cartella_locandine, nome_file))
+            
+            # Protezione path traversal e verifica file reale
+            if not percorso_file.startswith(cartella_locandine) or not os.path.isfile(percorso_file):
+                self.send_response(404)
+                self.end_headers()
+                return
+            
+            ext = os.path.splitext(nome_file)[1].lower()
+            mime_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.webp': 'image/webp'
+            }
+            mime = mime_map.get(ext, 'application/octet-stream')
+            self.serve_file(percorso_file, mime)
         elif parsed_path == '/lista_locandine.json':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -857,7 +875,10 @@ class KioskServer(BaseHTTPRequestHandler):
             try:
                 cartella_locandine = os.path.join(PERCORSO_BASE, 'locandine')
                 if os.path.exists(cartella_locandine):
-                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and os.path.isfile(os.path.join(cartella_locandine, f))]
+                    # Ordinamento naturale per supportare numeri progressivi (1.jpg, 2.png, 10.jpg)
+                    import re
+                    immagini.sort(key=lambda x: int(re.match(r'^(\d+)', x).group(1)) if re.match(r'^(\d+)', x) else x.lower())
                     self.wfile.write(json.dumps(immagini).encode('utf-8'))
                 else:
                     self.wfile.write(json.dumps([]).encode('utf-8'))
@@ -1027,7 +1048,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def serve_file(self, path, mime):
-        if os.path.exists(path):
+        if os.path.isfile(path):
             self.send_response(200)
             self.send_header('Content-type', mime)
             self.end_headers()
