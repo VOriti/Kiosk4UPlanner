@@ -37,6 +37,8 @@ FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
 CONFIG = {}
 SESSIONS = {}
+LOGIN_ATTEMPTS = {}
+lock_login = threading.Lock()
 memoria_dati = []
 lock_memoria = threading.Lock()
 token_cineca = None
@@ -876,6 +878,21 @@ class KioskServer(BaseHTTPRequestHandler):
         if parsed_path == '/api/admin/login':
             if not self._check_security(): return
             
+            client_ip = self.client_address[0] if self.client_address else '127.0.0.1'
+            now_ts = time.time()
+            
+            with lock_login:
+                tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
+                if tentativo.get('locked_until', 0) > now_ts:
+                    secondi_attesa = int(tentativo['locked_until'] - now_ts)
+                    self.send_response(429)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": f"Troppi tentativi falliti. Riprova tra {secondi_attesa} secondi."
+                    }).encode('utf-8'))
+                    return
+
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
             try:
@@ -886,6 +903,9 @@ class KioskServer(BaseHTTPRequestHandler):
                 hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
                 
                 if pwd_hash == hash_salvato:
+                    with lock_login:
+                        if client_ip in LOGIN_ATTEMPTS:
+                            del LOGIN_ATTEMPTS[client_ip]
                     token = secrets.token_hex(16)
                     SESSIONS[token] = time.time() + 3600
                     self.send_response(200)
@@ -893,6 +913,14 @@ class KioskServer(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(json.dumps({"token": token}).encode('utf-8'))
                 else:
+                    time.sleep(1)  # Delay difensivo anti-timing e anti-brute force
+                    with lock_login:
+                        tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
+                        tentativo['count'] = tentativo.get('count', 0) + 1
+                        if tentativo['count'] >= 5:
+                            tentativo['locked_until'] = now_ts + 600  # Blocco per 10 minuti
+                            logging.warning(f"🚨 Troppi tentativi di login errati dall'IP {client_ip}. IP bloccato per 10 minuti.")
+                        LOGIN_ATTEMPTS[client_ip] = tentativo
                     self.send_error(401, "Unauthorized")
             except Exception as e:
                 logging.error(f"Errore login: {e}")
