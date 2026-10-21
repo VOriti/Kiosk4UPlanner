@@ -758,6 +758,11 @@ def NewsPollingDaemon():
 
 class KioskServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass 
+
+    def end_headers(self):
+        self.send_header('X-Frame-Options', 'SAMEORIGIN')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        super().end_headers() 
     
     def _check_security(self):
         sicurezza = CONFIG.get('sicurezza', {})
@@ -911,6 +916,14 @@ class KioskServer(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed_path = self.path.split('?')[0]
+        content_length = int(self.headers.get('Content-Length', 0))
+
+        # Protezione anti-OOM: 10 MB per upload locandine autenticato, 1 MB per tutte le altre API
+        max_size = 10 * 1024 * 1024 if parsed_path.startswith('/api/admin/locandine/upload') else 1 * 1024 * 1024
+        if content_length > max_size:
+            self.send_error(413, "Payload Too Large")
+            return
+
         if parsed_path == '/api/admin/login':
             if not self._check_security(): return
             
