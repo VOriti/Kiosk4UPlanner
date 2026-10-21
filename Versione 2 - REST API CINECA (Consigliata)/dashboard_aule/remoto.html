@@ -1052,6 +1052,7 @@
         let eraOffline = false;
         let erroriConsecutivi = 0;
         let datiCaricatiAlmenoUnaVolta = false;
+        let ultimoDatiJson = null;
 
         async function scaricaDatiServerLocale() {
             const dashboard = document.getElementById('dashboard');
@@ -1068,10 +1069,27 @@
                 eraOffline = false;
                 datiCaricatiAlmenoUnaVolta = true;
 
+                const eraStatoSistema = !document.getElementById('colonna-in-corso');
+
                 if (!datiAule || datiAule.length === 0) {
-                    dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                    const emptyJson = JSON.stringify(datiAule || []);
+                    if (!eraStatoSistema || emptyJson !== ultimoDatiJson) {
+                        ultimoDatiJson = emptyJson;
+                        dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                    }
                     return;
                 }
+
+                const datiJsonStr = JSON.stringify(datiAule);
+                const colInCorso = document.getElementById('colonna-in-corso');
+                const colFuturi = document.getElementById('colonna-futuri');
+                const layoutPresente = colInCorso && colFuturi;
+
+                // Se la struttura delle colonne è già presente e i dati non sono cambiati, non tocchiamo il DOM
+                if (layoutPresente && datiJsonStr === ultimoDatiJson) {
+                    return;
+                }
+                ultimoDatiJson = datiJsonStr;
 
                 let htmlInCorso = '', htmlFuturi = '';
                 datiAule.forEach(imp => {
@@ -1082,25 +1100,32 @@
                 if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
                 if (!htmlFuturi) htmlFuturi = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione programmata</div>';
 
-                const nuovoLayout = `
-                    <div class="layout-colonne">
-                        <div class="colonna-sezione">
-                            <h2 class="titolo-colonna">In Corso</h2>
-                            <div class="colonna-scroll">
-                                ${htmlInCorso}
-                            </div>
-                        </div>
-                        <div class="colonna-sezione">
-                            <h2 class="titolo-colonna">Prossimi Eventi</h2>
-                            <div class="colonna-scroll">
-                                ${htmlFuturi}
-                            </div>
-                        </div>
-                    </div>
-                `;
+                if (layoutPresente) {
+                    const scrollInCorso = colInCorso.scrollTop;
+                    const scrollFuturi = colFuturi.scrollTop;
 
-                if (dashboard.innerHTML !== nuovoLayout) {
-                    dashboard.innerHTML = nuovoLayout;
+                    colInCorso.innerHTML = htmlInCorso;
+                    colFuturi.innerHTML = htmlFuturi;
+
+                    colInCorso.scrollTop = scrollInCorso;
+                    colFuturi.scrollTop = scrollFuturi;
+                } else {
+                    dashboard.innerHTML = `
+                        <div class="layout-colonne">
+                            <div class="colonna-sezione">
+                                <h2 class="titolo-colonna">In Corso</h2>
+                                <div id="colonna-in-corso" class="colonna-scroll">
+                                    ${htmlInCorso}
+                                </div>
+                            </div>
+                            <div class="colonna-sezione">
+                                <h2 class="titolo-colonna">Prossimi Eventi</h2>
+                                <div id="colonna-futuri" class="colonna-scroll">
+                                    ${htmlFuturi}
+                                </div>
+                            </div>
+                        </div>
+                    `;
                 }
             } catch (errore) {
                 erroriConsecutivi++;
@@ -1108,6 +1133,7 @@
                 // Non cancellare la schermata se abbiamo già dati visualizzati e l'errore è transitorio
                 if (!datiCaricatiAlmenoUnaVolta || erroriConsecutivi >= 4) {
                     eraOffline = true;
+                    ultimoDatiJson = null;
                     dashboard.innerHTML = `
                         <div class="stato-sistema offline">
                             <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
