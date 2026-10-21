@@ -43,6 +43,7 @@ token_cineca = None
 storico_impegni = {}
 data_storico = None
 ultimo_reset_data = None
+ultimo_stato_json_salvato = None
 memoria_news = []
 news_poll_event = threading.Event()
 
@@ -77,9 +78,26 @@ def get_giorno_operativo(dt_roma=None):
     else:
         return now_roma.date() - datetime.timedelta(days=1)
 
-def salva_stato():
-    with open(os.path.join(PERCORSO_BASE, 'stato_impegni.json'), 'w', encoding='utf-8') as f:
-        json.dump(storico_impegni, f, indent=4)
+def salva_stato(forza=False):
+    """Salva lo stato degli impegni in modo condizionale e atomico.
+    Se i dati non sono cambiati, non effettua scritture su disco per tutelare la MicroSD.
+    Utilizza un file temporaneo e os.replace per prevenire corruzioni da blackout."""
+    global ultimo_stato_json_salvato
+    try:
+        nuovo_json = json.dumps(storico_impegni, indent=4, sort_keys=True)
+        if not forza and nuovo_json == ultimo_stato_json_salvato:
+            return  # Nessuna variazione: zero scritture su MicroSD
+        
+        percorso_def = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
+        percorso_tmp = os.path.join(PERCORSO_BASE, 'stato_impegni.json.tmp')
+        with open(percorso_tmp, 'w', encoding='utf-8') as f:
+            f.write(nuovo_json)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(percorso_tmp, percorso_def)
+        ultimo_stato_json_salvato = nuovo_json
+    except Exception as e:
+        logging.error(f"❌ Errore durante il salvataggio atomico dello stato: {e}")
 
 def verifica_e_esegui_reset_04am(dt_roma=None):
     """Verifica ed esegue il reset programmato alle 04:00 AM (o catch-up all'avvio).
@@ -201,9 +219,11 @@ def carica_stato():
         try:
             with open(file_stato, 'r', encoding='utf-8') as f:
                 storico_impegni = json.load(f)
+                ultimo_stato_json_salvato = json.dumps(storico_impegni, indent=4, sort_keys=True)
         except Exception as e:
-            logging.warning(f"⚠️ Impossibile leggere stato_impegni.json: {e}")
+            logging.warning(f"⚠️ Impossibile leggere stato_impegni.json (file corrotto o non valido): {e}")
             storico_impegni = {}
+            ultimo_stato_json_salvato = None
     
     tz_roma = get_tz_roma()
     now_roma = datetime.datetime.now(tz_roma)
@@ -357,8 +377,12 @@ def salva_config_yaml(file_path=None, config_data=None):
                             out_lines.append(f"    - {json.dumps(item)}\n")
                 elif not isinstance(v, dict):
                     out_lines.append(f"  {k}: {json.dumps(v)}\n")
-    with open(file_path, 'w', encoding='utf-8') as f:
+    file_tmp = f"{file_path}.tmp"
+    with open(file_tmp, 'w', encoding='utf-8') as f:
         f.writelines(out_lines)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(file_tmp, file_path)
 
 def effettua_login():
     global token_cineca
