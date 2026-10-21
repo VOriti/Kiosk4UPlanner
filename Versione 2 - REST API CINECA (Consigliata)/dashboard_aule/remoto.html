@@ -961,6 +961,22 @@
             }
         }
 
+        function formattaTitoloNews(titolo) {
+            if (!titolo) return '';
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = String(titolo);
+            return (tempDiv.textContent || tempDiv.innerText || '').trim();
+        }
+
+        function sanitizzaUrlLink(url) {
+            if (!url) return '';
+            const u = String(url).trim();
+            if (u.startsWith('http://') || u.startsWith('https://')) {
+                return encodeURI(u);
+            }
+            return '';
+        }
+
         function renderTicker() {
             const wrapper = document.getElementById('ticker-wrapper');
             clearInterval(tickerInterval);
@@ -983,8 +999,10 @@
             
             if (stile === 'orizzontale') {
                 const testi = notizieFiltrate.map(n => {
-                    const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
-                    return n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                    const titPulito = formattaTitoloNews(n.titolo);
+                    const safeLink = sanitizzaUrlLink(n.link);
+                    const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
+                    return safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                 });
                 const stringaUnica = testi.join(' &nbsp;&nbsp;&bull;&nbsp;&nbsp; ');
                 
@@ -1001,8 +1019,10 @@
                     divVert.style.opacity = 0;
                     setTimeout(() => {
                         const n = notizieFiltrate[indexVerticale];
-                        const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
-                        const htmlContenuto = n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                        const titPulito = formattaTitoloNews(n.titolo);
+                        const safeLink = sanitizzaUrlLink(n.link);
+                        const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
+                        const htmlContenuto = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                         divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
                         divVert.style.opacity = 1;
                         indexVerticale = (indexVerticale + 1) % notizieFiltrate.length;
@@ -1409,7 +1429,9 @@
             notizieCorrenti.forEach(n => {
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid var(--border-color)';
-                const link = n.link ? `<a href="${n.link}" target="_blank" style="color: #58a6ff; text-decoration: none;">${n.titolo}</a>` : n.titolo;
+                const titPulito = formattaTitoloNews(n.titolo);
+                const safeLink = sanitizzaUrlLink(n.link);
+                const link = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: #58a6ff; text-decoration: none;">${titPulito}</a>` : titPulito;
                 tr.innerHTML = `
                     <td style="padding: 10px; white-space: nowrap;">${n.data || '-'}</td>
                     <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${n.fonte}</span></td>

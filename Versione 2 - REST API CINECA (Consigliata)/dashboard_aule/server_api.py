@@ -704,20 +704,35 @@ def NewsPollingDaemon():
                                 notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link, "data": data, "visibile": visibile})
                     elif tipo == 'rss':
                         root = ET.fromstring(res.text)
-                        for item in root.findall('./channel/item'):
-                            title = item.find('title')
-                            link_elem = item.find('link')
-                            date_elem = item.find('pubDate')
-                            link = link_elem.text.strip() if link_elem is not None and link_elem.text else ''
+                        items = root.findall('./channel/item')
+                        if not items:
+                            # Supporto fallback per formati Atom (Drupal Views / feed alternativi)
+                            items = root.findall('.//{http://www.w3.org/2005/Atom}entry') or root.findall('.//entry')
+
+                        for item in items:
+                            title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
+                            link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
+                            date_elem = item.find('{http://www.w3.org/2005/Atom}updated') or item.find('{http://www.w3.org/2005/Atom}published') or item.find('pubDate') or item.find('date')
+                            
+                            link = ''
+                            if link_elem is not None:
+                                link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
                             data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
                             
                             titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
+                            # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
                             if not link and title is not None:
                                 a_elem = title.find('.//a')
                                 if a_elem is not None and a_elem.get('href'):
                                     link = a_elem.get('href')
-                            if titolo_raw:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(titolo_raw), "link": link, "data": data, "visibile": visibile})
+                                elif 'href=' in str(titolo_raw):
+                                    m_href = re.search(r'href="([^"]+)"', str(titolo_raw)) or re.search(r"href='([^']+)'", str(titolo_raw))
+                                    if m_href:
+                                        link = m_href.group(1).strip()
+                            
+                            titolo_pulito = clean_html(titolo_raw)
+                            if titolo_pulito:
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link.strip(), "data": data, "visibile": visibile})
                 except Exception as e:
                     logging.error(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
                 
