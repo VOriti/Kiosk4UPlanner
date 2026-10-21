@@ -205,14 +205,25 @@ def load_config():
 load_config()
 server_https_attivo = False
 
+import logging.handlers
+
 file_log = os.path.join(PERCORSO_BASE, CONFIG.get('main', {}).get('file_log', 'kiosk.log'))
-logging.basicConfig(
-    filename=file_log,
-    level=logging.INFO,
-    format='%(asctime)s - [API SERVER] - %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+for h in list(root_logger.handlers):
+    root_logger.removeHandler(h)
+
+handler_rotativo = logging.handlers.RotatingFileHandler(
+    file_log,
+    maxBytes=10 * 1024 * 1024,  # 10 MB per file
+    backupCount=4,              # 4 file di backup (.1 .. .4) per un totale massimo di 50 MB
     encoding='utf-8'
 )
+handler_rotativo.setFormatter(logging.Formatter(
+    fmt='%(asctime)s - [API SERVER] - %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+root_logger.addHandler(handler_rotativo)
 
 def carica_stato():
     global storico_impegni, ultimo_reset_data
