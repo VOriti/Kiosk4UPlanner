@@ -228,7 +228,7 @@ handler_rotativo.setFormatter(logging.Formatter(
 root_logger.addHandler(handler_rotativo)
 
 def carica_stato():
-    global storico_impegni, ultimo_reset_data
+    global storico_impegni, ultimo_reset_data, ultimo_stato_json_salvato
     file_stato = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
     if os.path.exists(file_stato):
         try:
@@ -930,6 +930,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def do_POST(self):
+        global CONFIG
         parsed_path = self.path.split('?')[0]
         content_length = int(self.headers.get('Content-Length', 0))
 
