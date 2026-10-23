@@ -1411,6 +1411,16 @@
             });
 
             notizieCorrenti.sort((a, b) => {
+                if (col === 'data') {
+                    const toTs = (s) => {
+                        if (!s || s === '-') return 0;
+                        const parts = s.split('/');
+                        if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]).getTime();
+                        const parsed = Date.parse(s);
+                        return isNaN(parsed) ? 0 : parsed;
+                    };
+                    return (toTs(a.data) - toTs(b.data)) * currentSortDir;
+                }
                 let valA = a[col] || '';
                 let valB = b[col] || '';
                 if (typeof valA === 'string') valA = valA.toLowerCase();

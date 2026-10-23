@@ -48,6 +48,7 @@ storico_impegni = {}
 data_storico = None
 ultimo_reset_data = None
 ultimo_stato_json_salvato = None
+ultimo_aggiornamento_preservato = False
 memoria_news = []
 news_poll_event = threading.Event()
 
@@ -530,9 +531,12 @@ def estrai_e_formatta_dati(impegni_grezzi):
     # Protezione anti-falso annullamento:
     # Se la risposta da CINECA e vuota ma avevamo gia impegni validi nello storico,
     # non marchiamo gli eventi come annullati per evitare falsi allarmi sul totem.
+    global ultimo_aggiornamento_preservato
     if len(nuovi_estratti) == 0 and len(storico_impegni) > 0:
         logging.warning("⚠️ Rilevato payload CINECA vuoto a fronte di impegni validi in memoria. Preservo lo stato per evitare falsi annullamenti.")
+        ultimo_aggiornamento_preservato = True
     else:
+        ultimo_aggiornamento_preservato = False
         for id_storico, imp_storico in storico_impegni.items():
             if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
                 imp_storico["cancellato"] = True
@@ -639,7 +643,10 @@ def ciclo_aggiornamento_api():
                         logging.info("🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.")
                 with lock_memoria:
                     memoria_dati = estrai_e_formatta_dati(dati_grezzi)
-                logging.info(f"✅ Dati ricevuti! Trovati {len(memoria_dati)} impegni.")
+                if ultimo_aggiornamento_preservato:
+                    logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
+                else:
+                    logging.info(f"✅ Dati ricevuti da CINECA! Trovati {len(memoria_dati)} impegni.")
             else:
                 logging.error(f"❌ Errore HTTP {risposta.status_code}: {risposta.text[:100]}")
                 
@@ -666,6 +673,37 @@ def NewsPollingDaemon():
         cleanr = re.compile('<.*?>')
         cleantext = re.sub(cleanr, '', str(raw_html))
         return cleantext.strip()
+
+    def parse_data_notizia(raw):
+        if not raw: return ''
+        raw = raw.strip()
+        try:
+            import email.utils
+            dt = email.utils.parsedate_to_datetime(raw)
+            if dt: return dt.strftime('%d/%m/%Y')
+        except Exception:
+            pass
+        m1 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
+        if m1:
+            d, m, y = m1.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+        mesi = {
+            'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
+            'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
+            'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4, 'maggio': 5, 'giugno': 6,
+            'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
+        }
+        m2 = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', raw)
+        if m2:
+            d, mese_str, y = m2.groups()
+            mese_num = mesi.get(mese_str.lower()[:3]) or mesi.get(mese_str.lower())
+            if mese_num:
+                return f"{int(d):02d}/{mese_num:02d}/{y}"
+        m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', raw)
+        if m3:
+            y, m, d = m3.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+        return raw
         
     while True:
         try:
@@ -699,7 +737,7 @@ def NewsPollingDaemon():
                         for item in dati:
                             title = item.get('title', {}).get('rendered', '')
                             link = item.get('link', '')
-                            data = item.get('date', '')
+                            data = parse_data_notizia(item.get('date', ''))
                             if title:
                                 notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link, "data": data, "visibile": visibile})
                     elif tipo == 'rss':
@@ -712,12 +750,18 @@ def NewsPollingDaemon():
                         for item in items:
                             title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
                             link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
-                            date_elem = item.find('{http://www.w3.org/2005/Atom}updated') or item.find('{http://www.w3.org/2005/Atom}published') or item.find('pubDate') or item.find('date')
+                            date_elem = None
+                            for tag_candidate in ['{http://www.w3.org/2005/Atom}updated', '{http://www.w3.org/2005/Atom}published', 'pubDate', '{http://purl.org/dc/elements/1.1/}date', 'date']:
+                                found_el = item.find(tag_candidate)
+                                if found_el is not None:
+                                    date_elem = found_el
+                                    break
                             
                             link = ''
                             if link_elem is not None:
                                 link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
-                            data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
+                            raw_data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
+                            data = parse_data_notizia(raw_data)
                             
                             titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
                             # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
@@ -954,7 +998,8 @@ class KioskServer(BaseHTTPRequestHandler):
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({
-                        "error": f"Troppi tentativi falliti. Riprova tra {secondi_attesa} secondi."
+                        "error": f"Troppi tentativi falliti. Riprova tra {secondi_attesa} secondi.",
+                        "secondi_attesa": secondi_attesa
                     }).encode('utf-8'))
                     return
 
