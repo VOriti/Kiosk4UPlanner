@@ -14,6 +14,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import socketserver
 import ssl
+import copy
 
 try:
     from http.server import ThreadingHTTPServer
@@ -36,14 +37,103 @@ PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
 FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
 CONFIG = {}
+lock_config = threading.Lock()
 SESSIONS = {}
+LOGIN_ATTEMPTS = {}
+lock_login = threading.Lock()
 memoria_dati = []
 lock_memoria = threading.Lock()
 token_cineca = None
 storico_impegni = {}
 data_storico = None
+ultimo_reset_data = None
+ultimo_stato_json_salvato = None
+ultimo_aggiornamento_preservato = False
 memoria_news = []
 news_poll_event = threading.Event()
+
+def get_tz_roma():
+    """Restituisce il fuso orario di Roma (Europe/Rome).
+    Supporta nativamente zoneinfo su Linux/Raspberry Pi con fallback robusto per Windows/UTC."""
+    try:
+        import zoneinfo
+        return zoneinfo.ZoneInfo("Europe/Rome")
+    except Exception:
+        pass
+    local_tz = datetime.datetime.now().astimezone().tzinfo
+    if local_tz and datetime.datetime.now().astimezone().utcoffset() != datetime.timedelta(0):
+        return local_tz
+    # Fallback calcolato CET (UTC+1) / CEST (UTC+2) per sistemi configurati in UTC puro
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    anno = now_utc.year
+    mar_last_sun = max(d for d in range(25, 32) if datetime.date(anno, 3, d).weekday() == 6)
+    oct_last_sun = max(d for d in range(25, 32) if datetime.date(anno, 10, d).weekday() == 6)
+    dst_start = datetime.datetime(anno, 3, mar_last_sun, 2, 0, tzinfo=datetime.timezone.utc)
+    dst_end = datetime.datetime(anno, 10, oct_last_sun, 3, 0, tzinfo=datetime.timezone.utc)
+    offset_ore = 2 if dst_start <= now_utc < dst_end else 1
+    return datetime.timezone(datetime.timedelta(hours=offset_ore))
+
+def get_giorno_operativo(dt_roma=None):
+    """Calcola la data del giorno operativo corrente per l'Ateneo.
+    La giornata didattica va dalle 04:00 del mattino alle 03:59 del giorno successivo."""
+    tz_roma = get_tz_roma()
+    now_roma = dt_roma or datetime.datetime.now(tz_roma)
+    if now_roma.hour >= 4:
+        return now_roma.date()
+    else:
+        return now_roma.date() - datetime.timedelta(days=1)
+
+def salva_stato(forza=False):
+    """Salva lo stato degli impegni in modo condizionale e atomico.
+    Se i dati non sono cambiati, non effettua scritture su disco per tutelare la MicroSD.
+    Utilizza un file temporaneo e os.replace per prevenire corruzioni da blackout."""
+    global ultimo_stato_json_salvato
+    try:
+        nuovo_json = json.dumps(storico_impegni, indent=4, sort_keys=True)
+        if not forza and nuovo_json == ultimo_stato_json_salvato:
+            return  # Nessuna variazione: zero scritture su MicroSD
+        
+        percorso_def = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
+        percorso_tmp = os.path.join(PERCORSO_BASE, 'stato_impegni.json.tmp')
+        with open(percorso_tmp, 'w', encoding='utf-8') as f:
+            f.write(nuovo_json)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(percorso_tmp, percorso_def)
+        ultimo_stato_json_salvato = nuovo_json
+    except Exception as e:
+        logging.error(f"❌ Errore durante il salvataggio atomico dello stato: {e}")
+
+def verifica_e_esegui_reset_04am(dt_roma=None):
+    """Verifica ed esegue il reset programmato alle 04:00 AM (o catch-up all'avvio).
+    Ritorna True se è stato eseguito un reset dello storico impegni."""
+    global storico_impegni, ultimo_reset_data
+    tz_roma = get_tz_roma()
+    now_roma = dt_roma or datetime.datetime.now(tz_roma)
+    giorno_op = get_giorno_operativo(now_roma)
+    giorno_op_str = str(giorno_op)
+
+    file_reset = os.path.join(PERCORSO_BASE, 'ultimo_reset.txt')
+    if ultimo_reset_data is None:
+        if os.path.exists(file_reset):
+            try:
+                with open(file_reset, 'r', encoding='utf-8') as f:
+                    ultimo_reset_data = f.read().strip()
+            except Exception:
+                ultimo_reset_data = None
+
+    if ultimo_reset_data != giorno_op_str:
+        logging.info(f"🔄 Esecuzione reset giornaliero impegni (precedente: {ultimo_reset_data} -> nuovo giorno operativo: {giorno_op_str}).")
+        storico_impegni.clear()
+        salva_stato()
+        ultimo_reset_data = giorno_op_str
+        try:
+            with open(file_reset, 'w', encoding='utf-8') as f:
+                f.write(giorno_op_str)
+        except Exception as e:
+            logging.warning(f"⚠️ Impossibile salvare ultimo_reset.txt: {e}")
+        return True
+    return False
 
 DEFAULT_CONFIG = """main:
   porta_server: 8080
@@ -118,30 +208,52 @@ def load_config():
 load_config()
 server_https_attivo = False
 
+import logging.handlers
+
 file_log = os.path.join(PERCORSO_BASE, CONFIG.get('main', {}).get('file_log', 'kiosk.log'))
-logging.basicConfig(
-    filename=file_log,
-    level=logging.INFO,
-    format='%(asctime)s - [API SERVER] - %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+for h in list(root_logger.handlers):
+    root_logger.removeHandler(h)
+
+handler_rotativo = logging.handlers.RotatingFileHandler(
+    file_log,
+    maxBytes=10 * 1024 * 1024,  # 10 MB per file
+    backupCount=4,              # 4 file di backup (.1 .. .4) per un totale massimo di 50 MB
     encoding='utf-8'
 )
+handler_rotativo.setFormatter(logging.Formatter(
+    fmt='%(asctime)s - [API SERVER] - %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+root_logger.addHandler(handler_rotativo)
 
 def carica_stato():
-    global storico_impegni
-    if os.path.exists(os.path.join(PERCORSO_BASE, 'stato_impegni.json')):
-        with open(os.path.join(PERCORSO_BASE, 'stato_impegni.json'), 'r', encoding='utf-8') as f:
-            storico_impegni = json.load(f)
+    global storico_impegni, ultimo_reset_data, ultimo_stato_json_salvato
+    file_stato = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
+    if os.path.exists(file_stato):
+        try:
+            with open(file_stato, 'r', encoding='utf-8') as f:
+                storico_impegni = json.load(f)
+                ultimo_stato_json_salvato = json.dumps(storico_impegni, indent=4, sort_keys=True)
+        except Exception as e:
+            logging.warning(f"⚠️ Impossibile leggere stato_impegni.json (file corrotto o non valido): {e}")
+            storico_impegni = {}
+            ultimo_stato_json_salvato = None
     
-    ora_attuale = datetime.datetime.now(datetime.timezone.utc)
-    mezzanotte_oggi = ora_attuale.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    storico_impegni = {k: v for k, v in storico_impegni.items() if v['timestamp_fine'] > mezzanotte_oggi}
+    tz_roma = get_tz_roma()
+    now_roma = datetime.datetime.now(tz_roma)
+    
+    # Catch-up delle 04:00 AM all'avvio (es. accensione portineria alle 07:30):
+    if verifica_e_esegui_reset_04am(now_roma):
+        logging.info("🧹 Catch-up avvio: storico impegni resettato per la nuova giornata operativa.")
+    else:
+        # Se siamo nella stessa giornata operativa, rimuoviamo solo eventuali eventi scaduti
+        dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(now_roma), datetime.time(0, 0, 0), tzinfo=tz_roma)
+        mezzanotte_ts = dt_inizio_giorno.timestamp()
+        storico_impegni = {k: v for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) > mezzanotte_ts}
 
 carica_stato()
-
-def salva_stato():
-    with open(os.path.join(PERCORSO_BASE, 'stato_impegni.json'), 'w', encoding='utf-8') as f:
-        json.dump(storico_impegni, f, indent=4)
 
 def sanitize_id_str(val):
     """Sanitizza gli identificativi CINECA rimuovendo spazi e apici accidentali ed evitando 'None'."""
@@ -281,8 +393,12 @@ def salva_config_yaml(file_path=None, config_data=None):
                             out_lines.append(f"    - {json.dumps(item)}\n")
                 elif not isinstance(v, dict):
                     out_lines.append(f"  {k}: {json.dumps(v)}\n")
-    with open(file_path, 'w', encoding='utf-8') as f:
+    file_tmp = f"{file_path}.tmp"
+    with open(file_tmp, 'w', encoding='utf-8') as f:
         f.writelines(out_lines)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(file_tmp, file_path)
 
 def effettua_login():
     global token_cineca
@@ -315,8 +431,9 @@ def effettua_login():
 
 def estrai_e_formatta_dati(impegni_grezzi):
     global storico_impegni, data_storico
-    ora_attuale = datetime.datetime.now(datetime.timezone.utc)
-    oggi_str = ora_attuale.strftime("%Y-%m-%d")
+    tz_roma = get_tz_roma()
+    ora_attuale = datetime.datetime.now(tz_roma)
+    oggi_str = str(get_giorno_operativo(ora_attuale))
     
     if oggi_str != data_storico:
         data_storico = oggi_str
@@ -375,7 +492,7 @@ def estrai_e_formatta_dati(impegni_grezzi):
 
             nuovi_estratti[id_imp] = {
                 "id": id_imp,
-                "orario": f"{dt_inizio.astimezone().strftime('%H:%M')} - {dt_fine.astimezone().strftime('%H:%M')}",
+                "orario": f"{dt_inizio.astimezone(tz_roma).strftime('%H:%M')} - {dt_fine.astimezone(tz_roma).strftime('%H:%M')}",
                 "titolo": titolo_raw.strip(),
                 "docente": f"{item.get('docenti', [{}])[0].get('cognome', '')} {item.get('docenti', [{}])[0].get('nome', '')}".strip() if item.get('docenti') else "Dipartimento",
                 "aula": aule[0].get('descrizione', 'Da definire').strip() if aule else "Da definire",
@@ -411,13 +528,23 @@ def estrai_e_formatta_dati(impegni_grezzi):
             
             imp_storico.update(imp_nuovo)
 
-    for id_storico, imp_storico in storico_impegni.items():
-        if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
-            imp_storico["cancellato"] = True
-            imp_storico["avviso"] = "ANNULLATO"
+    # Protezione anti-falso annullamento:
+    # Se la risposta da CINECA e vuota ma avevamo gia impegni validi nello storico,
+    # non marchiamo gli eventi come annullati per evitare falsi allarmi sul totem.
+    global ultimo_aggiornamento_preservato
+    if len(nuovi_estratti) == 0 and len(storico_impegni) > 0:
+        logging.warning("⚠️ Rilevato payload CINECA vuoto a fronte di impegni validi in memoria. Preservo lo stato per evitare falsi annullamenti.")
+        ultimo_aggiornamento_preservato = True
+    else:
+        ultimo_aggiornamento_preservato = False
+        for id_storico, imp_storico in storico_impegni.items():
+            if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
+                imp_storico["cancellato"] = True
+                imp_storico["avviso"] = "ANNULLATO"
 
-    mezzanotte_oggi = ora_attuale.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    chiavi_scadute = [k for k, v in storico_impegni.items() if v['timestamp_fine'] <= mezzanotte_oggi]
+    dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(ora_attuale), datetime.time(0, 0, 0), tzinfo=tz_roma)
+    mezzanotte_oggi = dt_inizio_giorno.timestamp()
+    chiavi_scadute = [k for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) <= mezzanotte_oggi]
     for k in chiavi_scadute:
         del storico_impegni[k]
 
@@ -456,9 +583,19 @@ def ciclo_aggiornamento_api():
                 "X-Realm": realm 
             }            
             
-            oggi = datetime.datetime.now(datetime.timezone.utc)
-            inizio_giornata = oggi.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-            fine_giornata = oggi.replace(hour=23, minute=59, second=59, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            tz_roma = get_tz_roma()
+            now_roma = datetime.datetime.now(tz_roma)
+
+            # Controllo reset programmato alle 04:00 AM (o catch-up)
+            if verifica_e_esegui_reset_04am(now_roma):
+                logging.info("🌅 Eseguito reset delle 04:00 AM. Avvio scaricamento orari fresco.")
+
+            giorno_op = get_giorno_operativo(now_roma)
+            dt_inizio_roma = datetime.datetime.combine(giorno_op, datetime.time(0, 0, 0), tzinfo=tz_roma)
+            dt_fine_roma = datetime.datetime.combine(giorno_op, datetime.time(23, 59, 59), tzinfo=tz_roma)
+
+            inizio_giornata = dt_inizio_roma.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            fine_giornata = dt_fine_roma.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
             payload = {
                 "limit": 500,
@@ -506,7 +643,10 @@ def ciclo_aggiornamento_api():
                         logging.info("🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.")
                 with lock_memoria:
                     memoria_dati = estrai_e_formatta_dati(dati_grezzi)
-                logging.info(f"✅ Dati ricevuti! Trovati {len(memoria_dati)} impegni.")
+                if ultimo_aggiornamento_preservato:
+                    logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
+                else:
+                    logging.info(f"✅ Dati ricevuti da CINECA! Trovati {len(memoria_dati)} impegni.")
             else:
                 logging.error(f"❌ Errore HTTP {risposta.status_code}: {risposta.text[:100]}")
                 
@@ -533,6 +673,37 @@ def NewsPollingDaemon():
         cleanr = re.compile('<.*?>')
         cleantext = re.sub(cleanr, '', str(raw_html))
         return cleantext.strip()
+
+    def parse_data_notizia(raw):
+        if not raw: return ''
+        raw = raw.strip()
+        try:
+            import email.utils
+            dt = email.utils.parsedate_to_datetime(raw)
+            if dt: return dt.strftime('%d/%m/%Y')
+        except Exception:
+            pass
+        m1 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
+        if m1:
+            d, m, y = m1.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+        mesi = {
+            'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
+            'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
+            'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4, 'maggio': 5, 'giugno': 6,
+            'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
+        }
+        m2 = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', raw)
+        if m2:
+            d, mese_str, y = m2.groups()
+            mese_num = mesi.get(mese_str.lower()[:3]) or mesi.get(mese_str.lower())
+            if mese_num:
+                return f"{int(d):02d}/{mese_num:02d}/{y}"
+        m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', raw)
+        if m3:
+            y, m, d = m3.groups()
+            return f"{int(d):02d}/{int(m):02d}/{y}"
+        return raw
         
     while True:
         try:
@@ -566,25 +737,46 @@ def NewsPollingDaemon():
                         for item in dati:
                             title = item.get('title', {}).get('rendered', '')
                             link = item.get('link', '')
-                            data = item.get('date', '')
+                            data = parse_data_notizia(item.get('date', ''))
                             if title:
                                 notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link, "data": data, "visibile": visibile})
                     elif tipo == 'rss':
                         root = ET.fromstring(res.text)
-                        for item in root.findall('./channel/item'):
-                            title = item.find('title')
-                            link_elem = item.find('link')
-                            date_elem = item.find('pubDate')
-                            link = link_elem.text.strip() if link_elem is not None and link_elem.text else ''
-                            data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
+                        items = root.findall('./channel/item')
+                        if not items:
+                            # Supporto fallback per formati Atom (Drupal Views / feed alternativi)
+                            items = root.findall('.//{http://www.w3.org/2005/Atom}entry') or root.findall('.//entry')
+
+                        for item in items:
+                            title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
+                            link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
+                            date_elem = None
+                            for tag_candidate in ['{http://www.w3.org/2005/Atom}updated', '{http://www.w3.org/2005/Atom}published', 'pubDate', '{http://purl.org/dc/elements/1.1/}date', 'date']:
+                                found_el = item.find(tag_candidate)
+                                if found_el is not None:
+                                    date_elem = found_el
+                                    break
+                            
+                            link = ''
+                            if link_elem is not None:
+                                link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
+                            raw_data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
+                            data = parse_data_notizia(raw_data)
                             
                             titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
+                            # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
                             if not link and title is not None:
                                 a_elem = title.find('.//a')
                                 if a_elem is not None and a_elem.get('href'):
                                     link = a_elem.get('href')
-                            if titolo_raw:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(titolo_raw), "link": link, "data": data, "visibile": visibile})
+                                elif 'href=' in str(titolo_raw):
+                                    m_href = re.search(r'href="([^"]+)"', str(titolo_raw)) or re.search(r"href='([^']+)'", str(titolo_raw))
+                                    if m_href:
+                                        link = m_href.group(1).strip()
+                            
+                            titolo_pulito = clean_html(titolo_raw)
+                            if titolo_pulito:
+                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link.strip(), "data": data, "visibile": visibile})
                 except Exception as e:
                     logging.error(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
                 
@@ -625,6 +817,11 @@ def NewsPollingDaemon():
 
 class KioskServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass 
+
+    def end_headers(self):
+        self.send_header('X-Frame-Options', 'SAMEORIGIN')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        super().end_headers() 
     
     def _check_security(self):
         sicurezza = CONFIG.get('sicurezza', {})
@@ -697,8 +894,9 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            frontend_config = CONFIG.get('frontend', {})
-            footer_news_config = CONFIG.get('footer_news', {})
+            with lock_config:
+                frontend_config = dict(CONFIG.get('frontend', {}))
+                footer_news_config = dict(CONFIG.get('footer_news', {}))
             self.wfile.write(json.dumps({**frontend_config, "footer_news": footer_news_config}).encode('utf-8'))
         elif parsed_path == '/api/news':
             self.send_response(200)
@@ -714,7 +912,25 @@ class KioskServer(BaseHTTPRequestHandler):
         elif parsed_path == '/logo.png': 
             self.serve_file(os.path.join(PERCORSO_BASE, 'logo.png'), 'image/png')
         elif parsed_path.startswith('/locandine/'): 
-            self.serve_file(os.path.join(PERCORSO_BASE, 'locandine', os.path.basename(parsed_path)), 'image/jpeg')
+            nome_file = os.path.basename(parsed_path)
+            cartella_locandine = os.path.abspath(os.path.join(PERCORSO_BASE, 'locandine'))
+            percorso_file = os.path.abspath(os.path.join(cartella_locandine, nome_file))
+            
+            # Protezione path traversal e verifica file reale
+            if not percorso_file.startswith(cartella_locandine) or not os.path.isfile(percorso_file):
+                self.send_response(404)
+                self.end_headers()
+                return
+            
+            ext = os.path.splitext(nome_file)[1].lower()
+            mime_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.webp': 'image/webp'
+            }
+            mime = mime_map.get(ext, 'application/octet-stream')
+            self.serve_file(percorso_file, mime)
         elif parsed_path == '/lista_locandine.json':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -723,7 +939,10 @@ class KioskServer(BaseHTTPRequestHandler):
             try:
                 cartella_locandine = os.path.join(PERCORSO_BASE, 'locandine')
                 if os.path.exists(cartella_locandine):
-                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and os.path.isfile(os.path.join(cartella_locandine, f))]
+                    # Ordinamento naturale per supportare numeri progressivi (1.jpg, 2.png, 10.jpg)
+                    import re
+                    immagini.sort(key=lambda x: int(re.match(r'^(\d+)', x).group(1)) if re.match(r'^(\d+)', x) else x.lower())
                     self.wfile.write(json.dumps(immagini).encode('utf-8'))
                 else:
                     self.wfile.write(json.dumps([]).encode('utf-8'))
@@ -739,7 +958,8 @@ class KioskServer(BaseHTTPRequestHandler):
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 
-                safe_config = json.loads(json.dumps(CONFIG))
+                with lock_config:
+                    safe_config = json.loads(json.dumps(CONFIG))
                 if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
                     safe_config['api_cineca']['password'] = '********'
                 
@@ -754,10 +974,35 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def do_POST(self):
+        global CONFIG
         parsed_path = self.path.split('?')[0]
+        content_length = int(self.headers.get('Content-Length', 0))
+
+        # Protezione anti-OOM: 10 MB per upload locandine autenticato, 1 MB per tutte le altre API
+        max_size = 10 * 1024 * 1024 if parsed_path.startswith('/api/admin/locandine/upload') else 1 * 1024 * 1024
+        if content_length > max_size:
+            self.send_error(413, "Payload Too Large")
+            return
+
         if parsed_path == '/api/admin/login':
             if not self._check_security(): return
             
+            client_ip = self.client_address[0] if self.client_address else '127.0.0.1'
+            now_ts = time.time()
+            
+            with lock_login:
+                tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
+                if tentativo.get('locked_until', 0) > now_ts:
+                    secondi_attesa = int(tentativo['locked_until'] - now_ts)
+                    self.send_response(429)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": f"Troppi tentativi falliti. Riprova tra {secondi_attesa} secondi.",
+                        "secondi_attesa": secondi_attesa
+                    }).encode('utf-8'))
+                    return
+
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
             try:
@@ -768,6 +1013,9 @@ class KioskServer(BaseHTTPRequestHandler):
                 hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
                 
                 if pwd_hash == hash_salvato:
+                    with lock_login:
+                        if client_ip in LOGIN_ATTEMPTS:
+                            del LOGIN_ATTEMPTS[client_ip]
                     token = secrets.token_hex(16)
                     SESSIONS[token] = time.time() + 3600
                     self.send_response(200)
@@ -775,6 +1023,14 @@ class KioskServer(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(json.dumps({"token": token}).encode('utf-8'))
                 else:
+                    time.sleep(1)  # Delay difensivo anti-timing e anti-brute force
+                    with lock_login:
+                        tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
+                        tentativo['count'] = tentativo.get('count', 0) + 1
+                        if tentativo['count'] >= 5:
+                            tentativo['locked_until'] = now_ts + 600  # Blocco per 10 minuti
+                            logging.warning(f"🚨 Troppi tentativi di login errati dall'IP {client_ip}. IP bloccato per 10 minuti.")
+                        LOGIN_ATTEMPTS[client_ip] = tentativo
                     self.send_error(401, "Unauthorized")
             except Exception as e:
                 logging.error(f"Errore login: {e}")
@@ -788,48 +1044,56 @@ class KioskServer(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(body)
                 
+                # Copy-on-Write: prepariamo la nuova configurazione su una copia isolata
+                with lock_config:
+                    nuova_config = copy.deepcopy(CONFIG)
+                
                 if 'main' in payload:
-                    if 'main' not in CONFIG: CONFIG['main'] = {}
-                    CONFIG['main'].update(payload['main'])
+                    if 'main' not in nuova_config: nuova_config['main'] = {}
+                    nuova_config['main'].update(payload['main'])
                 
                 if 'frontend' in payload:
-                    if 'frontend' not in CONFIG: CONFIG['frontend'] = {}
-                    CONFIG['frontend'].update(payload['frontend'])
+                    if 'frontend' not in nuova_config: nuova_config['frontend'] = {}
+                    nuova_config['frontend'].update(payload['frontend'])
                     
                 if 'api_cineca' in payload:
-                    if 'api_cineca' not in CONFIG: CONFIG['api_cineca'] = {}
+                    if 'api_cineca' not in nuova_config: nuova_config['api_cineca'] = {}
                     nuova_pwd = payload['api_cineca'].get('password')
                     if nuova_pwd == '********':
-                        payload['api_cineca']['password'] = CONFIG['api_cineca'].get('password', '')
+                        payload['api_cineca']['password'] = nuova_config['api_cineca'].get('password', '')
                     for field in ['realm', 'anno_accademico_id', 'contesto_id', 'id_edificio']:
                         if field in payload['api_cineca']:
                             payload['api_cineca'][field] = sanitize_id_str(payload['api_cineca'][field])
-                    CONFIG['api_cineca'].update(payload['api_cineca'])
+                    nuova_config['api_cineca'].update(payload['api_cineca'])
                     
                 if 'sicurezza' in payload:
-                    if 'sicurezza' not in CONFIG: CONFIG['sicurezza'] = {}
+                    if 'sicurezza' not in nuova_config: nuova_config['sicurezza'] = {}
                     if 'admin_ip_autorizzati' in payload['sicurezza']:
-                        CONFIG['sicurezza']['admin_ip_autorizzati'] = payload['sicurezza']['admin_ip_autorizzati']
+                        nuova_config['sicurezza']['admin_ip_autorizzati'] = payload['sicurezza']['admin_ip_autorizzati']
                     if 'admin_attivo' in payload['sicurezza']:
-                        CONFIG['sicurezza']['admin_attivo'] = payload['sicurezza']['admin_attivo']
+                        nuova_config['sicurezza']['admin_attivo'] = payload['sicurezza']['admin_attivo']
                         
                 if 'footer_news' in payload:
-                    if 'footer_news' not in CONFIG: CONFIG['footer_news'] = {}
-                    CONFIG['footer_news'].update(payload['footer_news'])
+                    if 'footer_news' not in nuova_config: nuova_config['footer_news'] = {}
+                    nuova_config['footer_news'].update(payload['footer_news'])
                 
                 if 'https' in payload:
-                    if 'https' not in CONFIG: CONFIG['https'] = {}
-                    CONFIG['https'].update(payload['https'])
+                    if 'https' not in nuova_config: nuova_config['https'] = {}
+                    nuova_config['https'].update(payload['https'])
                 
                 nuova_admin_pwd = payload.get('admin_password', '').strip()
                 if nuova_admin_pwd:
-                    CONFIG['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
+                    nuova_config['sicurezza']['password_admin_hash'] = hashlib.sha256(nuova_admin_pwd.encode('utf-8')).hexdigest()
                     
-                # Aggiornamento custom per preservare i commenti
-                salva_config_yaml(FILE_CONFIG, CONFIG)
+                # Aggiornamento custom su disco per preservare commenti YAML
+                salva_config_yaml(FILE_CONFIG, nuova_config)
                 
-                load_config() # Ricarica per sicurezza
+                # Riassegnazione atomica thread-safe della configurazione in RAM
+                with lock_config:
+                    CONFIG = nuova_config
+                
                 news_poll_event.set() # Sveglia il demone per rileggere subito la config delle fonti
+                logging.info("💾 Configurazione salvata e applicata con successo da /admin.")
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -858,7 +1122,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def serve_file(self, path, mime):
-        if os.path.exists(path):
+        if os.path.isfile(path):
             self.send_response(200)
             self.send_header('Content-type', mime)
             self.end_headers()

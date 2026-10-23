@@ -912,6 +912,8 @@
             };
         }
 
+        let loginCountdownTimer = null;
+
         async function login() {
             const pwd = document.getElementById('login-password').value;
             if (!pwd) return;
@@ -924,12 +926,43 @@
                 });
 
                 if (res.ok) {
+                    if (loginCountdownTimer) { clearInterval(loginCountdownTimer); loginCountdownTimer = null; }
                     const data = await res.json();
                     sessionStorage.setItem('adminToken', data.token);
                     document.getElementById('login-error').style.display = 'none';
                     loadAdminData();
                 } else {
-                    document.getElementById('login-error').style.display = 'block';
+                    const errEl = document.getElementById('login-error');
+                    errEl.style.color = "var(--danger-color)";
+                    try {
+                        const errData = await res.json();
+                        let sec = errData.secondi_attesa;
+                        if (!sec && errData.error) {
+                            const m = errData.error.match(/(\d+)\s+secondi/);
+                            if (m) sec = parseInt(m[1]);
+                        }
+                        if (sec && sec > 0) {
+                            if (loginCountdownTimer) clearInterval(loginCountdownTimer);
+                            errEl.innerText = `🚨 Troppi tentativi falliti. Riprova tra ${sec} secondi.`;
+                            errEl.style.display = 'block';
+                            loginCountdownTimer = setInterval(() => {
+                                sec--;
+                                if (sec <= 0) {
+                                    clearInterval(loginCountdownTimer);
+                                    loginCountdownTimer = null;
+                                    errEl.innerText = "Puoi riprovare ad accedere ora.";
+                                    errEl.style.color = "var(--accent-color, #58a6ff)";
+                                } else {
+                                    errEl.innerText = `🚨 Troppi tentativi falliti. Riprova tra ${sec} secondi.`;
+                                }
+                            }, 1000);
+                            return;
+                        }
+                        errEl.innerText = errData.error || "Password errata.";
+                    } catch {
+                        errEl.innerText = "Password errata.";
+                    }
+                    errEl.style.display = 'block';
                 }
             } catch (e) {
                 console.error(e);

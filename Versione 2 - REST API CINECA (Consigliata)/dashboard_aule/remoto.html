@@ -961,6 +961,22 @@
             }
         }
 
+        function formattaTitoloNews(titolo) {
+            if (!titolo) return '';
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = String(titolo);
+            return (tempDiv.textContent || tempDiv.innerText || '').trim();
+        }
+
+        function sanitizzaUrlLink(url) {
+            if (!url) return '';
+            const u = String(url).trim();
+            if (u.startsWith('http://') || u.startsWith('https://')) {
+                return encodeURI(u);
+            }
+            return '';
+        }
+
         function renderTicker() {
             const wrapper = document.getElementById('ticker-wrapper');
             clearInterval(tickerInterval);
@@ -983,8 +999,10 @@
             
             if (stile === 'orizzontale') {
                 const testi = notizieFiltrate.map(n => {
-                    const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
-                    return n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                    const titPulito = formattaTitoloNews(n.titolo);
+                    const safeLink = sanitizzaUrlLink(n.link);
+                    const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
+                    return safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                 });
                 const stringaUnica = testi.join(' &nbsp;&nbsp;&bull;&nbsp;&nbsp; ');
                 
@@ -1001,8 +1019,10 @@
                     divVert.style.opacity = 0;
                     setTimeout(() => {
                         const n = notizieFiltrate[indexVerticale];
-                        const testoInterno = `<strong>[${n.fonte}]</strong> ${n.titolo}`;
-                        const htmlContenuto = n.link ? `<a href="${n.link}" target="_blank" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                        const titPulito = formattaTitoloNews(n.titolo);
+                        const safeLink = sanitizzaUrlLink(n.link);
+                        const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
+                        const htmlContenuto = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                         divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
                         divVert.style.opacity = 1;
                         indexVerticale = (indexVerticale + 1) % notizieFiltrate.length;
@@ -1052,6 +1072,7 @@
         let eraOffline = false;
         let erroriConsecutivi = 0;
         let datiCaricatiAlmenoUnaVolta = false;
+        let ultimoDatiJson = null;
 
         async function scaricaDatiServerLocale() {
             const dashboard = document.getElementById('dashboard');
@@ -1068,10 +1089,27 @@
                 eraOffline = false;
                 datiCaricatiAlmenoUnaVolta = true;
 
+                const eraStatoSistema = !document.getElementById('colonna-in-corso');
+
                 if (!datiAule || datiAule.length === 0) {
-                    dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                    const emptyJson = JSON.stringify(datiAule || []);
+                    if (!eraStatoSistema || emptyJson !== ultimoDatiJson) {
+                        ultimoDatiJson = emptyJson;
+                        dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                    }
                     return;
                 }
+
+                const datiJsonStr = JSON.stringify(datiAule);
+                const colInCorso = document.getElementById('colonna-in-corso');
+                const colFuturi = document.getElementById('colonna-futuri');
+                const layoutPresente = colInCorso && colFuturi;
+
+                // Se la struttura delle colonne è già presente e i dati non sono cambiati, non tocchiamo il DOM
+                if (layoutPresente && datiJsonStr === ultimoDatiJson) {
+                    return;
+                }
+                ultimoDatiJson = datiJsonStr;
 
                 let htmlInCorso = '', htmlFuturi = '';
                 datiAule.forEach(imp => {
@@ -1082,25 +1120,32 @@
                 if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
                 if (!htmlFuturi) htmlFuturi = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione programmata</div>';
 
-                const nuovoLayout = `
-                    <div class="layout-colonne">
-                        <div class="colonna-sezione">
-                            <h2 class="titolo-colonna">In Corso</h2>
-                            <div class="colonna-scroll">
-                                ${htmlInCorso}
-                            </div>
-                        </div>
-                        <div class="colonna-sezione">
-                            <h2 class="titolo-colonna">Prossimi Eventi</h2>
-                            <div class="colonna-scroll">
-                                ${htmlFuturi}
-                            </div>
-                        </div>
-                    </div>
-                `;
+                if (layoutPresente) {
+                    const scrollInCorso = colInCorso.scrollTop;
+                    const scrollFuturi = colFuturi.scrollTop;
 
-                if (dashboard.innerHTML !== nuovoLayout) {
-                    dashboard.innerHTML = nuovoLayout;
+                    colInCorso.innerHTML = htmlInCorso;
+                    colFuturi.innerHTML = htmlFuturi;
+
+                    colInCorso.scrollTop = scrollInCorso;
+                    colFuturi.scrollTop = scrollFuturi;
+                } else {
+                    dashboard.innerHTML = `
+                        <div class="layout-colonne">
+                            <div class="colonna-sezione">
+                                <h2 class="titolo-colonna">In Corso</h2>
+                                <div id="colonna-in-corso" class="colonna-scroll">
+                                    ${htmlInCorso}
+                                </div>
+                            </div>
+                            <div class="colonna-sezione">
+                                <h2 class="titolo-colonna">Prossimi Eventi</h2>
+                                <div id="colonna-futuri" class="colonna-scroll">
+                                    ${htmlFuturi}
+                                </div>
+                            </div>
+                        </div>
+                    `;
                 }
             } catch (errore) {
                 erroriConsecutivi++;
@@ -1108,6 +1153,7 @@
                 // Non cancellare la schermata se abbiamo già dati visualizzati e l'errore è transitorio
                 if (!datiCaricatiAlmenoUnaVolta || erroriConsecutivi >= 4) {
                     eraOffline = true;
+                    ultimoDatiJson = null;
                     dashboard.innerHTML = `
                         <div class="stato-sistema offline">
                             <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
@@ -1365,6 +1411,16 @@
             });
 
             notizieCorrenti.sort((a, b) => {
+                if (col === 'data') {
+                    const toTs = (s) => {
+                        if (!s || s === '-') return 0;
+                        const parts = s.split('/');
+                        if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]).getTime();
+                        const parsed = Date.parse(s);
+                        return isNaN(parsed) ? 0 : parsed;
+                    };
+                    return (toTs(a.data) - toTs(b.data)) * currentSortDir;
+                }
                 let valA = a[col] || '';
                 let valB = b[col] || '';
                 if (typeof valA === 'string') valA = valA.toLowerCase();
@@ -1383,7 +1439,9 @@
             notizieCorrenti.forEach(n => {
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid var(--border-color)';
-                const link = n.link ? `<a href="${n.link}" target="_blank" style="color: #58a6ff; text-decoration: none;">${n.titolo}</a>` : n.titolo;
+                const titPulito = formattaTitoloNews(n.titolo);
+                const safeLink = sanitizzaUrlLink(n.link);
+                const link = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: #58a6ff; text-decoration: none;">${titPulito}</a>` : titPulito;
                 tr.innerHTML = `
                     <td style="padding: 10px; white-space: nowrap;">${n.data || '-'}</td>
                     <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${n.fonte}</span></td>
