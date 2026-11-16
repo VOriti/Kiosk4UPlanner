@@ -52,6 +52,10 @@ ultimo_aggiornamento_preservato = False
 memoria_news = []
 news_poll_event = threading.Event()
 
+LIMITE_EVENTI_CINECA = 500          # tetto 'limit' richiesto a getImpegniCalendario
+SOGLIA_ASSENZE_ANNULLAMENTO = 2     # polling consecutivi senza l'evento prima di marcarlo ANNULLATO
+AVVISI_DI_STATO = ("ANNULLATO", "SOSPESO")
+
 def get_tz_roma():
     """Restituisce il fuso orario di Roma (Europe/Rome).
     Supporta nativamente zoneinfo su Linux/Raspberry Pi con fallback robusto per Windows/UTC."""
@@ -439,11 +443,12 @@ def estrai_e_formatta_dati(impegni_grezzi):
         data_storico = oggi_str
         
     nuovi_estratti = {}
+    id_esclusi = set()      # presenti in CINECA ma esclusi dalla configurazione corrente (edificio, stato B, C nascosti)
+    id_illeggibili = set()  # presenti in CINECA ma non interpretabili: non vanno mai trattati come annullati
     for item in impegni_grezzi:
+        id_imp = (item.get('id') or item.get('_id')) if isinstance(item, dict) else None
+        if not id_imp: continue
         try:
-            id_imp = item.get('id') or item.get('_id')
-            if not id_imp: continue
-            
             aule = item.get('aule', [])
             edifici_impegno = [sanitize_id_str(a.get('edificio', {}).get('codice')) for a in aule if isinstance(a, dict) and a.get('edificio')]
             
@@ -452,6 +457,7 @@ def estrai_e_formatta_dati(impegni_grezzi):
                 edifici_norm = set(edifici_impegno) | {c.lstrip('0') or '0' for c in edifici_impegno}
                 id_norm = id_edificio.lstrip('0') or '0'
                 if id_edificio not in edifici_norm and id_norm not in edifici_norm:
+                    id_esclusi.add(id_imp)
                     continue
 
             stato = item.get('stato', 'P')
@@ -459,10 +465,14 @@ def estrai_e_formatta_dati(impegni_grezzi):
                 stato = stato.get('codice') or stato.get('id') or 'P'
             stato = str(stato).upper().strip()
 
-            if stato == 'B': continue
+            if stato == 'B':
+                id_esclusi.add(id_imp)
+                continue
                 
             mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
-            if stato == 'C' and not mostra_confermati: continue
+            if stato == 'C' and not mostra_confermati:
+                id_esclusi.add(id_imp)
+                continue
 
             is_cancellato = (stato == 'A')
             avviso_stato = ""
@@ -495,23 +505,34 @@ def estrai_e_formatta_dati(impegni_grezzi):
                 "orario": f"{dt_inizio.astimezone(tz_roma).strftime('%H:%M')} - {dt_fine.astimezone(tz_roma).strftime('%H:%M')}",
                 "titolo": titolo_raw.strip(),
                 "docente": f"{item.get('docenti', [{}])[0].get('cognome', '')} {item.get('docenti', [{}])[0].get('nome', '')}".strip() if item.get('docenti') else "Dipartimento",
-                "aula": aule[0].get('descrizione', 'Da definire').strip() if aule else "Da definire",
+                "aula": (aule[0].get('descrizione') or 'Da definire').strip() if aule else "Da definire",
                 "inCorso": (dt_inizio <= ora_attuale <= dt_fine),
                 "timestamp_inizio": dt_inizio.timestamp(),
                 "timestamp_fine": dt_fine.timestamp(),
                 "cancellato": is_cancellato,
                 "avviso": avviso_stato,
-                "stato_cineca": stato
+                "stato_cineca": stato,
+                "assenze": 0
             }
-        except Exception:
-            continue
+        except Exception as e:
+            id_illeggibili.add(id_imp)
+            logging.warning(f"⚠️ Impegno CINECA {id_imp} non interpretabile ({e}): stato precedente preservato.")
+
+    # Un evento escluso dai filtri NON è annullato: esce semplicemente dallo storico
+    for id_escluso in id_esclusi:
+        storico_impegni.pop(id_escluso, None)
 
     for id_nuovo, imp_nuovo in nuovi_estratti.items():
         if id_nuovo not in storico_impegni:
             storico_impegni[id_nuovo] = imp_nuovo
         else:
             imp_storico = storico_impegni[id_nuovo]
-            
+
+            # Auto-healing: l'evento è di nuovo regolare in CINECA, si rimuove l'avviso di stato ereditato
+            if not imp_nuovo['avviso'] and imp_storico.get('avviso') in AVVISI_DI_STATO:
+                imp_storico['avviso'] = ""
+                imp_storico['cancellato'] = False
+
             cambiata_aula = imp_storico['aula'] != imp_nuovo['aula']
             cambiato_orario = imp_storico['orario'] != imp_nuovo['orario']
             
@@ -532,15 +553,21 @@ def estrai_e_formatta_dati(impegni_grezzi):
     # Se la risposta da CINECA e vuota ma avevamo gia impegni validi nello storico,
     # non marchiamo gli eventi come annullati per evitare falsi allarmi sul totem.
     global ultimo_aggiornamento_preservato
-    if len(nuovi_estratti) == 0 and len(storico_impegni) > 0:
+    if len(impegni_grezzi) == 0 and len(storico_impegni) > 0:
         logging.warning("⚠️ Rilevato payload CINECA vuoto a fronte di impegni validi in memoria. Preservo lo stato per evitare falsi annullamenti.")
         ultimo_aggiornamento_preservato = True
     else:
         ultimo_aggiornamento_preservato = False
+        # Un evento sparito diventa ANNULLATO solo dopo SOGLIA_ASSENZE_ANNULLAMENTO polling consecutivi
         for id_storico, imp_storico in storico_impegni.items():
-            if id_storico not in nuovi_estratti and imp_storico['timestamp_fine'] > ora_attuale.timestamp():
-                imp_storico["cancellato"] = True
-                imp_storico["avviso"] = "ANNULLATO"
+            if id_storico in nuovi_estratti or id_storico in id_illeggibili:
+                continue
+            if imp_storico['timestamp_fine'] > ora_attuale.timestamp() and not imp_storico.get('cancellato'):
+                imp_storico['assenze'] = imp_storico.get('assenze', 0) + 1
+                if imp_storico['assenze'] >= SOGLIA_ASSENZE_ANNULLAMENTO:
+                    imp_storico["cancellato"] = True
+                    imp_storico["avviso"] = "ANNULLATO"
+                    logging.info(f"🚫 Impegno {id_storico} assente da CINECA per {imp_storico['assenze']} polling consecutivi: marcato ANNULLATO.")
 
     dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(ora_attuale), datetime.time(0, 0, 0), tzinfo=tz_roma)
     mezzanotte_oggi = dt_inizio_giorno.timestamp()
@@ -556,6 +583,13 @@ def estrai_e_formatta_dati(impegni_grezzi):
     dati_puliti = [imp for imp in storico_impegni.values() if imp['timestamp_fine'] > ora_attuale.timestamp() or imp['inCorso']]
     dati_puliti.sort(key=lambda x: x['timestamp_inizio'])
     return dati_puliti
+
+def verifica_sentinella_limite(dati_grezzi):
+    """Segnala nel log una risposta CINECA arrivata al tetto 'limit' (possibile troncatura)."""
+    if isinstance(dati_grezzi, list) and len(dati_grezzi) >= LIMITE_EVENTI_CINECA:
+        logging.warning(f"⚠️ SENTINELLA LIMITE CINECA: ricevuti {len(dati_grezzi)} impegni (limite {LIMITE_EVENTI_CINECA}). Possibile troncatura: valorizzare anno_accademico_id e contesto_id.")
+        return True
+    return False
 
 def ciclo_aggiornamento_api():
     global token_cineca, memoria_dati
@@ -598,7 +632,7 @@ def ciclo_aggiornamento_api():
             fine_giornata = dt_fine_roma.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
             payload = {
-                "limit": 500,
+                "limit": LIMITE_EVENTI_CINECA,
                 "dataInizio": inizio_giornata,
                 "dataFine": fine_giornata,
                 "mostraImpegniSenzaAula": False,
@@ -627,6 +661,7 @@ def ciclo_aggiornamento_api():
                 continue
             elif risposta.status_code == 200:
                 dati_grezzi = risposta.json()
+                verifica_sentinella_limite(dati_grezzi)
                 if is_debug:
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")
                     edifici_scoperti = set()
