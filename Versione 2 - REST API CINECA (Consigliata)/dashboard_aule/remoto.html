@@ -35,6 +35,7 @@
                         messaggioErroreRete: "Connessione persa col Server API. Tentativo di riconnessione...",
                         pausaTraCaroselli: 180000,
                         esposizioneLocandina: 10000,
+                        quotaCarosello: 0.30,
                         mostraStatoPC: true,
                         caroselloAttivo: true
                     };
@@ -832,6 +833,11 @@
                 font-size: 0.82rem !important;
             }
         }
+
+        body.modalita-kiosk a[href] {
+            pointer-events: none;
+            cursor: default;
+        }
     </style>
 </head>
 
@@ -1169,7 +1175,58 @@
             return '/locandine/' + encodeURIComponent(nome).replace(/'/g, '%27');
         }
 
+        const QUOTA_MAX_CAROSELLO = 0.30;
+        const DURATA_TRANSIZIONE_MS = 1550;   // 50 ms di comparsa + 1500 ms di dissolvenza
+        const INATTIVITA_KIOSK_MS = 60000;
+
+        function calcolaGruppiPerCiclo(pausaMs, esposizioneMs, quota, transizioneMs) {
+            const budget = pausaMs * quota / (1 - quota);
+            return Math.max(1, Math.floor(budget / (esposizioneMs + transizioneMs)));
+        }
+
+        function selezionaGruppi(gruppi, inizio, quanti) {
+            if (gruppi.length <= quanti) return { selezionati: gruppi, prossimoInizio: 0 };
+            const selezionati = [];
+            for (let i = 0; i < quanti; i++) selezionati.push(gruppi[(inizio + i) % gruppi.length]);
+            return { selezionati, prossimoInizio: (inizio + quanti) % gruppi.length };
+        }
+
+        let indiceRotazione = 0;
+        let interrompiCarosello = null;
+
+        function attendiCarosello(ms) {
+            return new Promise(resolve => {
+                let timer = null;
+                const pulisci = () => {
+                    if (timer) {
+                        clearTimeout(timer);
+                        timer = null;
+                    }
+                    if (interrompiCarosello === onInterrompi) {
+                        interrompiCarosello = null;
+                    }
+                };
+                const onInterrompi = () => {
+                    pulisci();
+                    resolve('interrotto');
+                };
+                interrompiCarosello = onInterrompi;
+                timer = setTimeout(() => {
+                    pulisci();
+                    resolve('completato');
+                }, ms);
+            });
+        }
+
         const advOverlay = document.getElementById('kiosk-adv');
+        advOverlay.addEventListener('pointerdown', () => interrompiCarosello && interrompiCarosello());
+        advOverlay.addEventListener('click', () => interrompiCarosello && interrompiCarosello());
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && interrompiCarosello) {
+                interrompiCarosello();
+            }
+        });
+
         async function riproduciLocandine() {
             if (!isLocandineActiveOnDevice()) return;
 
@@ -1200,20 +1257,69 @@
                 gruppi.push(immaginiValide.slice(i, i + imgPerGruppo));
             }
 
-            advOverlay.style.display = 'flex';
-            for (let i = 0; i < gruppi.length; i++) {
-                advOverlay.innerHTML = gruppi[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
-                await new Promise(r => setTimeout(r, 50));
-                advOverlay.style.opacity = '1';
-                await new Promise(r => setTimeout(r, CONFIG_APP.esposizioneLocandina));
+            const pausa = CONFIG_APP.pausaTraCaroselli || 180000;
+            const esposizione = CONFIG_APP.esposizioneLocandina || 10000;
+            const quotaEffettiva = (typeof CONFIG_APP.quotaCarosello === 'number' && CONFIG_APP.quotaCarosello >= 0.10 && CONFIG_APP.quotaCarosello <= 0.50) ? CONFIG_APP.quotaCarosello : QUOTA_MAX_CAROSELLO;
+            const quanti = calcolaGruppiPerCiclo(pausa, esposizione, quotaEffettiva, DURATA_TRANSIZIONE_MS);
+            const rotazione = selezionaGruppi(gruppi, indiceRotazione, quanti);
+            indiceRotazione = rotazione.prossimoInizio;
+            const gruppiDaMostrare = rotazione.selezionati;
+
+            try {
+                advOverlay.style.display = 'flex';
+                for (let i = 0; i < gruppiDaMostrare.length; i++) {
+                    advOverlay.innerHTML = gruppiDaMostrare[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
+                    if (await attendiCarosello(50) === 'interrotto') break;
+                    advOverlay.style.opacity = '1';
+                    if (await attendiCarosello(esposizione) === 'interrotto') break;
+                    advOverlay.style.opacity = '0';
+                    if (await attendiCarosello(1500) === 'interrotto') break;
+                }
+            } finally {
+                interrompiCarosello = null;
+                advOverlay.style.display = 'none';
+                advOverlay.innerHTML = '';
                 advOverlay.style.opacity = '0';
-                await new Promise(r => setTimeout(r, 1500));
             }
-            advOverlay.style.display = 'none';
-            advOverlay.innerHTML = '';
+        }
+
+        function pianificaCarosello() {
+            setTimeout(async () => {
+                await riproduciLocandine();
+                pianificaCarosello();
+            }, CONFIG_APP.pausaTraCaroselli || 180000);
+        }
+
+        let timerInattivitaKiosk = null;
+
+        function chiudiInterfacciaKiosk() {
+            closeNewsHub();
+            const badge = document.getElementById('info-badge');
+            if (badge) {
+                badge.classList.remove('aperto');
+            }
+        }
+
+        function riarmaInattivita() {
+            if (timerInattivitaKiosk) {
+                clearTimeout(timerInattivitaKiosk);
+            }
+            timerInattivitaKiosk = setTimeout(chiudiInterfacciaKiosk, INATTIVITA_KIOSK_MS);
+        }
+
+        function attivaModalitaKiosk() {
+            document.body.classList.add('modalita-kiosk');
+            ['pointerdown', 'keydown'].forEach(evt => {
+                document.addEventListener(evt, riarmaInattivita, { passive: true });
+            });
+            riarmaInattivita();
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
+            if (isKioskEnvironment()) {
+                attivaModalitaKiosk();
+            }
+
             await fetchConfigPubblica();
 
             document.getElementById('titolo-sede').innerText = CONFIG_APP.titoloSede || "Impegni Aule";
@@ -1262,7 +1368,7 @@
             footerObserver.observe(document.getElementById('kiosk-footer'));
 
             if (CONFIG_APP.caroselloAttivo === true) {
-                setInterval(riproduciLocandine, CONFIG_APP.pausaTraCaroselli || 180000);
+                pianificaCarosello();
             } else {
                 console.log("Carosello disattivato da configurazione.");
             }
@@ -1279,14 +1385,18 @@
             if (CONFIG_APP.caroselloAttivo === false) {
                 return false;
             }
+            if (isKioskEnvironment()) {
+                return true;
+            }
             const savedPref = localStorage.getItem('disabilita_locandine');
             if (savedPref !== null) {
                 return savedPref !== 'true';
             }
-            return isKioskEnvironment();
+            return false;
         }
 
         function toggleLocandinePreference(attivo) {
+            if (isKioskEnvironment()) return;
             localStorage.setItem('disabilita_locandine', attivo ? 'false' : 'true');
             aggiornaUILocandineModal();
         }

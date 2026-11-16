@@ -290,6 +290,7 @@ frontend:
   messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
   pausaTraCaroselli: 180000
   esposizioneLocandina: 10000
+  quotaCarosello: 0.30
   intervalloAggiornamento: 5000
   urlCalendario: ''
   urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
@@ -1000,11 +1001,20 @@ class KioskServer(BaseHTTPRequestHandler):
 
     def _check_token(self):
         token = self.headers.get('X-Admin-Token')
+        valido = True
         if not token or token not in SESSIONS:
-            self.send_error(401, "Unauthorized")
-            return False
-        if SESSIONS[token] < time.time():
+            valido = False
+        elif SESSIONS[token] < time.time():
             del SESSIONS[token]
+            valido = False
+
+        if not valido:
+            try:
+                cl = int(self.headers.get('Content-Length', '0'))
+                if cl > 0:
+                    self.rfile.read(min(cl, 65536))
+            except Exception:
+                pass
             self.send_error(401, "Unauthorized")
             return False
         return True
@@ -1232,6 +1242,19 @@ class KioskServer(BaseHTTPRequestHandler):
                 
                 if 'frontend' in payload:
                     if 'frontend' not in nuova_config: nuova_config['frontend'] = {}
+                    if 'quotaCarosello' in payload['frontend']:
+                        raw_quota = payload['frontend']['quotaCarosello']
+                        if isinstance(raw_quota, bool) or raw_quota is None:
+                            payload['frontend']['quotaCarosello'] = 0.30
+                        else:
+                            try:
+                                val_quota = float(raw_quota)
+                                if not math.isnan(val_quota) and 0.10 <= val_quota <= 0.50:
+                                    payload['frontend']['quotaCarosello'] = round(val_quota, 2)
+                                else:
+                                    payload['frontend']['quotaCarosello'] = 0.30
+                            except (ValueError, TypeError):
+                                payload['frontend']['quotaCarosello'] = 0.30
                     nuova_config['frontend'].update(payload['frontend'])
                     
                 if 'api_cineca' in payload:

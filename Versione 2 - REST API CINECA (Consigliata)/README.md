@@ -108,6 +108,35 @@ A partire dalla versione 5.0 è stata introdotta una gestione intelligente e din
      ```
    - Con questo parametro, il dispositivo viene immediatamente riconosciuto come postazione Kiosk: le locandine risulteranno attive di default senza richiedere alcuna interazione manuale sul browser o telecomando.
 
+#### ⏱️ Duty-Cycle del Carosello, Rotazione a Staffetta e Chiusura Rapida
+
+A partire dalla versione 5.2.4, il carosello delle locandine adotta una politica rigorosa di **Duty-Cycle** e rotazione concatenata per tutelare l'esperienza d'uso fondamentale del totem: la consultazione immediata degli orari da parte degli studenti.
+
+1. **Che cos'è il Duty-Cycle (Percentuale di Occupazione Schermo):**
+   - Rappresenta la quota massima di tempo complessivo riservata alle locandine rispetto all'intero ciclo operativo (tabellone aule + locandine).
+   - È configurabile nel pannello di amministrazione (`/admin` nel pannello **Locandine**) tramite un comodo **slider graduato da 10% a 50%** con passo del 5% (valore consigliato e predefinito: **30%**).
+   - Impostando ad esempio la quota al 30%, il sistema assicura matematicamente che almeno il **70% del tempo totale** (e tra il **50% e il 90%** su tutto il range ammissibile) sia costantemente dedicato alla visualizzazione degli impegni delle aule.
+
+2. **Rotazione Circolare a Staffetta (Round-Robin):**
+   - Nei totem universitari tradizionali, quando vengono caricate decine di locandine, un carosello standard che mostri tutti i file consecutivamente blocca la consultazione per svariati minuti consecutivi.
+   - Kiosk4UPlanner risolve il problema con la rotazione a staffetta: a ogni ciclo viene proiettato solo un sottoinsieme ristretto di locandine (calcolato in modo da non superare la quota di duty cycle consentita).
+   - Il puntatore circolare (`indiceRotazione`) memorizza la posizione: al ciclo successivo la proiezione ripartirà esattamente dal gruppo seguente, garantendo visibilità equa a tutte le locandine senza mai sequestrare lo schermo.
+
+3. **Formula Matematica del Calcolo Gruppi:**
+   Il numero di gruppi di locandine mostrati per ogni singolo ciclo viene ricavato dalla seguente formula:
+   $$\text{budget} = \text{pausaMs} \times \frac{\text{quota}}{1 - \text{quota}}$$
+   $$\text{gruppiPerCiclo} = \max\left(1, \left\lfloor \frac{\text{budget}}{\text{esposizioneMs} + \text{transizioneMs}} \right\rfloor\right)$$
+   *Dove:*
+   - `pausaMs`: tempo di permanenza fisso del tabellone aule tra due caroselli (es. 180.000 ms = 3 minuti).
+   - `quota`: quota frazionaria impostata dallo slider (es. 0.30 per 30%).
+   - `esposizioneMs`: tempo di esposizione a schermo di ogni singola schermata (es. 10.000 ms = 10 secondi).
+   - `transizioneMs`: tempo tecnico di transizione (costante fissa pari a 1.550 ms: 50 ms di setup del DOM + 1.500 ms di dissolvenza incrociata CSS).
+
+4. **Chiusura Rapida al Tocco, Clic o Tasto Escape (Instant Dismiss):**
+   - Se uno studente o un docente si avvicina al totem mentre è in riproduzione una locandina, non deve attendere il termine del ciclo.
+   - Un semplice **tocco sul display touchscreen** (`pointerdown`), un **clic del mouse** o la pressione del tasto **Escape** interrompe istantaneamente il carosello in corso, chiudendo l'overlay e ripristinando all'istante la vista del tabellone orari.
+   - Sui totem Kiosk (`?kiosk=1` o `localhost`), un timer di inattività (`INATTIVITA_KIOSK_MS` = 60 secondi) ripristina automaticamente lo stato di quiete e riarma la rotazione periodica se nessun utente interagisce ulteriormente.
+
 ---
 
 ### 💾 Gestione Stato e Persistenza

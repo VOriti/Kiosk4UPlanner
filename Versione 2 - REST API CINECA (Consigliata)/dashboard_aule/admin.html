@@ -637,16 +637,6 @@
                             <p class="help-text">URL del Calendario Pubblico U-Planner - cambiarlo con il link del calendario pubblico di U-Planner della propria sede.</p>
                         </div>
                         <div class="form-group">
-                            <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
-                            <input type="number" id="fe_pausa_carosello">
-                            <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es. 180000 = 3 minuti.</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
-                            <input type="number" id="fe_expo_locandina">
-                            <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000 = 10 secondi).</p>
-                        </div>
-                        <div class="form-group">
                             <label for="fe_intervallo">Intervallo ridisegno (ms)</label>
                             <input type="number" id="fe_intervallo">
                             <p class="help-text">Ogni quanti millisecondi l'interfaccia si aggiorna con i nuovi dati in memoria. Es. 5000 = 5 secondi.</p>
@@ -669,6 +659,34 @@
                         </div>
                     </div>
                     <div class="accordion-body">
+                        <!-- Sezione Temporizzazione e Duty-Cycle Carosello -->
+                        <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; margin-bottom: 25px;">
+                            <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                <span>⏱️ Temporizzazione & Duty-Cycle Carosello</span>
+                            </h4>
+                            <p class="panel-description" style="margin-bottom: 16px;">Configura i tempi di esposizione e la quota di tempo massimo riservata alle locandine per garantire che il totem resti prioritariamente a disposizione degli orari di lezione.</p>
+
+                            <div class="form-group">
+                                <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
+                                <input type="number" id="fe_pausa_carosello">
+                                <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es. 180000 = 3 minuti.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
+                                <input type="number" id="fe_expo_locandina">
+                                <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000 = 10 secondi).</p>
+                            </div>
+                            <div class="form-group">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                    <label for="fe_quota_carosello" style="margin-bottom: 0;">Quota Massima Carosello (Duty-Cycle)</label>
+                                    <span id="fe_quota_carosello_val" style="font-weight: bold; color: var(--accent-color); background-color: rgba(88, 166, 255, 0.15); padding: 2px 8px; border-radius: 4px; font-size: 0.9rem;">30%</span>
+                                </div>
+                                <input type="range" id="fe_quota_carosello" min="10" max="50" step="5" value="30" oninput="document.getElementById('fe_quota_carosello_val').textContent = this.value + '%'" onchange="document.getElementById('fe_quota_carosello_val').textContent = this.value + '%'" style="width: 100%; accent-color: var(--accent-color); cursor: pointer;">
+                                <p class="help-text">Quota massima di tempo a video riservata alle locandine (consigliato: 30%, min 10% - max 50%). Garantisce che almeno il 50-90% del tempo sia sempre dedicato alla visualizzazione degli orari per gli studenti. Il sistema calcola automaticamente quante locandine mostrare per ciclo senza mai superare questa soglia.</p>
+                            </div>
+                        </div>
+
+                        <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 10px;">Gestione File Locandine</h4>
                         <p class="panel-description">Carica immagini per il carosello del totem (JPEG, PNG, WebP — max 10 MB per file).</p>
                         
                         <div class="form-group" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -1002,7 +1020,12 @@
             showView('login-view');
         }
 
-        async function loadAdminData() {
+        async function loadAdminData(config) {
+            if (config) {
+                currentConfig = config;
+                populateForm(config);
+                return;
+            }
             const token = sessionStorage.getItem('adminToken');
             if (!token) {
                 showView('login-view');
@@ -1080,6 +1103,19 @@
             document.getElementById('fe_pausa_carosello').value = config.frontend?.pausaTraCaroselli || 180000;
             document.getElementById('fe_expo_locandina').value = config.frontend?.esposizioneLocandina || 10000;
             document.getElementById('fe_intervallo').value = config.frontend?.intervalloAggiornamento || 5000;
+            let quotaVal = 30;
+            const rawQuota = config.frontend?.quotaCarosello;
+            if (typeof rawQuota === 'number' && Number.isFinite(rawQuota)) {
+                if (rawQuota >= 0.10 && rawQuota <= 0.50) {
+                    quotaVal = Math.round(rawQuota * 100);
+                } else if (rawQuota >= 10 && rawQuota <= 50) {
+                    quotaVal = Math.round(rawQuota);
+                }
+            }
+            const sliderQuota = document.getElementById('fe_quota_carosello');
+            if (sliderQuota) sliderQuota.value = quotaVal;
+            const badgeQuota = document.getElementById('fe_quota_carosello_val');
+            if (badgeQuota) badgeQuota.textContent = quotaVal + '%';
 
             // Footer News
             const fn = config.footer_news || {};
@@ -1331,7 +1367,8 @@
                     urlCalendario: document.getElementById('fe_url_calendario').value,
                     pausaTraCaroselli: parseInt(document.getElementById('fe_pausa_carosello').value),
                     esposizioneLocandina: parseInt(document.getElementById('fe_expo_locandina').value),
-                    intervalloAggiornamento: parseInt(document.getElementById('fe_intervallo').value)
+                    intervalloAggiornamento: parseInt(document.getElementById('fe_intervallo').value),
+                    quotaCarosello: parseFloat((parseInt(document.getElementById('fe_quota_carosello').value) / 100).toFixed(2))
                 },
                 footer_news: {
                     ...currentConfig.footer_news,
@@ -1385,6 +1422,8 @@
                 alert("Errore di rete");
             }
         }
+
+        const saveAdminData = salvaConfigurazione;
 
         function showView(viewId) {
             document.getElementById('login-view').classList.remove('active');

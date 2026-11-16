@@ -109,6 +109,9 @@ frontend:
   # (10000 = 10 secondi)
   esposizioneLocandina: 10000
 
+  # Quota massima di tempo a video riservata alle locandine (Duty-Cycle, tra 0.10 e 0.50, default 0.30 = 30%)
+  quotaCarosello: 0.30
+
   # Velocità di ridisegno interno dell'interfaccia aule (in millisecondi)
   intervalloAggiornamento: 5000
 
