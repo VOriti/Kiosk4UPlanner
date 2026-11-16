@@ -1164,6 +1164,11 @@
             }
         }
 
+        function urlLocandina(nome) {
+            // Nomi immutabili: nessun cache-busting. %27 evita la rottura di url('...') nello stile inline.
+            return '/locandine/' + encodeURIComponent(nome).replace(/'/g, '%27');
+        }
+
         const advOverlay = document.getElementById('kiosk-adv');
         async function riproduciLocandine() {
             if (!isLocandineActiveOnDevice()) return;
@@ -1176,7 +1181,7 @@
                 if (res.ok) {
                     const files = await res.json();
                     for (let f of files) {
-                        const url = `/locandine/${f}?` + Date.now();
+                        const url = urlLocandina(f);
                         const valid = await new Promise(resolve => {
                             let img = new Image(); img.onload = () => resolve(url); img.onerror = () => resolve(null); img.src = url;
                         });
