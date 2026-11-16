@@ -654,6 +654,33 @@
                     </div>
                 </div>
 
+                <!-- TENDINA: Locandine -->
+                <div class="accordion-panel" id="panel-locandine">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-locandine')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">🖼️</span>
+                            <div class="accordion-title-box">
+                                <h3>Locandine</h3>
+                                <p>Caricamento e gestione locandine per il carosello</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <p class="panel-description">Carica immagini per il carosello del totem (JPEG, PNG, WebP — max 10 MB per file).</p>
+                        
+                        <div class="form-group" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <input type="file" id="locandine_file" accept="image/jpeg,image/png,image/webp" multiple style="flex: 1; min-width: 200px; padding: 8px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            <button type="button" class="btn" onclick="caricaLocandine()">Carica</button>
+                        </div>
+                        
+                        <h4 style="color: var(--accent-color); margin-top: 25px; margin-bottom: 10px;">Locandine Attuali</h4>
+                        <ul id="locandine_lista" style="list-style: none; padding: 0; margin: 0; border: 1px solid var(--border-color); border-radius: 6px; background-color: #0d1117; min-height: 40px;"></ul>
+                    </div>
+                </div>
+
                 <!-- TENDINA: Footer e Notizie -->
                 <div class="accordion-panel" id="panel-footer">
                     <div class="accordion-header" onclick="toggleAccordion('panel-footer')">
@@ -993,6 +1020,7 @@
                 if (res.ok) {
                     currentConfig = await res.json();
                     populateForm(currentConfig);
+                    aggiornaElencoLocandine();
                     showView('admin-view');
                 }
             } catch (e) {
@@ -1380,6 +1408,89 @@
                     window.location.reload();
                 }
             }, 1000);
+        }
+
+        async function caricaLocandine() {
+            const input = document.getElementById('locandine_file');
+            if (!input || !input.files || input.files.length === 0) {
+                alert('Seleziona almeno un file immagine da caricare.');
+                return;
+            }
+
+            const MAX_SIZE = 10 * 1024 * 1024;
+            const files = Array.from(input.files);
+
+            for (const file of files) {
+                if (file.size > MAX_SIZE) {
+                    alert(`Il file "${file.name}" supera il limite massimo consentito di 10 MB.`);
+                    return;
+                }
+            }
+
+            const token = sessionStorage.getItem('adminToken');
+            for (const file of files) {
+                try {
+                    const res = await fetch('/api/admin/locandine/upload', {
+                        method: 'POST',
+                        headers: {
+                            'X-Admin-Token': token,
+                            'Content-Type': file.type || 'application/octet-stream'
+                        },
+                        body: file
+                    });
+                    if (!res.ok) {
+                        let errText = `Errore HTTP ${res.status}`;
+                        try {
+                            const errJson = await res.json();
+                            if (errJson && errJson.error) errText = errJson.error;
+                        } catch (_) {}
+                        await aggiornaElencoLocandine();
+                        alert(`Errore durante il caricamento di "${file.name}": ${errText}`);
+                        return;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    await aggiornaElencoLocandine();
+                    alert(`Errore di rete durante il caricamento di "${file.name}".`);
+                    return;
+                }
+            }
+
+            input.value = '';
+            await aggiornaElencoLocandine();
+            showToast();
+        }
+
+        async function aggiornaElencoLocandine() {
+            try {
+                const res = await fetch('/lista_locandine.json');
+                if (!res.ok) return;
+                const lista = await res.json();
+                const ul = document.getElementById('locandine_lista');
+                if (!ul) return;
+                ul.textContent = '';
+                if (!Array.isArray(lista) || lista.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = 'Nessuna locandina presente.';
+                    li.style.color = 'var(--text-secondary)';
+                    li.style.padding = '10px 14px';
+                    li.style.fontStyle = 'italic';
+                    ul.appendChild(li);
+                    return;
+                }
+                for (const nome of lista) {
+                    const li = document.createElement('li');
+                    li.textContent = nome;
+                    li.style.padding = '8px 14px';
+                    li.style.borderBottom = '1px solid var(--border-color)';
+                    li.style.fontFamily = 'monospace';
+                    li.style.fontSize = '0.9rem';
+                    li.style.color = 'var(--text-primary)';
+                    ul.appendChild(li);
+                }
+            } catch (e) {
+                console.error('Errore durante la lettura di lista_locandine:', e);
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {

@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import socketserver
 import ssl
 import copy
+import re
 
 try:
     from http.server import ThreadingHTTPServer
@@ -55,6 +56,78 @@ news_poll_event = threading.Event()
 LIMITE_EVENTI_CINECA = 500          # tetto 'limit' richiesto a getImpegniCalendario
 SOGLIA_ASSENZE_ANNULLAMENTO = 2     # polling consecutivi senza l'evento prima di marcarlo ANNULLATO
 AVVISI_DI_STATO = ("ANNULLATO", "SOSPESO")
+
+LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
+LIMITE_POST_JSON = 1 * 1024 * 1024
+ESTENSIONI_LOCANDINE = ('.png', '.jpg', '.jpeg', '.webp')
+
+def cartella_locandine():
+    return os.path.join(PERCORSO_BASE, 'locandine')
+
+def rileva_formato_immagine(testa):
+    """Estensione dedotta dai magic bytes, None se il formato non è ammesso."""
+    if testa.startswith(b'\xff\xd8\xff'):
+        return '.jpg'
+    if testa.startswith(b'\x89PNG\r\n\x1a\n'):
+        return '.png'
+    if testa[:4] == b'RIFF' and testa[8:12] == b'WEBP':
+        return '.webp'
+    return None
+
+def chiave_ordinamento_naturale(nome):
+    # Tupla omogenea: la vecchia chiave int/str andava in TypeError con nomi misti (1.jpg + p..._ab12.jpg)
+    m = re.match(r'^(\d+)', nome)
+    return (0, int(m.group(1)), nome.lower()) if m else (1, 0, nome.lower())
+
+def elenco_file_locandine():
+    cartella = cartella_locandine()
+    if not os.path.isdir(cartella):
+        return []
+    nomi = [f for f in os.listdir(cartella)
+            if not f.startswith('.') and f.lower().endswith(ESTENSIONI_LOCANDINE)
+            and os.path.isfile(os.path.join(cartella, f))]
+    return sorted(nomi, key=chiave_ordinamento_naturale)
+
+def pulisci_upload_orfani():
+    cartella = cartella_locandine()
+    if os.path.isdir(cartella):
+        for f in os.listdir(cartella):
+            if f.startswith('.upload_') and f.endswith('.tmp'):
+                try:
+                    os.remove(os.path.join(cartella, f))
+                except OSError:
+                    pass
+
+def salva_locandina_da_stream(rfile, lunghezza):
+    """Scrive il body su .tmp a blocchi, valida i magic bytes e rinomina con un nome immutabile."""
+    cartella = cartella_locandine()
+    os.makedirs(cartella, exist_ok=True)
+    tmp = os.path.join(cartella, f'.upload_{secrets.token_hex(8)}.tmp')
+    testa, letti = b'', 0
+    try:
+        with open(tmp, 'wb') as f:
+            while letti < lunghezza:
+                blocco = rfile.read(min(65536, lunghezza - letti))
+                if not blocco:
+                    raise ValueError('Upload interrotto prima della fine')
+                if len(testa) < 12:
+                    testa += blocco[:12 - len(testa)]
+                f.write(blocco)
+                letti += len(blocco)
+            f.flush()
+            os.fsync(f.fileno())
+        ext = rileva_formato_immagine(testa)
+        if not ext:
+            raise ValueError('Formato non supportato: ammessi JPEG, PNG, WebP')
+        nome = f"p{int(time.time() * 1000)}_{secrets.token_hex(2)}{ext}"
+        os.replace(tmp, os.path.join(cartella, nome))
+        return nome
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 def get_tz_roma():
     """Restituisce il fuso orario di Roma (Europe/Rome).
@@ -896,6 +969,30 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_error(401, "Unauthorized")
             return False
         return True
+
+    def _invia_json(self, codice, oggetto):
+        self.send_response(codice)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(oggetto).encode('utf-8'))
+
+    def _leggi_content_length(self, limite):
+        """Lunghezza del body, oppure None dopo aver già risposto 400/413. Header assente = 0."""
+        grezzo = self.headers.get('Content-Length')
+        if grezzo is None:
+            return 0
+        try:
+            n = int(grezzo.strip())
+        except ValueError:
+            self.send_error(400, "Content-Length non valido")
+            return None
+        if n < 0:
+            self.send_error(400, "Content-Length non valido")
+            return None
+        if n > limite:
+            self.send_error(413, "Payload Too Large")
+            return None
+        return n
         
     def do_GET(self):
         is_ssl = getattr(self.server, 'is_ssl', False)
@@ -971,19 +1068,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            try:
-                cartella_locandine = os.path.join(PERCORSO_BASE, 'locandine')
-                if os.path.exists(cartella_locandine):
-                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and os.path.isfile(os.path.join(cartella_locandine, f))]
-                    # Ordinamento naturale per supportare numeri progressivi (1.jpg, 2.png, 10.jpg)
-                    import re
-                    immagini.sort(key=lambda x: int(re.match(r'^(\d+)', x).group(1)) if re.match(r'^(\d+)', x) else x.lower())
-                    self.wfile.write(json.dumps(immagini).encode('utf-8'))
-                else:
-                    self.wfile.write(json.dumps([]).encode('utf-8'))
-            except Exception as e:
-                logging.error(f"Errore lettura locandine: {e}")
-                self.wfile.write(json.dumps([]).encode('utf-8'))
+            self.wfile.write(json.dumps(elenco_file_locandine()).encode('utf-8'))
         elif parsed_path == '/admin':
             if self._check_security():
                 self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html')
@@ -1011,12 +1096,9 @@ class KioskServer(BaseHTTPRequestHandler):
     def do_POST(self):
         global CONFIG
         parsed_path = self.path.split('?')[0]
-        content_length = int(self.headers.get('Content-Length', 0))
-
-        # Protezione anti-OOM: 10 MB per upload locandine autenticato, 1 MB per tutte le altre API
-        max_size = 10 * 1024 * 1024 if parsed_path.startswith('/api/admin/locandine/upload') else 1 * 1024 * 1024
-        if content_length > max_size:
-            self.send_error(413, "Payload Too Large")
+        limite = LIMITE_UPLOAD_LOCANDINA if parsed_path == '/api/admin/locandine/upload' else LIMITE_POST_JSON
+        content_length = self._leggi_content_length(limite)
+        if content_length is None:
             return
 
         if parsed_path == '/api/admin/login':
@@ -1038,7 +1120,6 @@ class KioskServer(BaseHTTPRequestHandler):
                     }).encode('utf-8'))
                     return
 
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
             try:
                 data = json.loads(body)
@@ -1074,7 +1155,6 @@ class KioskServer(BaseHTTPRequestHandler):
         elif parsed_path == '/api/admin/save':
             if not self._check_security() or not self._check_token(): return
             
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
             try:
                 payload = json.loads(body)
@@ -1139,6 +1219,19 @@ class KioskServer(BaseHTTPRequestHandler):
                 logging.error(f"Errore salvataggio config: {e}")
                 self.send_error(400, "Bad Request")
                 
+        elif parsed_path == '/api/admin/locandine/upload':
+            if not self._check_security() or not self._check_token(): return
+            if content_length == 0:
+                self._invia_json(400, {"error": "Body vuoto"})
+                return
+            try:
+                nome = salva_locandina_da_stream(self.rfile, content_length)
+            except ValueError as e:
+                self._invia_json(400, {"error": str(e)})
+                return
+            logging.info(f"🖼️ Locandina caricata: {nome} ({content_length // 1024} KB).")
+            self._invia_json(200, {"status": "ok", "filename": nome})
+
         elif parsed_path == '/api/admin/restart':
             if not self._check_security() or not self._check_token(): return
             
@@ -1204,6 +1297,7 @@ def avvia_server_https():
         logging.error(f"Errore critico avvio server HTTPS: {e}")
 
 if __name__ == '__main__':
+    pulisci_upload_orfani()
     threading.Thread(target=ciclo_aggiornamento_api, daemon=True).start()
     threading.Thread(target=NewsPollingDaemon, daemon=True).start()
     

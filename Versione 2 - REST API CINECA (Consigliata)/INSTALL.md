@@ -117,9 +117,11 @@ Per fare in modo che il Raspberry Pi accenda il monitor, avvii Python e lanci la
 3. **Verifica lo script `~/.xinitrc`:**  
    Assicurati che il file `~/.xinitrc` fornito nel repository sia posizionato nella tua home directory. Lo script è già preconfigurato per:
    - Disabilitare lo screensaver e il risparmio energetico dello schermo (DPMS).
-   - Avviare il server Python `server_api.py` in background.
+   - Avviare il server Python `server_api.py` in background con watchdog e rotazione automatica del log `server_api_sys.log` a 5 MB.
    - Avviare il gestore finestre leggero `openbox`.
    - Lanciare `chromium` a tutto schermo in modalità Kiosk con il parametro `?kiosk=1` (che attiva automaticamente le locandine sul totem).
+
+> ⚠️ **Aggiornamento da versioni precedenti:** Lo script `.xinitrc` include la rotazione automatica del log di sistema a 5 MB (`server_api_sys.log` ruotato in `.1`). Va ricopiato in `~/.xinitrc` su ogni Raspberry Pi (`cp "Versione 2 - REST API CINECA (Consigliata)/.xinitrc" ~/.xinitrc`).
 
 > 📺 **Monitor Secondari, Smart TV e Digital Signage (`?kiosk=1`):**  
 > Se colleghi alla dashboard altri schermi o Smart TV da corridoio (es. TV con browser integrato WebOS/Tizen, stick Android o PC remoti senza Raspberry Pi), assicurati di aprire l'URL aggiungendo il parametro **`?kiosk=1`** (es. `http://[IP_DEL_RASPBERRY]:8080/?kiosk=1` o `http://totem.unipv.it/?kiosk=1`).  
