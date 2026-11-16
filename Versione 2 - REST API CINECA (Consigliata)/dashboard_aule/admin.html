@@ -1156,6 +1156,9 @@
             const panel = document.getElementById(id);
             if (panel) {
                 panel.classList.toggle('open');
+                if (id === 'panel-locandine' && panel.classList.contains('open')) {
+                    aggiornaElencoLocandine();
+                }
             }
         }
 
@@ -1410,7 +1413,10 @@
             }, 1000);
         }
 
+        let locandineOperazioneInCorso = false;
+
         async function caricaLocandine() {
+            if (locandineOperazioneInCorso) return;
             const input = document.getElementById('locandine_file');
             if (!input || !input.files || input.files.length === 0) {
                 alert('Seleziona almeno un file immagine da caricare.');
@@ -1427,49 +1433,124 @@
                 }
             }
 
-            const token = sessionStorage.getItem('adminToken');
-            for (const file of files) {
-                try {
-                    const res = await fetch('/api/admin/locandine/upload', {
-                        method: 'POST',
-                        headers: {
-                            'X-Admin-Token': token,
-                            'Content-Type': file.type || 'application/octet-stream'
-                        },
-                        body: file
-                    });
-                    if (!res.ok) {
-                        let errText = `Errore HTTP ${res.status}`;
-                        try {
-                            const errJson = await res.json();
-                            if (errJson && errJson.error) errText = errJson.error;
-                        } catch (_) {}
+            locandineOperazioneInCorso = true;
+            try {
+                const token = sessionStorage.getItem('adminToken');
+                for (const file of files) {
+                    try {
+                        const res = await fetch('/api/admin/locandine/upload', {
+                            method: 'POST',
+                            headers: {
+                                'X-Admin-Token': token,
+                                'Content-Type': file.type || 'application/octet-stream'
+                            },
+                            body: file
+                        });
+                        if (!res.ok) {
+                            let errText = `Errore HTTP ${res.status}`;
+                            try {
+                                const errJson = await res.json();
+                                if (errJson && errJson.error) errText = errJson.error;
+                            } catch (_) {}
+                            await aggiornaElencoLocandine();
+                            alert(`Errore durante il caricamento di "${file.name}": ${errText}`);
+                            return;
+                        }
+                    } catch (err) {
+                        console.error(err);
                         await aggiornaElencoLocandine();
-                        alert(`Errore durante il caricamento di "${file.name}": ${errText}`);
+                        alert(`Errore di rete durante il caricamento di "${file.name}".`);
                         return;
                     }
-                } catch (err) {
-                    console.error(err);
-                    await aggiornaElencoLocandine();
-                    alert(`Errore di rete durante il caricamento di "${file.name}".`);
-                    return;
                 }
-            }
 
-            input.value = '';
-            await aggiornaElencoLocandine();
-            showToast();
+                input.value = '';
+                await aggiornaElencoLocandine();
+                showToast();
+            } finally {
+                locandineOperazioneInCorso = false;
+            }
+        }
+
+        let elencoLocandineCache = [];
+
+        async function spostaLocandina(index, offset) {
+            if (locandineOperazioneInCorso) return;
+            const nuovoIndex = index + offset;
+            if (nuovoIndex < 0 || nuovoIndex >= elencoLocandineCache.length) return;
+            locandineOperazioneInCorso = true;
+            const nomi = elencoLocandineCache.map(item => item.nome);
+            const temp = nomi[index];
+            nomi[index] = nomi[nuovoIndex];
+            nomi[nuovoIndex] = temp;
+
+            try {
+                const res = await fetch('/api/admin/locandine/ordine', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ ordine: nomi })
+                });
+                if (res.ok) {
+                    await aggiornaElencoLocandine();
+                    showToast();
+                } else {
+                    let errText = `Errore HTTP ${res.status}`;
+                    try {
+                        const errJson = await res.json();
+                        if (errJson && errJson.error) errText = errJson.error;
+                    } catch (_) {}
+                    alert(`Errore durante il riordino: ${errText}`);
+                }
+            } catch (e) {
+                console.error('Errore riordino locandine:', e);
+                alert('Errore di rete durante il riordino delle locandine.');
+            } finally {
+                locandineOperazioneInCorso = false;
+            }
+        }
+
+        async function eliminaLocandina(nome) {
+            if (locandineOperazioneInCorso) return;
+            if (!confirm(`Sei sicuro di voler eliminare la locandina "${nome}"?`)) {
+                return;
+            }
+            locandineOperazioneInCorso = true;
+            try {
+                const res = await fetch('/api/admin/locandine/elimina', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ filename: nome })
+                });
+                if (res.ok) {
+                    await aggiornaElencoLocandine();
+                    showToast();
+                } else {
+                    let errText = `Errore HTTP ${res.status}`;
+                    try {
+                        const errJson = await res.json();
+                        if (errJson && errJson.error) errText = errJson.error;
+                    } catch (_) {}
+                    alert(`Errore durante l'eliminazione: ${errText}`);
+                }
+            } catch (e) {
+                console.error('Errore eliminazione locandina:', e);
+                alert('Errore di rete durante l\'eliminazione della locandina.');
+            } finally {
+                locandineOperazioneInCorso = false;
+            }
         }
 
         async function aggiornaElencoLocandine() {
             try {
-                const res = await fetch('/lista_locandine.json');
+                const res = await fetch('/api/admin/locandine', { headers: getAuthHeaders() });
+                if (res.status === 401 || res.status === 403) return;
                 if (!res.ok) return;
                 const lista = await res.json();
+                elencoLocandineCache = Array.isArray(lista) ? lista : [];
                 const ul = document.getElementById('locandine_lista');
                 if (!ul) return;
                 ul.textContent = '';
-                if (!Array.isArray(lista) || lista.length === 0) {
+                if (elencoLocandineCache.length === 0) {
                     const li = document.createElement('li');
                     li.textContent = 'Nessuna locandina presente.';
                     li.style.color = 'var(--text-secondary)';
@@ -1478,18 +1559,101 @@
                     ul.appendChild(li);
                     return;
                 }
-                for (const nome of lista) {
+                elencoLocandineCache.forEach((item, index) => {
                     const li = document.createElement('li');
-                    li.textContent = nome;
+                    li.style.display = 'flex';
+                    li.style.justifyContent = 'space-between';
+                    li.style.alignItems = 'center';
                     li.style.padding = '8px 14px';
-                    li.style.borderBottom = '1px solid var(--border-color)';
-                    li.style.fontFamily = 'monospace';
-                    li.style.fontSize = '0.9rem';
-                    li.style.color = 'var(--text-primary)';
+                    li.style.borderBottom = index === elencoLocandineCache.length - 1 ? 'none' : '1px solid var(--border-color)';
+                    li.style.gap = '10px';
+
+                    const colInfo = document.createElement('div');
+                    colInfo.style.display = 'flex';
+                    colInfo.style.flexDirection = 'column';
+                    colInfo.style.gap = '3px';
+                    colInfo.style.overflow = 'hidden';
+
+                    const nomeSpan = document.createElement('span');
+                    nomeSpan.textContent = item.nome;
+                    nomeSpan.style.fontFamily = 'monospace';
+                    nomeSpan.style.fontSize = '0.9rem';
+                    nomeSpan.style.color = 'var(--text-primary)';
+                    nomeSpan.style.fontWeight = '600';
+                    nomeSpan.style.wordBreak = 'break-all';
+
+                    const metaSpan = document.createElement('span');
+                    metaSpan.textContent = `${item.kb} KB • Caricata: ${item.caricata}`;
+                    metaSpan.style.fontSize = '0.78rem';
+                    metaSpan.style.color = 'var(--text-secondary)';
+
+                    colInfo.appendChild(nomeSpan);
+                    colInfo.appendChild(metaSpan);
+
+                    const colAzioni = document.createElement('div');
+                    colAzioni.style.display = 'flex';
+                    colAzioni.style.gap = '6px';
+                    colAzioni.style.flexShrink = '0';
+
+                    const btnSu = document.createElement('button');
+                    btnSu.type = 'button';
+                    btnSu.textContent = '▲';
+                    btnSu.title = 'Sposta in alto';
+                    btnSu.setAttribute('aria-label', `Sposta in alto ${item.nome}`);
+                    btnSu.className = 'btn';
+                    btnSu.style.padding = '4px 8px';
+                    btnSu.style.fontSize = '0.8rem';
+                    btnSu.style.backgroundColor = '#21262d';
+                    btnSu.style.border = '1px solid var(--border-color)';
+                    if (index === 0) {
+                        btnSu.disabled = true;
+                        btnSu.style.opacity = '0.35';
+                        btnSu.style.cursor = 'not-allowed';
+                    } else {
+                        btnSu.onclick = () => spostaLocandina(index, -1);
+                    }
+
+                    const btnGiu = document.createElement('button');
+                    btnGiu.type = 'button';
+                    btnGiu.textContent = '▼';
+                    btnGiu.title = 'Sposta in basso';
+                    btnGiu.setAttribute('aria-label', `Sposta in basso ${item.nome}`);
+                    btnGiu.className = 'btn';
+                    btnGiu.style.padding = '4px 8px';
+                    btnGiu.style.fontSize = '0.8rem';
+                    btnGiu.style.backgroundColor = '#21262d';
+                    btnGiu.style.border = '1px solid var(--border-color)';
+                    if (index === elencoLocandineCache.length - 1) {
+                        btnGiu.disabled = true;
+                        btnGiu.style.opacity = '0.35';
+                        btnGiu.style.cursor = 'not-allowed';
+                    } else {
+                        btnGiu.onclick = () => spostaLocandina(index, 1);
+                    }
+
+                    const btnElimina = document.createElement('button');
+                    btnElimina.type = 'button';
+                    btnElimina.textContent = '🗑';
+                    btnElimina.title = 'Elimina locandina';
+                    btnElimina.setAttribute('aria-label', `Elimina locandina ${item.nome}`);
+                    btnElimina.className = 'btn';
+                    btnElimina.style.padding = '4px 8px';
+                    btnElimina.style.fontSize = '0.8rem';
+                    btnElimina.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
+                    btnElimina.style.borderColor = 'rgba(248, 81, 73, 0.4)';
+                    btnElimina.style.color = 'var(--danger-color)';
+                    btnElimina.onclick = () => eliminaLocandina(item.nome);
+
+                    colAzioni.appendChild(btnSu);
+                    colAzioni.appendChild(btnGiu);
+                    colAzioni.appendChild(btnElimina);
+
+                    li.appendChild(colInfo);
+                    li.appendChild(colAzioni);
                     ul.appendChild(li);
-                }
+                });
             } catch (e) {
-                console.error('Errore durante la lettura di lista_locandine:', e);
+                console.error('Errore durante la lettura di locandine:', e);
             }
         }
 

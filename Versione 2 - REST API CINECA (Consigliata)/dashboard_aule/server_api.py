@@ -16,6 +16,7 @@ import socketserver
 import ssl
 import copy
 import re
+import math
 
 try:
     from http.server import ThreadingHTTPServer
@@ -61,8 +62,46 @@ LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
 LIMITE_POST_JSON = 1 * 1024 * 1024
 ESTENSIONI_LOCANDINE = ('.png', '.jpg', '.jpeg', '.webp')
 
+lock_locandine = threading.Lock()
+
 def cartella_locandine():
     return os.path.join(PERCORSO_BASE, 'locandine')
+
+def percorso_ordine():
+    return os.path.join(cartella_locandine(), 'ordine.json')
+
+def leggi_ordine():
+    try:
+        with open(percorso_ordine(), 'r', encoding='utf-8') as f:
+            dati = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [n for n in dati if isinstance(n, str)] if isinstance(dati, list) else []
+
+def scrivi_ordine(nomi):
+    cartella = cartella_locandine()
+    os.makedirs(cartella, exist_ok=True)
+    tmp = percorso_ordine() + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(nomi, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, percorso_ordine())
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+def elenco_locandine_ordinato():
+    """Ordine di ordine.json, poi i file non elencati in ordine naturale; voci senza file ignorate."""
+    presenti = elenco_file_locandine()
+    insieme = set(presenti)
+    ordinati = [n for n in dict.fromkeys(leggi_ordine()) if n in insieme]
+    gia = set(ordinati)
+    return ordinati + [n for n in presenti if n not in gia]
 
 def rileva_formato_immagine(testa):
     """Estensione dedotta dai magic bytes, None se il formato non è ammesso."""
@@ -1045,15 +1084,8 @@ class KioskServer(BaseHTTPRequestHandler):
             self.serve_file(os.path.join(PERCORSO_BASE, 'logo.png'), 'image/png')
         elif parsed_path.startswith('/locandine/'): 
             nome_file = os.path.basename(parsed_path)
-            cartella_locandine = os.path.abspath(os.path.join(PERCORSO_BASE, 'locandine'))
-            percorso_file = os.path.abspath(os.path.join(cartella_locandine, nome_file))
-            
-            # Protezione path traversal e verifica file reale
-            if not percorso_file.startswith(cartella_locandine) or not os.path.isfile(percorso_file):
-                self.send_response(404)
-                self.end_headers()
-                return
-            
+            dir_locandine = os.path.abspath(cartella_locandine())
+            percorso_file = os.path.abspath(os.path.join(dir_locandine, nome_file))
             ext = os.path.splitext(nome_file)[1].lower()
             mime_map = {
                 '.jpg': 'image/jpeg',
@@ -1061,14 +1093,45 @@ class KioskServer(BaseHTTPRequestHandler):
                 '.png': 'image/png',
                 '.webp': 'image/webp'
             }
-            mime = mime_map.get(ext, 'application/octet-stream')
-            self.serve_file(percorso_file, mime)
+            
+            # Protezione path traversal, verifica estensione immagine e file reale
+            prefix = dir_locandine if dir_locandine.endswith(os.sep) else dir_locandine + os.sep
+            if (not percorso_file.startswith(prefix) or 
+                ext not in mime_map or 
+                not os.path.isfile(percorso_file)):
+                self.send_response(404)
+                self.end_headers()
+                return
+            
+            self.serve_file(percorso_file, mime_map[ext])
         elif parsed_path == '/lista_locandine.json':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(elenco_file_locandine()).encode('utf-8'))
+            self.wfile.write(json.dumps(elenco_locandine_ordinato()).encode('utf-8'))
+        elif parsed_path == '/api/admin/locandine':
+            if not self._check_security() or not self._check_token():
+                return
+            cartella = cartella_locandine()
+            voci = []
+            for nome in elenco_locandine_ordinato():
+                percorso = os.path.join(cartella, nome)
+                try:
+                    stat = os.stat(percorso)
+                    size = stat.st_size
+                    mtime = stat.st_mtime
+                except OSError:
+                    size = 0
+                    mtime = time.time()
+                kb = math.ceil(size / 1024)
+                dt = datetime.datetime.fromtimestamp(mtime, tz=get_tz_roma())
+                voci.append({
+                    "nome": nome,
+                    "kb": kb,
+                    "caricata": dt.strftime("%d/%m/%Y %H:%M")
+                })
+            self._invia_json(200, voci)
         elif parsed_path == '/admin':
             if self._check_security():
                 self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html')
@@ -1232,6 +1295,67 @@ class KioskServer(BaseHTTPRequestHandler):
             logging.info(f"🖼️ Locandina caricata: {nome} ({content_length // 1024} KB).")
             self._invia_json(200, {"status": "ok", "filename": nome})
 
+        elif parsed_path == '/api/admin/locandine/ordine':
+            if not self._check_security() or not self._check_token(): return
+            try:
+                raw_body = self.rfile.read(content_length)
+                payload = json.loads(raw_body.decode('utf-8'))
+            except Exception:
+                self._invia_json(400, {"error": "JSON non valido"})
+                return
+            if not isinstance(payload, dict) or 'ordine' not in payload:
+                self._invia_json(400, {"error": "Payload non valido: atteso campo 'ordine'"})
+                return
+            ordine = payload.get('ordine')
+            if not isinstance(ordine, list) or not all(isinstance(n, str) for n in ordine):
+                self._invia_json(400, {"error": "Campo 'ordine' deve essere una lista di stringhe"})
+                return
+
+            with lock_locandine:
+                presenti = elenco_file_locandine()
+                insieme = set(presenti)
+                nuovo = [n for n in dict.fromkeys(ordine) if n in insieme]
+                gia = set(nuovo)
+                nuovo += [n for n in presenti if n not in gia]
+                scrivi_ordine(nuovo)
+            self._invia_json(200, {"status": "ok", "ordine": nuovo})
+
+        elif parsed_path == '/api/admin/locandine/elimina':
+            if not self._check_security() or not self._check_token(): return
+            try:
+                raw_body = self.rfile.read(content_length)
+                payload = json.loads(raw_body.decode('utf-8'))
+            except Exception:
+                self._invia_json(400, {"error": "JSON non valido"})
+                return
+            if not isinstance(payload, dict):
+                self._invia_json(400, {"error": "Payload non valido"})
+                return
+            nome = payload.get('filename') if 'filename' in payload else payload.get('nome')
+            if (not isinstance(nome, str) or not nome or 
+                '\x00' in nome or 
+                nome in ('.', '..') or 
+                os.path.basename(nome) != nome or 
+                '/' in nome or '\\' in nome):
+                self._invia_json(400, {"error": "Nome file non valido o path traversal rilevato"})
+                return
+
+            with lock_locandine:
+                presenti = elenco_file_locandine()
+                if nome not in presenti:
+                    self._invia_json(404, {"error": "File non trovato"})
+                    return
+                percorso = os.path.join(cartella_locandine(), nome)
+                try:
+                    os.remove(percorso)
+                except OSError as e:
+                    logging.error(f"Errore rimozione file {nome}: {e}")
+                    self._invia_json(500, {"error": "Errore durante l'eliminazione del file"})
+                    return
+                scrivi_ordine(elenco_locandine_ordinato())
+                logging.info(f"🗑️ Locandina eliminata: {nome}")
+            self._invia_json(200, {"status": "ok"})
+
         elif parsed_path == '/api/admin/restart':
             if not self._check_security() or not self._check_token(): return
             
@@ -1241,7 +1365,6 @@ class KioskServer(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
             
             logging.info("Riavvio richiesto dall'Admin. Termino il processo (il watchdog Bash lo riavvierà).")
-            import os
             def restart():
                 time.sleep(1)
                 os._exit(0)
