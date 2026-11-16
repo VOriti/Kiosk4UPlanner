@@ -43,6 +43,8 @@ lock_config = threading.Lock()
 SESSIONS = {}
 LOGIN_ATTEMPTS = {}
 lock_login = threading.Lock()
+AVVIO_PROCESSO = time.time()
+ultimo_sync_cineca_ok = None
 memoria_dati = []
 lock_memoria = threading.Lock()
 token_cineca = None
@@ -704,6 +706,24 @@ def verifica_sentinella_limite(dati_grezzi):
         return True
     return False
 
+def intervallo_aggiornamento_sec():
+    try:
+        intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec') or 300)
+        return intervallo if intervallo > 0 else 300
+    except (ValueError, TypeError):
+        return 300
+
+def elabora_risposta_cineca(dati_grezzi):
+    global memoria_dati, ultimo_sync_cineca_ok
+    verifica_sentinella_limite(dati_grezzi)
+    with lock_memoria:
+        memoria_dati = estrai_e_formatta_dati(dati_grezzi)
+    ultimo_sync_cineca_ok = time.time()
+    if ultimo_aggiornamento_preservato:
+        logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
+    else:
+        logging.info(f"✅ Dati ricevuti da CINECA! Trovati {len(memoria_dati)} impegni.")
+
 def ciclo_aggiornamento_api():
     global token_cineca, memoria_dati
     logging.info("🚀 Avviato demone API CINECA (Modalità Admin Autenticata).")
@@ -714,10 +734,7 @@ def ciclo_aggiornamento_api():
             realm = sanitize_id_str(api_cineca.get('realm'))
             url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
             url_impegni = f"{url_base}/Impegni/getImpegniCalendario"
-            try:
-                intervallo = int(api_cineca.get('intervallo_aggiornamento_sec') or 300)
-            except (ValueError, TypeError):
-                intervallo = 300
+            intervallo = intervallo_aggiornamento_sec()
             
             if not token_cineca:
                 if not effettua_login():
@@ -774,7 +791,6 @@ def ciclo_aggiornamento_api():
                 continue
             elif risposta.status_code == 200:
                 dati_grezzi = risposta.json()
-                verifica_sentinella_limite(dati_grezzi)
                 if is_debug:
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")
                     edifici_scoperti = set()
@@ -789,25 +805,14 @@ def ciclo_aggiornamento_api():
                         logging.info(f"🕵️ DEBUG MAPPA EDIFICI RILEVATI ({len(edifici_scoperti)}): {sorted(list(edifici_scoperti))}")
                     else:
                         logging.info("🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.")
-                with lock_memoria:
-                    memoria_dati = estrai_e_formatta_dati(dati_grezzi)
-                if ultimo_aggiornamento_preservato:
-                    logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
-                else:
-                    logging.info(f"✅ Dati ricevuti da CINECA! Trovati {len(memoria_dati)} impegni.")
+                elabora_risposta_cineca(dati_grezzi)
             else:
                 logging.error(f"❌ Errore HTTP {risposta.status_code}: {risposta.text[:100]}")
                 
         except Exception as e:
             logging.error(f"❌ Errore critico nel ciclo API: {e}")
         
-        # Intervallo aggiornato con fallback sicuro per evitare che il thread si interrompa
-        try:
-            intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec') or 300)
-            if intervallo <= 0:
-                intervallo = 300
-        except (ValueError, TypeError):
-            intervallo = 300
+        intervallo = intervallo_aggiornamento_sec()
         time.sleep(intervallo)
 
 def NewsPollingDaemon():
@@ -1090,6 +1095,11 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             with lock_memoria: self.wfile.write(json.dumps(memoria_dati).encode('utf-8'))
+        elif parsed_path == '/stato':
+            self._invia_json(200, {"ultimo_sync_cineca": ultimo_sync_cineca_ok,
+                                   "preservato": ultimo_aggiornamento_preservato,
+                                   "ora_server": time.time(), "avvio_server": AVVIO_PROCESSO,
+                                   "intervallo_sec": intervallo_aggiornamento_sec()})
         elif parsed_path == '/logo.png': 
             self.serve_file(os.path.join(PERCORSO_BASE, 'logo.png'), 'image/png')
         elif parsed_path.startswith('/locandine/'): 

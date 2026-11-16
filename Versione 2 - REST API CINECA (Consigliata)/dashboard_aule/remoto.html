@@ -106,6 +106,30 @@
             font-weight: bold;
         }
 
+        #badge-freschezza {
+            font-size: 0.95rem;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        #badge-freschezza.badge-avviso {
+            background: rgba(238, 169, 44, 0.15);
+            border: 1px solid rgba(238, 169, 44, 0.4);
+            color: #e3b341;
+        }
+
+        #badge-freschezza.badge-offline {
+            background: rgba(248, 81, 73, 0.15);
+            border: 1px solid rgba(248, 81, 73, 0.4);
+            color: #f85149;
+        }
+
+        #badge-freschezza[hidden] {
+            display: none !important;
+        }
+
         #dashboard {
             flex-grow: 1;
             min-height: 0;
@@ -854,7 +878,10 @@
         <div class="header-left">
             <h1 id="titolo-sede">Caricamento...</h1>
         </div>
-        <div id="orologio" class="orologio">--:--</div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div id="badge-freschezza" hidden></div>
+            <div id="orologio" class="orologio">--:--</div>
+        </div>
     </div>
     <div id="dashboard">
         <div class="stato-sistema">Inizializzazione connessione col Server API...</div>
@@ -1079,6 +1106,74 @@
         let erroriConsecutivi = 0;
         let datiCaricatiAlmenoUnaVolta = false;
         let ultimoDatiJson = null;
+        let offsetOrologio = 0;   // secondi da sommare all'ora del browser per allinearsi al server
+        let ultimoStato = null;
+        let oraUltimoDatiOk = null;
+
+        function classificaImpegni(dati, adessoSec) {
+            const inCorso = [], futuri = [];
+            for (const imp of dati) {
+                if (imp.timestamp_fine < adessoSec) continue;
+                const copia = Object.assign({}, imp, { inCorso: imp.timestamp_inizio <= adessoSec });
+                (copia.inCorso ? inCorso : futuri).push(copia);
+            }
+            futuri.sort((a, b) => a.timestamp_inizio - b.timestamp_inizio);
+            return { inCorso, futuri };
+        }
+
+        function valutaFreschezza(stato, adessoSec) {
+            const soglia = Math.max(900, 3 * (stato.intervallo_sec || 300));
+            if (stato.ultimo_sync_cineca == null) {
+                return adessoSec - stato.avvio_server > 600
+                    ? { mostra: true, testo: '⚠️ In attesa di dati da U-Planner' } : { mostra: false, testo: '' };
+            }
+            if (adessoSec - stato.ultimo_sync_cineca <= soglia) return { mostra: false, testo: '' };
+            const ora = new Date(stato.ultimo_sync_cineca * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            return { mostra: true, testo: `⚠️ Dati aggiornati alle ${ora}` };
+        }
+
+        function aggiornaBadgeFreschezza() {
+            const badge = document.getElementById('badge-freschezza');
+            if (!badge) return;
+
+            if (erroriConsecutivi >= 3 && datiCaricatiAlmenoUnaVolta) {
+                const ora = oraUltimoDatiOk || (ultimoStato && ultimoStato.ultimo_sync_cineca ? new Date(ultimoStato.ultimo_sync_cineca * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '--:--');
+                badge.textContent = `🔴 OFFLINE — dati delle ${ora}`;
+                badge.className = 'badge-offline';
+                badge.removeAttribute('hidden');
+                return;
+            }
+
+            if (!ultimoStato) {
+                badge.textContent = '';
+                badge.setAttribute('hidden', '');
+                return;
+            }
+
+            const adessoSec = (Date.now() / 1000) + offsetOrologio;
+            const f = valutaFreschezza(ultimoStato, adessoSec);
+            if (f.mostra) {
+                badge.textContent = f.testo;
+                badge.className = 'badge-avviso';
+                badge.removeAttribute('hidden');
+            } else {
+                badge.textContent = '';
+                badge.setAttribute('hidden', '');
+            }
+        }
+
+        async function aggiornaStato() {
+            try {
+                const risposta = await fetch('/stato');
+                if (!risposta.ok) return;
+                const stato = await risposta.json();
+                ultimoStato = stato;
+                offsetOrologio = stato.ora_server - (Date.now() / 1000);
+                aggiornaBadgeFreschezza();
+            } catch (e) {
+                console.warn("Errore aggiornaStato:", e);
+            }
+        }
 
         async function scaricaDatiServerLocale() {
             const dashboard = document.getElementById('dashboard');
@@ -1094,6 +1189,8 @@
                 erroriConsecutivi = 0;
                 eraOffline = false;
                 datiCaricatiAlmenoUnaVolta = true;
+                oraUltimoDatiOk = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                aggiornaBadgeFreschezza();
 
                 const eraStatoSistema = !document.getElementById('colonna-in-corso');
 
@@ -1106,7 +1203,11 @@
                     return;
                 }
 
-                const datiJsonStr = JSON.stringify(datiAule);
+                const adessoSec = (Date.now() / 1000) + offsetOrologio;
+                const { inCorso, futuri } = classificaImpegni(datiAule, adessoSec);
+                const datiClassificati = { inCorso, futuri };
+                const datiJsonStr = JSON.stringify(datiClassificati);
+
                 const colInCorso = document.getElementById('colonna-in-corso');
                 const colFuturi = document.getElementById('colonna-futuri');
                 const layoutPresente = colInCorso && colFuturi;
@@ -1118,9 +1219,11 @@
                 ultimoDatiJson = datiJsonStr;
 
                 let htmlInCorso = '', htmlFuturi = '';
-                datiAule.forEach(imp => {
-                    if (imp.inCorso) htmlInCorso += generaCardHTML(imp);
-                    else htmlFuturi += generaCardHTML(imp);
+                inCorso.forEach(imp => {
+                    htmlInCorso += generaCardHTML(imp);
+                });
+                futuri.forEach(imp => {
+                    htmlFuturi += generaCardHTML(imp);
                 });
 
                 if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
@@ -1156,8 +1259,9 @@
             } catch (errore) {
                 erroriConsecutivi++;
                 console.warn("Errore scaricaDatiServerLocale:", errore);
+                aggiornaBadgeFreschezza();
                 // Non cancellare la schermata se abbiamo già dati visualizzati e l'errore è transitorio
-                if (!datiCaricatiAlmenoUnaVolta || erroriConsecutivi >= 4) {
+                if (!datiCaricatiAlmenoUnaVolta) {
                     eraOffline = true;
                     ultimoDatiJson = null;
                     dashboard.innerHTML = `
@@ -1345,7 +1449,11 @@
 
             setInterval(() => {
                 document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                aggiornaBadgeFreschezza();
             }, 1000);
+
+            aggiornaStato();
+            setInterval(aggiornaStato, 30000);
 
             scaricaDatiServerLocale();
             setInterval(scaricaDatiServerLocale, CONFIG_APP.intervalloAggiornamento || 5000);
