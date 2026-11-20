@@ -816,6 +816,103 @@
             box-sizing: border-box;
         }
         .help-text { color: #8b949e; font-size: 0.88rem; margin-bottom: 12px; line-height: 1.4; }
+        .news-pill {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .news-pill:hover {
+            border-color: #8b949e;
+        }
+        .news-pill.attiva {
+            background: #1f6feb;
+            color: #ffffff;
+            border-color: #388bfd;
+        }
+        .news-source-item {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 7px 14px;
+            user-select: none;
+            cursor: pointer;
+            transition: border-color 0.15s ease;
+        }
+        .news-source-item:hover {
+            border-color: #8b949e;
+        }
+        .news-source-label {
+            font-size: 0.9rem;
+            color: #c9d1d9;
+            font-weight: 500;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #30363d;
+            transition: .2s ease;
+            border-radius: 22px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #f0f6fc;
+            transition: .2s ease;
+            border-radius: 50%;
+        }
+        .switch input:checked + .slider {
+            background-color: #1f6feb;
+        }
+        .switch input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+        #news-search {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+            outline: none;
+        }
+        #news-search:focus {
+            border-color: #58a6ff;
+            box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+        }
         .news-table-wrapper {
             overflow-y: auto;
             overflow-x: auto;
@@ -994,11 +1091,19 @@
             }
         }
 
+        function escapeHTML(valore) {
+            return String(valore ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
         function formattaTitoloNews(titolo) {
             if (!titolo) return '';
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = String(titolo);
-            return (tempDiv.textContent || tempDiv.innerText || '').trim();
+            // DOMParser non esegue script né carica immagini: decodifica le entità in testo puro
+            return (new DOMParser().parseFromString(String(titolo), 'text/html').body.textContent || '').trim();
+        }
+
+        function notiziaCorrisponde(notizia, query) {
+            const q = String(query || '').trim().toLowerCase();
+            return !q || String(notizia.titolo || '').toLowerCase().includes(q) || String(notizia.fonte || '').toLowerCase().includes(q);
         }
 
         function sanitizzaUrlLink(url) {
@@ -1034,17 +1139,17 @@
                 const testi = notizieFiltrate.map(n => {
                     const titPulito = formattaTitoloNews(n.titolo);
                     const safeLink = sanitizzaUrlLink(n.link);
-                    const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
-                    return safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                    const testoInterno = `<strong>[${escapeHTML(n.fonte)}]</strong> ${escapeHTML(titPulito)}`;
+                    return safeLink ? `<a href="${escapeHTML(safeLink)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                 });
                 const stringaUnica = testi.join(' &nbsp;&nbsp;&bull;&nbsp;&nbsp; ');
                 
                 const velocitaBase = CONFIG_APP.footer_news.velocita || 50;
                 const durata = Math.max(10, (stringaUnica.length / 5) * (velocitaBase / 50));
                 
-                wrapper.innerHTML = `<span class="ticker-orizzontale" style="animation-duration: ${durata}s; color: ${colTesto}; font-size: ${dimTesto};">${stringaUnica}</span>`;
+                wrapper.innerHTML = `<span class="ticker-orizzontale" style="animation-duration: ${durata}s; color: ${escapeHTML(colTesto)}; font-size: ${escapeHTML(dimTesto)};">${stringaUnica}</span>`;
             } else {
-                wrapper.innerHTML = `<div id="ticker-verticale" class="ticker-verticale" style="color: ${colTesto}; font-size: ${dimTesto};"></div>`;
+                wrapper.innerHTML = `<div id="ticker-verticale" class="ticker-verticale" style="color: ${escapeHTML(colTesto)}; font-size: ${escapeHTML(dimTesto)};"></div>`;
                 const divVert = document.getElementById('ticker-verticale');
                 indexVerticale = 0;
                 
@@ -1054,8 +1159,8 @@
                         const n = notizieFiltrate[indexVerticale];
                         const titPulito = formattaTitoloNews(n.titolo);
                         const safeLink = sanitizzaUrlLink(n.link);
-                        const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
-                        const htmlContenuto = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                        const testoInterno = `<strong>[${escapeHTML(n.fonte)}]</strong> ${escapeHTML(titPulito)}`;
+                        const htmlContenuto = safeLink ? `<a href="${escapeHTML(safeLink)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                         divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
                         divVert.style.opacity = 1;
                         indexVerticale = (indexVerticale + 1) % notizieFiltrate.length;
@@ -1074,7 +1179,7 @@
             let htmlAvviso = '';
             if (impegno.avviso) {
                 const classeBadge = impegno.cancellato ? 'badge-rosso' : 'badge-giallo';
-                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${impegno.avviso}</div>`;
+                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${escapeHTML(impegno.avviso)}</div>`;
             }
 
             const stileTesto = impegno.cancellato ? 'testo-barrato' : '';
@@ -1091,12 +1196,12 @@
                 <div class="card ${classeStato}">
                     ${htmlAvviso}
                     <div class="card-header">
-                        <div class="titolo ${stileTesto}">${iconaStato}${impegno.titolo}</div>
-                        <div class="aula ${stileTesto}">${impegno.aula}</div>
+                        <div class="titolo ${stileTesto}">${iconaStato}${escapeHTML(impegno.titolo)}</div>
+                        <div class="aula ${stileTesto}">${escapeHTML(impegno.aula)}</div>
                     </div>
                     <div class="card-footer">
-                        <div class="docente ${stileTesto}">${impegno.docente}</div>
-                        <div class="orario ${stileTesto}">${impegno.orario}</div>
+                        <div class="docente ${stileTesto}">${escapeHTML(impegno.docente)}</div>
+                        <div class="orario ${stileTesto}">${escapeHTML(impegno.orario)}</div>
                     </div>
                 </div>
             `;
@@ -1198,7 +1303,7 @@
                     const emptyJson = JSON.stringify(datiAule || []);
                     if (!eraStatoSistema || emptyJson !== ultimoDatiJson) {
                         ultimoDatiJson = emptyJson;
-                        dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                        dashboard.innerHTML = `<div class="stato-sistema">${escapeHTML(CONFIG_APP.messaggioNessunaLezione)}</div>`;
                     }
                     return;
                 }
@@ -1267,7 +1372,7 @@
                     dashboard.innerHTML = `
                         <div class="stato-sistema offline">
                             <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                            <br>${CONFIG_APP.messaggioErroreRete}
+                            <br>${escapeHTML(CONFIG_APP.messaggioErroreRete)}
                         </div>
                     `;
                 }
@@ -1372,7 +1477,7 @@
             try {
                 advOverlay.style.display = 'flex';
                 for (let i = 0; i < gruppiDaMostrare.length; i++) {
-                    advOverlay.innerHTML = gruppiDaMostrare[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
+                    advOverlay.innerHTML = gruppiDaMostrare[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${escapeHTML(src)}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
                     if (await attendiCarosello(50) === 'interrotto') break;
                     advOverlay.style.opacity = '1';
                     if (await attendiCarosello(esposizione) === 'interrotto') break;
@@ -1578,16 +1683,38 @@
                     }
                     
                     const conteggio = notizieCorrenti.filter(n => n.fonte === fonte).length;
-                    const idCheck = `filter_${fonte.replace(/\s+/g, '_')}`;
-                    const div = document.createElement('div');
-                    div.innerHTML = `
-                        <input type="checkbox" id="${idCheck}" ${isChecked ? 'checked' : ''} onchange="toggleNewsSource('${fonte}', this.checked)">
-                        <label for="${idCheck}" style="margin-left: 5px;">${fonte} <span style="font-size: 0.85em; opacity: 0.7;">(${conteggio})</span></label>
-                    `;
-                    filterContainer.appendChild(div);
+
+                    const item = document.createElement('label');
+                    item.className = 'news-source-item';
+
+                    const spanLabel = document.createElement('span');
+                    spanLabel.className = 'news-source-label';
+                    spanLabel.textContent = fonte + ' (' + conteggio + ')';
+
+                    const switchSpan = document.createElement('span');
+                    switchSpan.className = 'switch';
+
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.checked = isChecked;
+                    input.addEventListener('change', () => {
+                        toggleNewsSource(fonte, input.checked);
+                    });
+
+                    const slider = document.createElement('span');
+                    slider.className = 'slider';
+
+                    switchSpan.appendChild(input);
+                    switchSpan.appendChild(slider);
+                    item.appendChild(spanLabel);
+                    item.appendChild(switchSpan);
+                    filterContainer.appendChild(item);
                 });
             }
             
+            const searchInput = document.getElementById('news-search');
+            if (searchInput) searchInput.value = '';
+
             renderNewsTable();
         }
 
@@ -1656,18 +1783,29 @@
             renderNewsTable();
         }
 
+        let searchDebounceTimeout = null;
+        function onNewsSearchInput() {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(() => {
+                renderNewsTable();
+            }, 150);
+        }
+
         function renderNewsTable() {
+            const searchInput = document.getElementById('news-search');
+            const query = searchInput ? searchInput.value : '';
             const tbody = document.getElementById('news-table-body');
             tbody.innerHTML = '';
             notizieCorrenti.forEach(n => {
+                if (!notiziaCorrisponde(n, query)) return;
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid var(--border-color)';
                 const titPulito = formattaTitoloNews(n.titolo);
                 const safeLink = sanitizzaUrlLink(n.link);
-                const link = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: #58a6ff; text-decoration: none;">${titPulito}</a>` : titPulito;
+                const link = safeLink ? `<a href="${escapeHTML(safeLink)}" target="_blank" rel="noopener noreferrer" style="color: #58a6ff; text-decoration: none;">${escapeHTML(titPulito)}</a>` : escapeHTML(titPulito);
                 tr.innerHTML = `
-                    <td style="padding: 10px; white-space: nowrap;">${n.data || '-'}</td>
-                    <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${n.fonte}</span></td>
+                    <td style="padding: 10px; white-space: nowrap;">${escapeHTML(n.data || '-')}</td>
+                    <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${escapeHTML(n.fonte)}</span></td>
                     <td style="padding: 10px;">${link}</td>
                 `;
                 tbody.appendChild(tr);
@@ -1712,6 +1850,7 @@
                 <!-- Sezione Tabella News -->
                 <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
                     <h3 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 10px;">News disponibili</h3>
+                    <input type="search" id="news-search" placeholder="🔍 Cerca tra le notizie..." oninput="onNewsSearchInput()">
                     <div class="news-table-wrapper">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary); font-size: 0.9rem;">
                             <thead style="position: sticky; top: 0; background-color: #161b22; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;">
