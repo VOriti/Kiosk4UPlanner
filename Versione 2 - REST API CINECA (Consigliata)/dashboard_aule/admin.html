@@ -470,6 +470,49 @@
                 width: 100%;
             }
         }
+
+        .miniatura-locandina {
+            max-height: 70px;
+            max-width: 120px;
+            object-fit: contain;
+            cursor: zoom-in;
+            border-radius: 4px;
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        #lightbox-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #lightbox-modal img {
+            max-width: 90vw;
+            max-height: 85vh;
+            object-fit: contain;
+            border-radius: 6px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        #lightbox-caption {
+            margin-top: 12px;
+            color: #c9d1d9;
+            font-size: 0.95rem;
+            text-align: center;
+            font-family: monospace;
+        }
     </style>
 </head>
 
@@ -947,7 +990,39 @@
         <p>Il demone si sta riavviando. La pagina si ricaricherà tra <span id="countdown">5</span> secondi.</p>
     </div>
 
+    <!-- Lightbox Locandina Modal -->
+    <div id="lightbox-modal" onclick="if(event.target === this || event.target.id === 'lightbox-close-btn') chiudiLightbox()">
+        <button id="lightbox-close-btn" type="button" style="position: absolute; top: 15px; right: 20px; background: transparent; border: none; color: #fff; font-size: 2rem; cursor: pointer; line-height: 1;" aria-label="Chiudi">&times;</button>
+        <img id="lightbox-img" src="" alt="">
+        <div id="lightbox-caption"></div>
+    </div>
+
     <script>
+        function escapeHTML(valore) {
+            return String(valore ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
+        function apriLightbox(voce) {
+            const modal = document.getElementById('lightbox-modal');
+            const img = document.getElementById('lightbox-img');
+            const caption = document.getElementById('lightbox-caption');
+            if (!modal || !img || !caption) return;
+            img.src = '/locandine/' + encodeURIComponent(voce.nome);
+            caption.textContent = `${voce.nome} · ${voce.kb} KB · ${voce.caricata}`;
+            modal.style.display = 'flex';
+        }
+
+        function chiudiLightbox() {
+            const modal = document.getElementById('lightbox-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                chiudiLightbox();
+            }
+        });
+
         let currentConfig = {};
 
         function getAuthHeaders() {
@@ -1154,11 +1229,11 @@
                         <div style="display: flex; gap: 10px; margin-top: 10px;">
                             <div class="form-group" style="flex: 1;">
                                 <label>Nome Fonte</label>
-                                <input type="text" id="fn_f${i}_nome" value="${f.nome || ''}">
+                                <input type="text" id="fn_f${i}_nome" value="${escapeHTML(f.nome || '')}">
                             </div>
                             <div class="form-group" style="flex: 2;">
                                 <label>URL</label>
-                                <input type="text" id="fn_f${i}_url" value="${f.url || ''}">
+                                <input type="text" id="fn_f${i}_url" value="${escapeHTML(f.url || '')}">
                             </div>
                         </div>
                         <div style="display: flex; gap: 10px; margin-top: 5px;">
@@ -1691,14 +1766,26 @@
                     ul.appendChild(li);
                     return;
                 }
-                elencoLocandineCache.forEach((item, index) => {
+                elencoLocandineCache.forEach((v, index) => {
                     const li = document.createElement('li');
                     li.style.display = 'flex';
                     li.style.justifyContent = 'space-between';
                     li.style.alignItems = 'center';
                     li.style.padding = '8px 14px';
                     li.style.borderBottom = index === elencoLocandineCache.length - 1 ? 'none' : '1px solid var(--border-color)';
-                    li.style.gap = '10px';
+                    li.style.gap = '12px';
+
+                    const colSinistra = document.createElement('div');
+                    colSinistra.style.display = 'flex';
+                    colSinistra.style.alignItems = 'center';
+                    colSinistra.style.gap = '12px';
+                    colSinistra.style.overflow = 'hidden';
+
+                    const colThumb = document.createElement('div');
+                    colThumb.style.flexShrink = '0';
+                    colThumb.innerHTML = `<img class="miniatura-locandina" loading="lazy" alt="" src="/locandine/${escapeHTML(encodeURIComponent(v.nome))}">`;
+                    const imgEl = colThumb.querySelector('img');
+                    if (imgEl) imgEl.onclick = () => apriLightbox(v);
 
                     const colInfo = document.createElement('div');
                     colInfo.style.display = 'flex';
@@ -1707,7 +1794,7 @@
                     colInfo.style.overflow = 'hidden';
 
                     const nomeSpan = document.createElement('span');
-                    nomeSpan.textContent = item.nome;
+                    nomeSpan.textContent = v.nome;
                     nomeSpan.style.fontFamily = 'monospace';
                     nomeSpan.style.fontSize = '0.9rem';
                     nomeSpan.style.color = 'var(--text-primary)';
@@ -1715,12 +1802,15 @@
                     nomeSpan.style.wordBreak = 'break-all';
 
                     const metaSpan = document.createElement('span');
-                    metaSpan.textContent = `${item.kb} KB • Caricata: ${item.caricata}`;
+                    metaSpan.textContent = `${v.kb} KB • Caricata: ${v.caricata}`;
                     metaSpan.style.fontSize = '0.78rem';
                     metaSpan.style.color = 'var(--text-secondary)';
 
                     colInfo.appendChild(nomeSpan);
                     colInfo.appendChild(metaSpan);
+
+                    colSinistra.appendChild(colThumb);
+                    colSinistra.appendChild(colInfo);
 
                     const colAzioni = document.createElement('div');
                     colAzioni.style.display = 'flex';
@@ -1731,7 +1821,7 @@
                     btnSu.type = 'button';
                     btnSu.textContent = '▲';
                     btnSu.title = 'Sposta in alto';
-                    btnSu.setAttribute('aria-label', `Sposta in alto ${item.nome}`);
+                    btnSu.setAttribute('aria-label', `Sposta in alto ${v.nome}`);
                     btnSu.className = 'btn';
                     btnSu.style.padding = '4px 8px';
                     btnSu.style.fontSize = '0.8rem';
@@ -1749,7 +1839,7 @@
                     btnGiu.type = 'button';
                     btnGiu.textContent = '▼';
                     btnGiu.title = 'Sposta in basso';
-                    btnGiu.setAttribute('aria-label', `Sposta in basso ${item.nome}`);
+                    btnGiu.setAttribute('aria-label', `Sposta in basso ${v.nome}`);
                     btnGiu.className = 'btn';
                     btnGiu.style.padding = '4px 8px';
                     btnGiu.style.fontSize = '0.8rem';
@@ -1767,20 +1857,20 @@
                     btnElimina.type = 'button';
                     btnElimina.textContent = '🗑';
                     btnElimina.title = 'Elimina locandina';
-                    btnElimina.setAttribute('aria-label', `Elimina locandina ${item.nome}`);
+                    btnElimina.setAttribute('aria-label', `Elimina locandina ${v.nome}`);
                     btnElimina.className = 'btn';
                     btnElimina.style.padding = '4px 8px';
                     btnElimina.style.fontSize = '0.8rem';
                     btnElimina.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
                     btnElimina.style.borderColor = 'rgba(248, 81, 73, 0.4)';
                     btnElimina.style.color = 'var(--danger-color)';
-                    btnElimina.onclick = () => eliminaLocandina(item.nome);
+                    btnElimina.onclick = () => eliminaLocandina(v.nome);
 
                     colAzioni.appendChild(btnSu);
                     colAzioni.appendChild(btnGiu);
                     colAzioni.appendChild(btnElimina);
 
-                    li.appendChild(colInfo);
+                    li.appendChild(colSinistra);
                     li.appendChild(colAzioni);
                     ul.appendChild(li);
                 });
