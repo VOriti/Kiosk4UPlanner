@@ -95,11 +95,11 @@ class TestFunzioniPure(unittest.TestCase):
 
     def test_url_locandina_standard(self):
         url = esegui_js('remoto.html', ['urlLocandina'], 'urlLocandina("p1700000000000_abcd.webp")')
-        self.assertEqual(url, "/locandine/p1700000000000_abcd.webp")
+        self.assertEqual(url, "./locandine/p1700000000000_abcd.webp")
 
     def test_url_locandina_caratteri_speciali(self):
         url = esegui_js('remoto.html', ['urlLocandina'], 'urlLocandina("locandina & evento \'speciale\' (2026).png")')
-        self.assertEqual(url, "/locandine/locandina%20%26%20evento%20%27speciale%27%20(2026).png")
+        self.assertEqual(url, "./locandine/locandina%20%26%20evento%20%27speciale%27%20(2026).png")
 
 
 if __name__ == '__main__':

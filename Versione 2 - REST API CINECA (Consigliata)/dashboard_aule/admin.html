@@ -143,11 +143,15 @@
             display: none;
             background-color: var(--danger-color);
             color: white;
-            padding: 15px;
+            padding: 14px 18px;
             border-radius: 8px;
             margin-bottom: 20px;
-            font-weight: bold;
-            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            transition: filter 0.15s ease, transform 0.15s ease;
+        }
+
+        .security-banner:hover {
+            filter: brightness(1.12);
         }
 
         .toast {
@@ -537,7 +541,16 @@
         <!-- Vista Admin -->
         <div id="admin-view">
             <div id="security-banner" class="security-banner" style="cursor: pointer;" onclick="switchTab('sistema'); toggleAccordion('panel-rete'); document.getElementById('panel-rete')?.scrollIntoView({ behavior: 'smooth' });">
-                ⚠️ ATTENZIONE: Stai usando la password predefinita. Clicca qui per cambiarla nella scheda "Sistema e Rete".
+                <div style="display: flex; align-items: flex-start; gap: 14px; text-align: left;">
+                    <span style="font-size: 1.6rem; line-height: 1.1;">⚠️</span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 1.05rem; font-weight: 700; margin-bottom: 5px;">SECURITY ALERT: Password predefinita in uso</div>
+                        <div style="font-size: 0.9rem; font-weight: normal; line-height: 1.45; opacity: 0.95;">
+                            Stai utilizzando la password predefinita di fabbrica (<em>"cambiami"</em>). Chiunque conosca l'indirizzo del Kiosk sulla rete può accedere a questo pannello di controllo.<br>
+                            👉 <strong>Clicca qui</strong> per impostare una <strong>Nuova Password</strong> e per configurare gli <strong>IP Autorizzati</strong> (es. specificando la subnet o l'IP del tuo ufficio) per schermare il totem dal resto dell'Ateneo.
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Intestazione Pannello e Azioni Rapide -->
@@ -616,18 +629,17 @@
                     </div>
                 </div>
 
-                <!-- TENDINA: Interfaccia Frontend (Dashboard & Locandine) -->
+                <!-- TENDINA: Interfaccia Frontend & Digital Signage -->
                 <div class="accordion-panel" id="panel-frontend">
                     <div class="accordion-header" onclick="toggleAccordion('panel-frontend')">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🖥️</span>
                             <div class="accordion-title-box">
                                 <h3>Interfaccia Dashboard & Digital Signage</h3>
-                                <p>Aspetto grafico impegni, carosello locandine e modalità schermo secondario</p>
+                                <p>Aspetto grafico impegni, orari e modalità kiosk schermo secondario</p>
                             </div>
                         </div>
                         <div class="accordion-header-right">
-                            <span id="badge-summary-frontend" class="status-badge badge-on">Locandine: ON</span>
                             <span class="chevron-icon">▼</span>
                         </div>
                     </div>
@@ -644,24 +656,25 @@
                             <label for="fe_mostra_stato">Mostra Badge Stato P/C</label>
                         </div>
                         <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Mostra i pallini P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni.</p>
-                        
-                        <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="fe_carosello" onchange="aggiornaBadgesSommario()">
-                            <label for="fe_carosello">Abilita Carosello Locandine (Globale)</label>
-                        </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
 
                         <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-left: 4px solid var(--accent-color); border-radius: 6px; padding: 12px 15px; margin: 10px 0 20px 0;">
                             <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent-color); margin-bottom: 5px;">
-                                <span>📺 Schermi Secondari / Smart TV (Digital Signage)</span>
+                                <span>📺 Schermi Secondari, Smart TV & Totem Touch (Digital Signage)</span>
                             </div>
                             <p class="help-text" style="margin: 0; color: var(--text-primary); line-height: 1.4;">
-                                Se installi monitor secondari o Smart TV privi di Raspberry Pi, configurali per aprire l'indirizzo con il parametro <code>?kiosk=1</code>:<br>
+                                Se installi monitor secondari, Smart TV o postazioni pubbliche, configurali per aprire l'indirizzo con il parametro <code>?kiosk=1</code>:<br>
                                 <code style="display: inline-block; background-color: #161b22; padding: 4px 8px; border-radius: 4px; margin-top: 6px; color: #58a6ff; font-size: 0.95rem;" id="kiosk-url-preview">http://[IP_DEL_SERVER]:[PORTA]/?kiosk=1</code>
                             </p>
-                            <p class="help-text" style="margin-top: 6px; margin-bottom: 0;">
-                                Questo parametro fa partire le locandine <strong>attive di default</strong> sui display pubblici, mentre per i docenti/studenti che accedono da browser normale le locandine partono disattivate per consultare subito le aule.
+                            <p class="help-text" style="margin-top: 8px; margin-bottom: 4px; font-weight: 600; color: var(--accent-color);">
+                                Comportamento e protezioni della modalità Kiosk (<code>?kiosk=1</code>):
                             </p>
+                            <ul class="help-text" style="margin: 0; padding-left: 18px; line-height: 1.45;">
+                                <li><strong>Carosello Locandine attivo di default:</strong> parte automaticamente a rotazione (mentre da PC/smartphone dei singoli utenti parte spento per consultare subito le aule) e ignora/blocca le preferenze locali del browser.</li>
+                                <li><strong>Lock-down di sicurezza anti-manomissione:</strong> disabilita tutti i link esterni (calendario, GitHub, licenza) impedendo a chi tocca lo schermo di uscire dalla dashboard.</li>
+                                <li><strong>Auto-chiusura per inattività (60s):</strong> se un utente apre il cassetto informativo o il News Hub, dopo 60 secondi di inattività si richiude automaticamente tornando al tabellone orari.</li>
+                                <li><strong>Dismiss immediato al tocco (Touch / Click / ESC):</strong> toccando lo schermo o premendo ESC durante una locandina, questa scompare all'istante per mostrare subito gli orari delle aule.</li>
+                                <li><strong>Duty-Cycle a staffetta:</strong> le locandine ruotano a gruppi rispettando la quota massima impostata (10-50%), garantendo priorità assoluta agli orari.</li>
+                            </ul>
                         </div>
 
                         <div class="form-group">
@@ -698,10 +711,17 @@
                             </div>
                         </div>
                         <div class="accordion-header-right">
+                            <span id="badge-summary-locandine" class="status-badge badge-on">Locandine: ON</span>
                             <span class="chevron-icon">▼</span>
                         </div>
                     </div>
                     <div class="accordion-body">
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fe_carosello" onchange="aggiornaBadgesSommario()">
+                            <label for="fe_carosello">Abilita Carosello Locandine (Globale)</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 20px;">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
+
                         <!-- Sezione Temporizzazione e Duty-Cycle Carosello -->
                         <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; margin-bottom: 25px;">
                             <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
@@ -1385,16 +1405,16 @@
                 }
             }
 
-            // 5. Frontend
+            // 5. Locandine
             const carosello = document.getElementById('fe_carosello')?.checked;
-            const badgeFrontend = document.getElementById('badge-summary-frontend');
-            if (badgeFrontend) {
+            const badgeLocandine = document.getElementById('badge-summary-locandine') || document.getElementById('badge-summary-frontend');
+            if (badgeLocandine) {
                 if (carosello) {
-                    badgeFrontend.className = 'status-badge badge-on';
-                    badgeFrontend.innerText = 'Locandine: ON';
+                    badgeLocandine.className = 'status-badge badge-on';
+                    badgeLocandine.innerText = 'Locandine: ON';
                 } else {
-                    badgeFrontend.className = 'status-badge badge-off';
-                    badgeFrontend.innerText = 'Locandine: OFF';
+                    badgeLocandine.className = 'status-badge badge-off';
+                    badgeLocandine.innerText = 'Locandine: OFF';
                 }
             }
 
@@ -1534,7 +1554,8 @@
                         loadAdminData();
                     }
                 } else {
-                    alert("Errore durante il salvataggio");
+                    const errData = await res.json().catch(() => ({}));
+                    alert(errData.error || "Errore durante il salvataggio");
                 }
             } catch (e) {
                 console.error(e);

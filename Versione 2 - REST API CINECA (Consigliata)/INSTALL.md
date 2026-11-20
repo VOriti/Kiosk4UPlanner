@@ -45,7 +45,8 @@ La struttura finale (sostituendo `vincenzo` con il tuo effettivo nome utente) do
     ├── server_api.py      <-- Demone Python
     ├── remoto.html        <-- Dashboard pubblica
     ├── admin.html         <-- Pannello di Amministrazione
-    ├── config.yaml        <-- File di configurazione
+    ├── config.example.yaml<-- Template di configurazione commentato
+    ├── config.yaml        <-- File di configurazione (creato da config.example.yaml)
     ├── kiosk.log          <-- (Generato in automatico) Log dell'applicazione
     ├── server_api_sys.log <-- (Generato in automatico) Log del server
     └── locandine/         <-- (Opzionale) Immagini JPG per lo slideshow

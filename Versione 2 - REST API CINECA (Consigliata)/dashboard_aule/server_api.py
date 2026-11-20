@@ -287,14 +287,14 @@ frontend:
   mostra_confermati: true
   caroselloAttivo: true
   titoloSede: 'Impegni Aule'
-  urlLogo: '/logo.png'
+  urlLogo: './logo.png'
   mostraStatoPC: true
   messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
   messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
   pausaTraCaroselli: 180000
   esposizioneLocandina: 10000
   quotaCarosello: 0.30
-  intervalloAggiornamento: 5000
+  intervalloAggiornamento: 15000
   urlCalendario: ''
   urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
   urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
@@ -1004,6 +1004,23 @@ def NewsPollingDaemon():
         news_poll_event.wait(3600)
         news_poll_event.clear()
 
+HASH_PASSWORD_DEFAULT = frozenset({
+    '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+    '737a5c64f7f67b7f86e6b6b96698eb5d24b85ba933dd2710b867e16b6b6b9669',
+    'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0',
+})
+
+def password_default_bloccata(client_ip, hash_salvato):
+    """True se l'hash è di default e la richiesta non arriva da loopback."""
+    if hash_salvato not in HASH_PASSWORD_DEFAULT:
+        return False
+    try:
+        ip = ipaddress.ip_address(client_ip)
+        ip = getattr(ip, 'ipv4_mapped', None) or ip
+        return not ip.is_loopback
+    except ValueError:
+        return True
+
 class KioskServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass 
 
@@ -1205,10 +1222,7 @@ class KioskServer(BaseHTTPRequestHandler):
                     safe_config['api_cineca']['password'] = '********'
                 
                 hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
-                if hash_salvato in ['8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', '737a5c64f7f67b7f86e6b6b96698eb5d24b85ba933dd2710b867e16b6b6b9669', 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0']:
-                    safe_config['avviso_sicurezza'] = True
-                else:
-                    safe_config['avviso_sicurezza'] = False
+                safe_config['avviso_sicurezza'] = hash_salvato in HASH_PASSWORD_DEFAULT
                     
                 self.wfile.write(json.dumps(safe_config).encode('utf-8'))
         else:
@@ -1306,6 +1320,12 @@ class KioskServer(BaseHTTPRequestHandler):
                     nuova_config['frontend'].update(payload['frontend'])
                     
                 if 'api_cineca' in payload:
+                    nuovo_url = payload['api_cineca'].get('url_base')
+                    if nuovo_url is not None and nuovo_url != nuova_config.get('api_cineca', {}).get('url_base') \
+                            and payload['api_cineca'].get('password') in (None, '', '********'):
+                        self._invia_json(400, {"error": "Per modificare url_base reinserire la password CINECA."})
+                        return
+
                     if 'api_cineca' not in nuova_config: nuova_config['api_cineca'] = {}
                     nuova_pwd = payload['api_cineca'].get('password')
                     if nuova_pwd == '********':

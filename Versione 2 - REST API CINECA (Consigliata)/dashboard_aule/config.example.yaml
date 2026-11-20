@@ -1,0 +1,70 @@
+# ==============================================================================
+# CONFIGURAZIONE ESEMPIO - KIOSK4UPLANNER (Versione 2 - REST API CINECA)
+# ==============================================================================
+# Copia questo file in config.yaml prima del primo avvio:
+#   cp config.example.yaml config.yaml
+# ==============================================================================
+
+main:
+  porta_server: 8080
+  percorso_base: ''
+  file_log: 'kiosk.log'
+  # ----------------------------------------------------------------------------
+  # MODALITÀ DEBUG E DIAGNOSTICA
+  # ----------------------------------------------------------------------------
+  # Imposta su 'true' solo in fase di test o se richiesto dall'assistenza.
+  debug_mode: false
+
+sicurezza:
+  admin_attivo: true
+  admin_ip_autorizzati:
+    - '127.0.0.1'
+    # Esempio subnet autorizzata:
+    # - '192.168.1.0/24'
+  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+
+https:
+  abilitato: false
+  porta_https: 8443
+  file_certificato: 'cert.pem'
+  file_chiave: 'key.pem'
+  forza_redirect_http: false
+
+api_cineca:
+  username: ''
+  password: ''
+  realm: ''
+  id_edificio: ''
+  anno_accademico_id: ''
+  contesto_id: ''
+  intervallo_aggiornamento_sec: 300
+  url_base: 'https://cineca.prod.up.cineca.it/api'
+
+frontend:
+  mostra_confermati: true
+  caroselloAttivo: true
+  titoloSede: 'Impegni Aule'
+  urlLogo: './logo.png'
+  mostraStatoPC: true
+  messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
+  messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
+  pausaTraCaroselli: 180000
+  esposizioneLocandina: 10000
+  quotaCarosello: 0.30
+  intervalloAggiornamento: 15000
+  urlCalendario: ''
+  urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
+  urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
+  autore: 'Vincenzo Oriti'
+  emailAutore: 'vincenzo.oriti@unipv.it'
+
+footer_news:
+  abilitato: true
+  stile_scorrimento: 'verticale'
+  velocita: 20
+  colore_testo: '#c9d1d9'
+  colore_sfondo: '#3e3c3d'
+  dimensione_testo: '1.20rem'
+  alert_fisso_attivo: false
+  alert_testo: ''
+  fonti: []

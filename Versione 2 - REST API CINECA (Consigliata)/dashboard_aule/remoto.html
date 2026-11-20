@@ -14,7 +14,7 @@
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const response = await fetch('/config_pubblica', { signal: controller.signal });
+                const response = await fetch('./config_pubblica', { signal: controller.signal });
                 clearTimeout(timeoutId);
                 if (!response.ok) throw new Error("Errore config_pubblica");
                 const newConfig = await response.json();
@@ -29,8 +29,8 @@
                 if (!configCaricataDaServer) {
                     CONFIG_APP = {
                         titoloSede: "Impegni Aule",
-                        urlLogo: "/logo.png",
-                        intervalloAggiornamento: 5000,
+                        urlLogo: "./logo.png",
+                        intervalloAggiornamento: 15000,
                         messaggioNessunaLezione: "Nessun impegno programmato.",
                         messaggioErroreRete: "Connessione persa col Server API. Tentativo di riconnessione...",
                         pausaTraCaroselli: 180000,
@@ -1081,7 +1081,7 @@
             }
 
             try {
-                const res = await fetch('/api/news');
+                const res = await fetch('./api/news');
                 if (res.ok) {
                     notizieCorrenti = await res.json();
                     renderTicker();
@@ -1269,7 +1269,7 @@
 
         async function aggiornaStato() {
             try {
-                const risposta = await fetch('/stato');
+                const risposta = await fetch('./stato');
                 if (!risposta.ok) return;
                 const stato = await risposta.json();
                 ultimoStato = stato;
@@ -1285,7 +1285,7 @@
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const risposta = await fetch('/dati.json', { signal: controller.signal });
+                const risposta = await fetch('./dati.json', { signal: controller.signal });
                 clearTimeout(timeoutId);
 
                 if (!risposta.ok) throw new Error('Errore HTTP ' + risposta.status);
@@ -1381,7 +1381,7 @@
 
         function urlLocandina(nome) {
             // Nomi immutabili: nessun cache-busting. %27 evita la rottura di url('...') nello stile inline.
-            return '/locandine/' + encodeURIComponent(nome).replace(/'/g, '%27');
+            return './locandine/' + encodeURIComponent(nome).replace(/'/g, '%27');
         }
 
         const QUOTA_MAX_CAROSELLO = 0.30;
@@ -1443,7 +1443,7 @@
             let immaginiValide = [];
 
             try {
-                const res = await fetch('/lista_locandine.json');
+                const res = await fetch('./lista_locandine.json');
                 if (res.ok) {
                     const files = await res.json();
                     for (let f of files) {
