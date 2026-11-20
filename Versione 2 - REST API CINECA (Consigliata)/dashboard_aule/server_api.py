@@ -816,6 +816,20 @@ def ciclo_aggiornamento_api():
         intervallo = intervallo_aggiornamento_sec()
         time.sleep(intervallo)
 
+DIAGNOSTICA_NEWS = {}   # url -> {"stato", "articoli", "ora"}; sostituito per intero a ogni giro
+
+def classifica_errore_fonte(exc):
+    risposta = getattr(exc, 'response', None)
+    if risposta is not None and getattr(risposta, 'status_code', None):
+        return f"HTTP {risposta.status_code}"
+    if 'Timeout' in type(exc).__name__:
+        return "Timeout"
+    if isinstance(exc, ET.ParseError):
+        return "Errore formato XML"
+    if isinstance(exc, ValueError):
+        return "Errore formato JSON"
+    return "Errore di rete"
+
 TIMEOUT_FONTE_NEWS_SEC = 5
 
 def clean_html(raw_html):
@@ -923,10 +937,12 @@ def scarica_fonte(fonte):
     return notizie_di_questa_fonte
 
 def aggiorna_news_una_volta():
-    global memoria_news
+    global memoria_news, DIAGNOSTICA_NEWS
     footer_config = CONFIG.get('footer_news', {})
     fonti = footer_config.get('fonti', [])
     notizie_per_fonte = []
+    diagnostica = {}
+    tz_roma = get_tz_roma()
 
     for fonte in fonti:
         url = fonte.get('url', '').strip()
@@ -934,15 +950,25 @@ def aggiorna_news_una_volta():
         abilitata = fonte.get('abilitata', True)
         peso = normalizza_peso(fonte.get('peso', 1))
 
-        if not url or not abilitata:
+        if not url:
+            continue
+
+        if not abilitata:
+            diagnostica[url] = {"stato": "DISABILITATA", "articoli": 0, "ora": ""}
             continue
 
         try:
             notizie_di_questa_fonte = scarica_fonte(fonte)
+            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
+            diagnostica[url] = {"stato": "OK", "articoli": len(notizie_di_questa_fonte), "ora": ora_roma}
             if notizie_di_questa_fonte:
                 notizie_per_fonte.append({'notizie': notizie_di_questa_fonte, 'peso': peso})
         except Exception as e:
+            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
+            diagnostica[url] = {"stato": classifica_errore_fonte(e), "articoli": 0, "ora": ora_roma}
             logging.warning(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
+
+    DIAGNOSTICA_NEWS = diagnostica
 
     notizie_estratte = []
     if notizie_per_fonte:
@@ -1173,6 +1199,7 @@ class KioskServer(BaseHTTPRequestHandler):
                 
                 with lock_config:
                     safe_config = json.loads(json.dumps(CONFIG))
+                safe_config['diagnostica_news'] = dict(DIAGNOSTICA_NEWS)
                 if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
                     safe_config['api_cineca']['password'] = '********'
                 

@@ -1130,13 +1130,17 @@
             document.getElementById('fn_alert_testo').value = fn.alert_testo || '';
             
             const fonti = fn.fonti || [];
+            const diagNews = config.diagnostica_news || {};
             const container = document.getElementById('fonti_container');
             container.innerHTML = '';
             for (let i = 0; i < 6; i++) {
                 const f = fonti[i] || { abilitata: false, nome: '', url: '', tipo: 'rss', visibile_di_default: true, peso: 1 };
                 const html = `
                     <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
-                        <h4 style="margin-top:0; color:var(--text-secondary);">Fonte ${i + 1}</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4 style="margin:0; color:var(--text-secondary);">Fonte ${i + 1}</h4>
+                            <span id="fn_f${i}_diagnostica" class="status-badge" style="font-size: 0.85rem; padding: 2px 8px; border-radius: 4px;"></span>
+                        </div>
                         <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                             <div class="form-group form-group-checkbox" style="margin-bottom:0;">
                                 <input type="checkbox" id="fn_f${i}_abilitata" ${f.abilitata !== false ? 'checked' : ''}>
@@ -1173,6 +1177,46 @@
                     </div>
                 `;
                 container.insertAdjacentHTML('beforeend', html);
+
+                const badgeDiag = document.getElementById(`fn_f${i}_diagnostica`);
+                if (badgeDiag) {
+                    const u = (f.url || '').trim();
+                    badgeDiag.title = u;
+                    if (!u) {
+                        badgeDiag.textContent = '⚪ Non configurata';
+                        badgeDiag.style.color = '#8b949e';
+                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                        badgeDiag.style.border = '1px solid #30363d';
+                    } else if (f.abilitata === false) {
+                        badgeDiag.textContent = '⚪ Disattivata';
+                        badgeDiag.style.color = '#8b949e';
+                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                        badgeDiag.style.border = '1px solid #30363d';
+                    } else if (!diagNews || !diagNews[u]) {
+                        badgeDiag.textContent = '⚪ In attesa del primo aggiornamento';
+                        badgeDiag.style.color = '#8b949e';
+                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                        badgeDiag.style.border = '1px solid #30363d';
+                    } else {
+                        const d = diagNews[u];
+                        if (d.stato === 'OK') {
+                            badgeDiag.textContent = `🟢 OK: ${d.articoli} notizie (ore ${d.ora})`;
+                            badgeDiag.style.color = '#3fb950';
+                            badgeDiag.style.backgroundColor = 'rgba(63, 185, 80, 0.15)';
+                            badgeDiag.style.border = '1px solid rgba(63, 185, 80, 0.4)';
+                        } else if (d.stato === 'DISABILITATA') {
+                            badgeDiag.textContent = '⚪ Disattivata';
+                            badgeDiag.style.color = '#8b949e';
+                            badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                            badgeDiag.style.border = '1px solid #30363d';
+                        } else {
+                            badgeDiag.textContent = `🔴 Errore: ${d.stato} (ore ${d.ora})`;
+                            badgeDiag.style.color = '#f85149';
+                            badgeDiag.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
+                            badgeDiag.style.border = '1px solid rgba(248, 81, 73, 0.4)';
+                        }
+                    }
+                }
             }
             
             aggiornaBadgesSommario();
