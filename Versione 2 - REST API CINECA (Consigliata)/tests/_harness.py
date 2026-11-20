@@ -4,14 +4,18 @@ All'import server_api.py legge o crea config.yaml, stato_impegni.json, ultimo_re
 nella propria cartella: lavorando su una copia i test non toccano mai i file reali del kiosk.
 """
 import datetime
+import hashlib
+import http.client
 import importlib.util
 import itertools
+import json
 import logging
 import os
 import shutil
 import tempfile
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 DIR_APP = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'dashboard_aule'))
@@ -67,7 +71,8 @@ def richiesta(url, metodo='GET', corpo=None, header=None):
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.status, dict(r.headers), r.read()
     except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers), e.read()
+        with e:
+            return e.code, dict(e.headers), e.read()
 
 
 def evento(id_imp, stato='P', ore_da_ora=2, durata_ore=1, aula='Aula 1', edificio='05', **extra):
@@ -85,3 +90,37 @@ def evento(id_imp, stato='P', ore_da_ora=2, durata_ore=1, aula='Aula 1', edifici
 
 def per_id(dati_puliti):
     return {imp['id']: imp for imp in dati_puliti}
+
+
+PASSWORD_TEST = 'password-di-test-kiosk'
+JPEG_MINIMO = b'\xff\xd8\xff\xe0' + b'\x00' * 64
+PNG_MINIMO = b'\x89PNG\r\n\x1a\n' + b'\x00' * 64
+WEBP_MINIMO = b'RIFF\x24\x00\x00\x00WEBPVP8 ' + b'\x00' * 64
+
+
+def login_admin(mod, base):
+    sic = mod.CONFIG.setdefault('sicurezza', {})
+    sic.update({'admin_attivo': True, 'admin_ip_autorizzati': [],
+                'password_admin_hash': hashlib.sha256(PASSWORD_TEST.encode()).hexdigest()})
+    status, _, corpo = richiesta(base + '/api/admin/login', 'POST',
+                                 json.dumps({'password': PASSWORD_TEST}).encode(),
+                                 {'Content-Type': 'application/json'})
+    assert status == 200, corpo
+    return json.loads(corpo)['token']
+
+
+def post_grezzo(base, percorso, header, corpo=b''):
+    """POST con header scritti a mano (per Content-Length malformati). Ritorna (status, corpo)."""
+    u = urllib.parse.urlparse(base)
+    conn = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
+    conn.putrequest('POST', percorso, skip_accept_encoding=True)
+    for chiave, valore in header:
+        conn.putheader(chiave, valore)
+    conn.endheaders()
+    if corpo:
+        conn.send(corpo)
+    risposta = conn.getresponse()
+    esito = (risposta.status, risposta.read())
+    conn.close()
+    return esito
+

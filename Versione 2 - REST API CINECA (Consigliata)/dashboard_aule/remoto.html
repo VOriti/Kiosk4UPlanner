@@ -14,7 +14,7 @@
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const response = await fetch('/config_pubblica', { signal: controller.signal });
+                const response = await fetch('./config_pubblica', { signal: controller.signal });
                 clearTimeout(timeoutId);
                 if (!response.ok) throw new Error("Errore config_pubblica");
                 const newConfig = await response.json();
@@ -29,12 +29,13 @@
                 if (!configCaricataDaServer) {
                     CONFIG_APP = {
                         titoloSede: "Impegni Aule",
-                        urlLogo: "/logo.png",
-                        intervalloAggiornamento: 5000,
+                        urlLogo: "./logo.png",
+                        intervalloAggiornamento: 15000,
                         messaggioNessunaLezione: "Nessun impegno programmato.",
                         messaggioErroreRete: "Connessione persa col Server API. Tentativo di riconnessione...",
                         pausaTraCaroselli: 180000,
                         esposizioneLocandina: 10000,
+                        quotaCarosello: 0.30,
                         mostraStatoPC: true,
                         caroselloAttivo: true
                     };
@@ -103,6 +104,30 @@
             font-size: 2rem;
             color: var(--accento-orologio);
             font-weight: bold;
+        }
+
+        #badge-freschezza {
+            font-size: 0.95rem;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        #badge-freschezza.badge-avviso {
+            background: rgba(238, 169, 44, 0.15);
+            border: 1px solid rgba(238, 169, 44, 0.4);
+            color: #e3b341;
+        }
+
+        #badge-freschezza.badge-offline {
+            background: rgba(248, 81, 73, 0.15);
+            border: 1px solid rgba(248, 81, 73, 0.4);
+            color: #f85149;
+        }
+
+        #badge-freschezza[hidden] {
+            display: none !important;
         }
 
         #dashboard {
@@ -791,6 +816,103 @@
             box-sizing: border-box;
         }
         .help-text { color: #8b949e; font-size: 0.88rem; margin-bottom: 12px; line-height: 1.4; }
+        .news-pill {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .news-pill:hover {
+            border-color: #8b949e;
+        }
+        .news-pill.attiva {
+            background: #1f6feb;
+            color: #ffffff;
+            border-color: #388bfd;
+        }
+        .news-source-item {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 7px 14px;
+            user-select: none;
+            cursor: pointer;
+            transition: border-color 0.15s ease;
+        }
+        .news-source-item:hover {
+            border-color: #8b949e;
+        }
+        .news-source-label {
+            font-size: 0.9rem;
+            color: #c9d1d9;
+            font-weight: 500;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #30363d;
+            transition: .2s ease;
+            border-radius: 22px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #f0f6fc;
+            transition: .2s ease;
+            border-radius: 50%;
+        }
+        .switch input:checked + .slider {
+            background-color: #1f6feb;
+        }
+        .switch input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+        #news-search {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+            outline: none;
+        }
+        #news-search:focus {
+            border-color: #58a6ff;
+            box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+        }
         .news-table-wrapper {
             overflow-y: auto;
             overflow-x: auto;
@@ -832,6 +954,11 @@
                 font-size: 0.82rem !important;
             }
         }
+
+        body.modalita-kiosk a[href] {
+            pointer-events: none;
+            cursor: default;
+        }
     </style>
 </head>
 
@@ -848,7 +975,10 @@
         <div class="header-left">
             <h1 id="titolo-sede">Caricamento...</h1>
         </div>
-        <div id="orologio" class="orologio">--:--</div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div id="badge-freschezza" hidden></div>
+            <div id="orologio" class="orologio">--:--</div>
+        </div>
     </div>
     <div id="dashboard">
         <div class="stato-sistema">Inizializzazione connessione col Server API...</div>
@@ -951,7 +1081,7 @@
             }
 
             try {
-                const res = await fetch('/api/news');
+                const res = await fetch('./api/news');
                 if (res.ok) {
                     notizieCorrenti = await res.json();
                     renderTicker();
@@ -961,11 +1091,19 @@
             }
         }
 
+        function escapeHTML(valore) {
+            return String(valore ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
         function formattaTitoloNews(titolo) {
             if (!titolo) return '';
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = String(titolo);
-            return (tempDiv.textContent || tempDiv.innerText || '').trim();
+            // DOMParser non esegue script né carica immagini: decodifica le entità in testo puro
+            return (new DOMParser().parseFromString(String(titolo), 'text/html').body.textContent || '').trim();
+        }
+
+        function notiziaCorrisponde(notizia, query) {
+            const q = String(query || '').trim().toLowerCase();
+            return !q || String(notizia.titolo || '').toLowerCase().includes(q) || String(notizia.fonte || '').toLowerCase().includes(q);
         }
 
         function sanitizzaUrlLink(url) {
@@ -1001,17 +1139,17 @@
                 const testi = notizieFiltrate.map(n => {
                     const titPulito = formattaTitoloNews(n.titolo);
                     const safeLink = sanitizzaUrlLink(n.link);
-                    const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
-                    return safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                    const testoInterno = `<strong>[${escapeHTML(n.fonte)}]</strong> ${escapeHTML(titPulito)}`;
+                    return safeLink ? `<a href="${escapeHTML(safeLink)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                 });
                 const stringaUnica = testi.join(' &nbsp;&nbsp;&bull;&nbsp;&nbsp; ');
                 
                 const velocitaBase = CONFIG_APP.footer_news.velocita || 50;
                 const durata = Math.max(10, (stringaUnica.length / 5) * (velocitaBase / 50));
                 
-                wrapper.innerHTML = `<span class="ticker-orizzontale" style="animation-duration: ${durata}s; color: ${colTesto}; font-size: ${dimTesto};">${stringaUnica}</span>`;
+                wrapper.innerHTML = `<span class="ticker-orizzontale" style="animation-duration: ${durata}s; color: ${escapeHTML(colTesto)}; font-size: ${escapeHTML(dimTesto)};">${stringaUnica}</span>`;
             } else {
-                wrapper.innerHTML = `<div id="ticker-verticale" class="ticker-verticale" style="color: ${colTesto}; font-size: ${dimTesto};"></div>`;
+                wrapper.innerHTML = `<div id="ticker-verticale" class="ticker-verticale" style="color: ${escapeHTML(colTesto)}; font-size: ${escapeHTML(dimTesto)};"></div>`;
                 const divVert = document.getElementById('ticker-verticale');
                 indexVerticale = 0;
                 
@@ -1021,8 +1159,8 @@
                         const n = notizieFiltrate[indexVerticale];
                         const titPulito = formattaTitoloNews(n.titolo);
                         const safeLink = sanitizzaUrlLink(n.link);
-                        const testoInterno = `<strong>[${n.fonte}]</strong> ${titPulito}`;
-                        const htmlContenuto = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
+                        const testoInterno = `<strong>[${escapeHTML(n.fonte)}]</strong> ${escapeHTML(titPulito)}`;
+                        const htmlContenuto = safeLink ? `<a href="${escapeHTML(safeLink)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${testoInterno}</a>` : testoInterno;
                         divVert.innerHTML = `<span style="display: inline-block; text-align: left; max-width: 100%;">${htmlContenuto}</span>`;
                         divVert.style.opacity = 1;
                         indexVerticale = (indexVerticale + 1) % notizieFiltrate.length;
@@ -1041,7 +1179,7 @@
             let htmlAvviso = '';
             if (impegno.avviso) {
                 const classeBadge = impegno.cancellato ? 'badge-rosso' : 'badge-giallo';
-                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${impegno.avviso}</div>`;
+                htmlAvviso = `<div class="badge-avviso ${classeBadge}">${escapeHTML(impegno.avviso)}</div>`;
             }
 
             const stileTesto = impegno.cancellato ? 'testo-barrato' : '';
@@ -1058,12 +1196,12 @@
                 <div class="card ${classeStato}">
                     ${htmlAvviso}
                     <div class="card-header">
-                        <div class="titolo ${stileTesto}">${iconaStato}${impegno.titolo}</div>
-                        <div class="aula ${stileTesto}">${impegno.aula}</div>
+                        <div class="titolo ${stileTesto}">${iconaStato}${escapeHTML(impegno.titolo)}</div>
+                        <div class="aula ${stileTesto}">${escapeHTML(impegno.aula)}</div>
                     </div>
                     <div class="card-footer">
-                        <div class="docente ${stileTesto}">${impegno.docente}</div>
-                        <div class="orario ${stileTesto}">${impegno.orario}</div>
+                        <div class="docente ${stileTesto}">${escapeHTML(impegno.docente)}</div>
+                        <div class="orario ${stileTesto}">${escapeHTML(impegno.orario)}</div>
                     </div>
                 </div>
             `;
@@ -1073,13 +1211,81 @@
         let erroriConsecutivi = 0;
         let datiCaricatiAlmenoUnaVolta = false;
         let ultimoDatiJson = null;
+        let offsetOrologio = 0;   // secondi da sommare all'ora del browser per allinearsi al server
+        let ultimoStato = null;
+        let oraUltimoDatiOk = null;
+
+        function classificaImpegni(dati, adessoSec) {
+            const inCorso = [], futuri = [];
+            for (const imp of dati) {
+                if (imp.timestamp_fine < adessoSec) continue;
+                const copia = Object.assign({}, imp, { inCorso: imp.timestamp_inizio <= adessoSec });
+                (copia.inCorso ? inCorso : futuri).push(copia);
+            }
+            futuri.sort((a, b) => a.timestamp_inizio - b.timestamp_inizio);
+            return { inCorso, futuri };
+        }
+
+        function valutaFreschezza(stato, adessoSec) {
+            const soglia = Math.max(900, 3 * (stato.intervallo_sec || 300));
+            if (stato.ultimo_sync_cineca == null) {
+                return adessoSec - stato.avvio_server > 600
+                    ? { mostra: true, testo: '⚠️ In attesa di dati da U-Planner' } : { mostra: false, testo: '' };
+            }
+            if (adessoSec - stato.ultimo_sync_cineca <= soglia) return { mostra: false, testo: '' };
+            const ora = new Date(stato.ultimo_sync_cineca * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            return { mostra: true, testo: `⚠️ Dati aggiornati alle ${ora}` };
+        }
+
+        function aggiornaBadgeFreschezza() {
+            const badge = document.getElementById('badge-freschezza');
+            if (!badge) return;
+
+            if (erroriConsecutivi >= 3 && datiCaricatiAlmenoUnaVolta) {
+                const ora = oraUltimoDatiOk || (ultimoStato && ultimoStato.ultimo_sync_cineca ? new Date(ultimoStato.ultimo_sync_cineca * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '--:--');
+                badge.textContent = `🔴 OFFLINE — dati delle ${ora}`;
+                badge.className = 'badge-offline';
+                badge.removeAttribute('hidden');
+                return;
+            }
+
+            if (!ultimoStato) {
+                badge.textContent = '';
+                badge.setAttribute('hidden', '');
+                return;
+            }
+
+            const adessoSec = (Date.now() / 1000) + offsetOrologio;
+            const f = valutaFreschezza(ultimoStato, adessoSec);
+            if (f.mostra) {
+                badge.textContent = f.testo;
+                badge.className = 'badge-avviso';
+                badge.removeAttribute('hidden');
+            } else {
+                badge.textContent = '';
+                badge.setAttribute('hidden', '');
+            }
+        }
+
+        async function aggiornaStato() {
+            try {
+                const risposta = await fetch('./stato');
+                if (!risposta.ok) return;
+                const stato = await risposta.json();
+                ultimoStato = stato;
+                offsetOrologio = stato.ora_server - (Date.now() / 1000);
+                aggiornaBadgeFreschezza();
+            } catch (e) {
+                console.warn("Errore aggiornaStato:", e);
+            }
+        }
 
         async function scaricaDatiServerLocale() {
             const dashboard = document.getElementById('dashboard');
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const risposta = await fetch('/dati.json', { signal: controller.signal });
+                const risposta = await fetch('./dati.json', { signal: controller.signal });
                 clearTimeout(timeoutId);
 
                 if (!risposta.ok) throw new Error('Errore HTTP ' + risposta.status);
@@ -1088,6 +1294,8 @@
                 erroriConsecutivi = 0;
                 eraOffline = false;
                 datiCaricatiAlmenoUnaVolta = true;
+                oraUltimoDatiOk = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                aggiornaBadgeFreschezza();
 
                 const eraStatoSistema = !document.getElementById('colonna-in-corso');
 
@@ -1095,12 +1303,16 @@
                     const emptyJson = JSON.stringify(datiAule || []);
                     if (!eraStatoSistema || emptyJson !== ultimoDatiJson) {
                         ultimoDatiJson = emptyJson;
-                        dashboard.innerHTML = `<div class="stato-sistema">${CONFIG_APP.messaggioNessunaLezione}</div>`;
+                        dashboard.innerHTML = `<div class="stato-sistema">${escapeHTML(CONFIG_APP.messaggioNessunaLezione)}</div>`;
                     }
                     return;
                 }
 
-                const datiJsonStr = JSON.stringify(datiAule);
+                const adessoSec = (Date.now() / 1000) + offsetOrologio;
+                const { inCorso, futuri } = classificaImpegni(datiAule, adessoSec);
+                const datiClassificati = { inCorso, futuri };
+                const datiJsonStr = JSON.stringify(datiClassificati);
+
                 const colInCorso = document.getElementById('colonna-in-corso');
                 const colFuturi = document.getElementById('colonna-futuri');
                 const layoutPresente = colInCorso && colFuturi;
@@ -1112,9 +1324,11 @@
                 ultimoDatiJson = datiJsonStr;
 
                 let htmlInCorso = '', htmlFuturi = '';
-                datiAule.forEach(imp => {
-                    if (imp.inCorso) htmlInCorso += generaCardHTML(imp);
-                    else htmlFuturi += generaCardHTML(imp);
+                inCorso.forEach(imp => {
+                    htmlInCorso += generaCardHTML(imp);
+                });
+                futuri.forEach(imp => {
+                    htmlFuturi += generaCardHTML(imp);
                 });
 
                 if (!htmlInCorso) htmlInCorso = '<div style="font-size:1.1rem; color:#484f58; font-style:italic; padding:10px 0;">Nessuna lezione in questo momento</div>';
@@ -1150,21 +1364,78 @@
             } catch (errore) {
                 erroriConsecutivi++;
                 console.warn("Errore scaricaDatiServerLocale:", errore);
+                aggiornaBadgeFreschezza();
                 // Non cancellare la schermata se abbiamo già dati visualizzati e l'errore è transitorio
-                if (!datiCaricatiAlmenoUnaVolta || erroriConsecutivi >= 4) {
+                if (!datiCaricatiAlmenoUnaVolta) {
                     eraOffline = true;
                     ultimoDatiJson = null;
                     dashboard.innerHTML = `
                         <div class="stato-sistema offline">
                             <svg style="width:40px; height:40px; margin-bottom:10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                            <br>${CONFIG_APP.messaggioErroreRete}
+                            <br>${escapeHTML(CONFIG_APP.messaggioErroreRete)}
                         </div>
                     `;
                 }
             }
         }
 
+        function urlLocandina(nome) {
+            // Nomi immutabili: nessun cache-busting. %27 evita la rottura di url('...') nello stile inline.
+            return './locandine/' + encodeURIComponent(nome).replace(/'/g, '%27');
+        }
+
+        const QUOTA_MAX_CAROSELLO = 0.30;
+        const DURATA_TRANSIZIONE_MS = 1550;   // 50 ms di comparsa + 1500 ms di dissolvenza
+        const INATTIVITA_KIOSK_MS = 60000;
+
+        function calcolaGruppiPerCiclo(pausaMs, esposizioneMs, quota, transizioneMs) {
+            const budget = pausaMs * quota / (1 - quota);
+            return Math.max(1, Math.floor(budget / (esposizioneMs + transizioneMs)));
+        }
+
+        function selezionaGruppi(gruppi, inizio, quanti) {
+            if (gruppi.length <= quanti) return { selezionati: gruppi, prossimoInizio: 0 };
+            const selezionati = [];
+            for (let i = 0; i < quanti; i++) selezionati.push(gruppi[(inizio + i) % gruppi.length]);
+            return { selezionati, prossimoInizio: (inizio + quanti) % gruppi.length };
+        }
+
+        let indiceRotazione = 0;
+        let interrompiCarosello = null;
+
+        function attendiCarosello(ms) {
+            return new Promise(resolve => {
+                let timer = null;
+                const pulisci = () => {
+                    if (timer) {
+                        clearTimeout(timer);
+                        timer = null;
+                    }
+                    if (interrompiCarosello === onInterrompi) {
+                        interrompiCarosello = null;
+                    }
+                };
+                const onInterrompi = () => {
+                    pulisci();
+                    resolve('interrotto');
+                };
+                interrompiCarosello = onInterrompi;
+                timer = setTimeout(() => {
+                    pulisci();
+                    resolve('completato');
+                }, ms);
+            });
+        }
+
         const advOverlay = document.getElementById('kiosk-adv');
+        advOverlay.addEventListener('pointerdown', () => interrompiCarosello && interrompiCarosello());
+        advOverlay.addEventListener('click', () => interrompiCarosello && interrompiCarosello());
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && interrompiCarosello) {
+                interrompiCarosello();
+            }
+        });
+
         async function riproduciLocandine() {
             if (!isLocandineActiveOnDevice()) return;
 
@@ -1172,11 +1443,11 @@
             let immaginiValide = [];
 
             try {
-                const res = await fetch('/lista_locandine.json');
+                const res = await fetch('./lista_locandine.json');
                 if (res.ok) {
                     const files = await res.json();
                     for (let f of files) {
-                        const url = `/locandine/${f}?` + Date.now();
+                        const url = urlLocandina(f);
                         const valid = await new Promise(resolve => {
                             let img = new Image(); img.onload = () => resolve(url); img.onerror = () => resolve(null); img.src = url;
                         });
@@ -1195,20 +1466,69 @@
                 gruppi.push(immaginiValide.slice(i, i + imgPerGruppo));
             }
 
-            advOverlay.style.display = 'flex';
-            for (let i = 0; i < gruppi.length; i++) {
-                advOverlay.innerHTML = gruppi[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${src}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
-                await new Promise(r => setTimeout(r, 50));
-                advOverlay.style.opacity = '1';
-                await new Promise(r => setTimeout(r, CONFIG_APP.esposizioneLocandina));
+            const pausa = CONFIG_APP.pausaTraCaroselli || 180000;
+            const esposizione = CONFIG_APP.esposizioneLocandina || 10000;
+            const quotaEffettiva = (typeof CONFIG_APP.quotaCarosello === 'number' && CONFIG_APP.quotaCarosello >= 0.10 && CONFIG_APP.quotaCarosello <= 0.50) ? CONFIG_APP.quotaCarosello : QUOTA_MAX_CAROSELLO;
+            const quanti = calcolaGruppiPerCiclo(pausa, esposizione, quotaEffettiva, DURATA_TRANSIZIONE_MS);
+            const rotazione = selezionaGruppi(gruppi, indiceRotazione, quanti);
+            indiceRotazione = rotazione.prossimoInizio;
+            const gruppiDaMostrare = rotazione.selezionati;
+
+            try {
+                advOverlay.style.display = 'flex';
+                for (let i = 0; i < gruppiDaMostrare.length; i++) {
+                    advOverlay.innerHTML = gruppiDaMostrare[i].map(src => `<div style="flex:1; height:100%; width:100%; background-image:url('${escapeHTML(src)}'); background-size:contain; background-position:center; background-repeat:no-repeat;"></div>`).join('');
+                    if (await attendiCarosello(50) === 'interrotto') break;
+                    advOverlay.style.opacity = '1';
+                    if (await attendiCarosello(esposizione) === 'interrotto') break;
+                    advOverlay.style.opacity = '0';
+                    if (await attendiCarosello(1500) === 'interrotto') break;
+                }
+            } finally {
+                interrompiCarosello = null;
+                advOverlay.style.display = 'none';
+                advOverlay.innerHTML = '';
                 advOverlay.style.opacity = '0';
-                await new Promise(r => setTimeout(r, 1500));
             }
-            advOverlay.style.display = 'none';
-            advOverlay.innerHTML = '';
+        }
+
+        function pianificaCarosello() {
+            setTimeout(async () => {
+                await riproduciLocandine();
+                pianificaCarosello();
+            }, CONFIG_APP.pausaTraCaroselli || 180000);
+        }
+
+        let timerInattivitaKiosk = null;
+
+        function chiudiInterfacciaKiosk() {
+            closeNewsHub();
+            const badge = document.getElementById('info-badge');
+            if (badge) {
+                badge.classList.remove('aperto');
+            }
+        }
+
+        function riarmaInattivita() {
+            if (timerInattivitaKiosk) {
+                clearTimeout(timerInattivitaKiosk);
+            }
+            timerInattivitaKiosk = setTimeout(chiudiInterfacciaKiosk, INATTIVITA_KIOSK_MS);
+        }
+
+        function attivaModalitaKiosk() {
+            document.body.classList.add('modalita-kiosk');
+            ['pointerdown', 'keydown'].forEach(evt => {
+                document.addEventListener(evt, riarmaInattivita, { passive: true });
+            });
+            riarmaInattivita();
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
+            if (isKioskEnvironment()) {
+                attivaModalitaKiosk();
+            }
+
             await fetchConfigPubblica();
 
             document.getElementById('titolo-sede').innerText = CONFIG_APP.titoloSede || "Impegni Aule";
@@ -1234,7 +1554,11 @@
 
             setInterval(() => {
                 document.getElementById('orologio').innerText = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                aggiornaBadgeFreschezza();
             }, 1000);
+
+            aggiornaStato();
+            setInterval(aggiornaStato, 30000);
 
             scaricaDatiServerLocale();
             setInterval(scaricaDatiServerLocale, CONFIG_APP.intervalloAggiornamento || 5000);
@@ -1257,7 +1581,7 @@
             footerObserver.observe(document.getElementById('kiosk-footer'));
 
             if (CONFIG_APP.caroselloAttivo === true) {
-                setInterval(riproduciLocandine, CONFIG_APP.pausaTraCaroselli || 180000);
+                pianificaCarosello();
             } else {
                 console.log("Carosello disattivato da configurazione.");
             }
@@ -1274,14 +1598,18 @@
             if (CONFIG_APP.caroselloAttivo === false) {
                 return false;
             }
+            if (isKioskEnvironment()) {
+                return true;
+            }
             const savedPref = localStorage.getItem('disabilita_locandine');
             if (savedPref !== null) {
                 return savedPref !== 'true';
             }
-            return isKioskEnvironment();
+            return false;
         }
 
         function toggleLocandinePreference(attivo) {
+            if (isKioskEnvironment()) return;
             localStorage.setItem('disabilita_locandine', attivo ? 'false' : 'true');
             aggiornaUILocandineModal();
         }
@@ -1355,16 +1683,38 @@
                     }
                     
                     const conteggio = notizieCorrenti.filter(n => n.fonte === fonte).length;
-                    const idCheck = `filter_${fonte.replace(/\s+/g, '_')}`;
-                    const div = document.createElement('div');
-                    div.innerHTML = `
-                        <input type="checkbox" id="${idCheck}" ${isChecked ? 'checked' : ''} onchange="toggleNewsSource('${fonte}', this.checked)">
-                        <label for="${idCheck}" style="margin-left: 5px;">${fonte} <span style="font-size: 0.85em; opacity: 0.7;">(${conteggio})</span></label>
-                    `;
-                    filterContainer.appendChild(div);
+
+                    const item = document.createElement('label');
+                    item.className = 'news-source-item';
+
+                    const spanLabel = document.createElement('span');
+                    spanLabel.className = 'news-source-label';
+                    spanLabel.textContent = fonte + ' (' + conteggio + ')';
+
+                    const switchSpan = document.createElement('span');
+                    switchSpan.className = 'switch';
+
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.checked = isChecked;
+                    input.addEventListener('change', () => {
+                        toggleNewsSource(fonte, input.checked);
+                    });
+
+                    const slider = document.createElement('span');
+                    slider.className = 'slider';
+
+                    switchSpan.appendChild(input);
+                    switchSpan.appendChild(slider);
+                    item.appendChild(spanLabel);
+                    item.appendChild(switchSpan);
+                    filterContainer.appendChild(item);
                 });
             }
             
+            const searchInput = document.getElementById('news-search');
+            if (searchInput) searchInput.value = '';
+
             renderNewsTable();
         }
 
@@ -1433,18 +1783,29 @@
             renderNewsTable();
         }
 
+        let searchDebounceTimeout = null;
+        function onNewsSearchInput() {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(() => {
+                renderNewsTable();
+            }, 150);
+        }
+
         function renderNewsTable() {
+            const searchInput = document.getElementById('news-search');
+            const query = searchInput ? searchInput.value : '';
             const tbody = document.getElementById('news-table-body');
             tbody.innerHTML = '';
             notizieCorrenti.forEach(n => {
+                if (!notiziaCorrisponde(n, query)) return;
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid var(--border-color)';
                 const titPulito = formattaTitoloNews(n.titolo);
                 const safeLink = sanitizzaUrlLink(n.link);
-                const link = safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="color: #58a6ff; text-decoration: none;">${titPulito}</a>` : titPulito;
+                const link = safeLink ? `<a href="${escapeHTML(safeLink)}" target="_blank" rel="noopener noreferrer" style="color: #58a6ff; text-decoration: none;">${escapeHTML(titPulito)}</a>` : escapeHTML(titPulito);
                 tr.innerHTML = `
-                    <td style="padding: 10px; white-space: nowrap;">${n.data || '-'}</td>
-                    <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${n.fonte}</span></td>
+                    <td style="padding: 10px; white-space: nowrap;">${escapeHTML(n.data || '-')}</td>
+                    <td style="padding: 10px;"><span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${escapeHTML(n.fonte)}</span></td>
                     <td style="padding: 10px;">${link}</td>
                 `;
                 tbody.appendChild(tr);
@@ -1489,6 +1850,7 @@
                 <!-- Sezione Tabella News -->
                 <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
                     <h3 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 10px;">News disponibili</h3>
+                    <input type="search" id="news-search" placeholder="🔍 Cerca tra le notizie..." oninput="onNewsSearchInput()">
                     <div class="news-table-wrapper">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary); font-size: 0.9rem;">
                             <thead style="position: sticky; top: 0; background-color: #161b22; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;">

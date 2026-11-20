@@ -31,8 +31,13 @@ unclutter -idle 0.5 -root &
 # Avvia il gestore di finestre minimale OpenBox (fondamentale per gestire i bordi e la finestra)
 openbox-session &
 
-# Avvia il server API Python in background con Watchdog per il riavvio automatico e salva eventuali errori nel log
-while true; do python3 $DIR_PROGETTO/server_api.py >> $DIR_PROGETTO/server_api_sys.log 2>&1; sleep 2; done &
+# Avvia il server API Python in background con Watchdog per il riavvio automatico e rotazione log
+while true; do
+  LOG_SYS="$DIR_PROGETTO/server_api_sys.log"
+  if [ -f "$LOG_SYS" ] && [ "$(stat -c%s "$LOG_SYS")" -gt 5242880 ]; then mv -f "$LOG_SYS" "$LOG_SYS.1"; fi
+  python3 "$DIR_PROGETTO/server_api.py" >> "$LOG_SYS" 2>&1
+  sleep 2
+done &
 
 # Attende 5 secondi per dare il tempo a Python di fare il primo login a CINECA
 sleep 5

@@ -5,13 +5,111 @@ Il formato si basa sulle linee guida di *Keep a Changelog* e adotta un versionam
 
 ---
 
+<a id="v52---frontend-media-hd-news-hub-ux--kiosk-lockdown"></a>
+## [v5.2] - Frontend, Media HD, News Hub UX & Kiosk Lockdown
+*Ramo di sviluppo:* `feature/frontend-5.2`  
+*Data:* Novembre 2026  
+*Stato:* Completato  
+
+Questa milestone porta a compimento 10 interventi mirati a trasformare la dashboard e il carosello multimediale in un sistema Digital Signage professionale ad alta affidabilità per Raspberry Pi, blindato da manomissioni (Kiosk Lockdown), arricchito con indicatori di freschezza orari in tempo reale, diagnostica integrata delle fonti news e hardening OWASP contro vulnerabilità XSS.
+
+Tutti gli interventi sono stati sviluppati e collaudati tramite mini-commit atomici corredati da 123 unit test automatici:
+
+---
+
+### 🔹 v5.2.1: Upload binario grezzo, nomi immutabili `p<epoch>_<hex>`, Content-Length robusto e rotazione `server_api_sys.log`
+* **Commit:** `ce4138a`
+* **Come era prima:** L'upload delle locandine avveniva tramite stringhe Base64 (con overhead del +33% in memoria) o multipart complessi, e rinominava i file su disco ogni volta che l'ordine veniva modificato (`01_nome.jpg`). La lettura dello stream HTTP non gestiva in modo granulare i limiti e le interruzioni di rete. Lo script `.xinitrc` non controllava le dimensioni di `server_api_sys.log`, rischiando la saturazione del disco a lungo termine.
+* **Come è ora:** Upload tramite streaming binario puro (`application/octet-stream`). I file su disco ricevono nomi immutabili basati su timestamp epoch e token casuale esadecimale (`p<epoch>_<hex>.<ext>`), slegando l'identità fisica del file dalla sequenza logica di visualizzazione. Lettura stream a chunk protetta da limite stringente (10 MB). In `~/.xinitrc` è stata introdotta la rotazione automatica con troncamento a 5 MB di `server_api_sys.log` prima dell'avvio del server.
+* **Perché questa modifica:** Elimina l'overhead di RAM, azzera il rischio di immagini corrotte durante l'upload, isola il filesystem dalle riordinazioni logiche e garantisce che nessun log di sistema saturi la MicroSD del totem.
+
+---
+
+### 🔹 v5.2.2: Ordine logico con `ordine.json` atomico e cancellazione singola senza rinomine fisiche
+* **Commit:** `9fd6fea`
+* **Come era prima:** La sequenza delle locandine era dettata dal prefisso numerico nel nome del file. Eliminare o spostare una locandina costringeva il backend a rinominare a catena tutti i file nella cartella `locandine/`, con rischio di corruzioni e conflitti I/O se un file era aperto in lettura dal browser.
+* **Come è ora:** L'ordinamento è gestito a livello logico tramite `ordine.json`. L'endpoint `/api/admin/locandine/ordine` e la cancellazione singola `/api/admin/locandine/elimina` aggiornano la lista ordinata tramite scrittura atomica (`ordine.json.tmp` -> `os.replace`). La cancellazione rimuove solo il singolo file immutabile bersaglio, validando il percorso contro attacchi di directory traversal (`os.path.basename` e controllo directory canonica).
+* **Perché questa modifica:** Elimina race conditions su disco, rende istantanee le operazioni di riordino ed eliminazione e assicura massima robustezza e scalabilità all'archivio multimediale.
+
+---
+
+### 🔹 v5.2.3: Cache browser immutabile, ridimensionamento client Canvas (max 2160px) e feedback toast
+* **Commit:** `f6f021d`
+* **Come era prima:** `remoto.html` utilizzava parametri di cache-busting (`?t=Date.now()`) a ogni ciclo del carosello, costringendo il totem a riscaricare continuamente immagini da diversi megabyte, saturando la banda e provocando micro-lag. In admin, immagini fotografiche pesanti caricate da smartphone venivano trasferite grezze al server.
+* **Come è ora:** Grazie ai nomi immutabili, il server eroga le locandine con cache permanente (`Cache-Control: public, max-age=31536000, immutable`), e `remoto.html` ha rimosso qualsiasi parametro anti-cache. In `admin.html`, un canvas HTML5 esegue il downscaling automatico lato client preservando le proporzioni (lato lungo max 2160px / 4K) e comprime in WebP (qualità 0.88, con fallback JPEG), riducendo il peso del file del 70-90% prima del trasferimento. Introdotto inoltre un sistema di toast visivi non bloccanti.
+* **Perché questa modifica:** Azzera il traffico di rete sul totem durante il carosello dopo il primo scaricamento, elimina i lag di render e riduce drasticamente l'occupazione di memoria e storage del Raspberry Pi.
+
+---
+
+### 🔹 v5.2.4: Lock-down kiosk, chiusura al tocco/ESC e carosello a catena con duty-cycle configurabile 10-50%
+* **Commit:** `ee83e3a`
+* **Come era prima:** In modalità totem (`?kiosk=1`), gli utenti potevano toccare lo schermo e cliccare sui link esterni delle notizie o del meteo, uscendo dalla dashboard a tutto schermo. Le locandine giravano con un rigido `setInterval` che poteva sovrapporsi agli orari nei momenti meno opportuni, e non era possibile chiudere una locandina a video prima dello scadere del timer.
+* **Come è ora:**
+  - In modalità `?kiosk=1`, tutti i collegamenti ipertestuali esterni sono disabilitati (`pointer-events: none`). Un watchdog di inattività a 60 secondi richiude automaticamente qualsiasi modale rimasto aperto.
+  - Al tocco sullo schermo, clic del mouse o pressione di `ESC`, qualsiasi locandina aperta si chiude istantaneamente, tornando subito alla visualizzazione orari.
+  - Il carosello locandine adotta una catena asincrona di `setTimeout` sequenziali governata da un duty-cycle configurabile da pannello Admin (10% - 50%, predefinito 20%), che garantisce matematicamente che il tabellone orari rimanga visibile per la maggior parte del tempo (dal 50% al 90% del tempo totale).
+* **Perché questa modifica:** Trasforma il Kiosk in un dispositivo pubblico anti-vandalismo, garantendo che gli orari didattici abbiano sempre la precedenza assoluta sui contenuti promozionali.
+
+---
+
+### 🔹 v5.2.5: Badge di freschezza CINECA via `/stato`, classificazione orari in RAM e tabellone mai cancellato
+* **Commit:** `b4f0670`
+* **Come era prima:** Il frontend considerava la connessione attiva se il server locale rispondeva, anche se CINECA era irraggiungibile da ore. Inoltre, dopo 4 errori consecutivi di fetch verso il server locale, il frontend cancellava completamente la schermata delle lezioni sostituendola con un messaggio di errore. Infine, la transizione di una lezione tra "Prossimi" e "In Corso" avveniva solo ogni 5 minuti al polling del server.
+* **Come è ora:**
+  - Introdotto l'endpoint `/stato` che espone lo stato effettivo della sincronizzazione con CINECA. Il badge di freschezza sulla dashboard mostra l'orario reale dell'ultimo aggiornamento d'ateneo con semaforo dinamico (🟢 < 10m, 🟡 10-30m, 🔴 > 30m o errore).
+  - Eliminata la cancellazione distruttiva del tabellone: in caso di disconnessione o riavvii, gli ultimi orari validi rimangono sempre consultabili a video, accompagnati da una notifica discreta di allerta.
+  - Introdotta la funzione `classificaImpegni()` lato client in `remoto.html`: a ogni ciclo di rendering (15s), il browser ricalcola in memoria l'inizio e la fine degli eventi rispetto all'orologio di sistema, promuovendo le lezioni a "In Corso" al secondo esatto senza attendere il polling del server.
+* **Perché questa modifica:** Assicura massima trasparenza sull'aggiornamento dei dati, previene schermate vuote sul totem in caso di cali di rete e garantisce sincronizzazione al minuto spaccato per l'inizio delle lezioni.
+
+---
+
+### 🔹 v5.2.6: Timeout 5s per fonte news, pesi validati 1-5, parsing RSS da byte nativi e modularità news
+* **Commit:** `37a6d27`
+* **Come era prima:** Se un feed RSS esterno andava in blocco o rispondeva con forte latenza, l'intero demone delle notizie rimaneva appeso per minuti. I pesi delle fonti accettavano valori arbitrari senza controllo. Il parsing XML su stringhe decodificate provocava errori di mojibake (`UnicodeDecodeError` o lettere accentate corrotte) sui feed con encoding ISO-8859-1 dichiarati nell'header XML.
+* **Come è ora:** Ciascuna fonte RSS/Atom ha un timeout invalicabile di 5 secondi (`timeout=5`). I pesi sono confinati rigorosamente tra 1 e 5. Il parsing XML opera direttamente sul buffer binario (`ET.fromstring(res.content)`), consentendo al parser XML di interpretare correttamente la codifica nativa (UTF-8, ISO-8859-1, Windows-1252). La logica delle news è stata inoltre estratta in funzioni helper dedicate e coperte da test unitari.
+* **Perché questa modifica:** Rende l'acquisizione delle notizie deterministica e rapida, impedisce blocchi di I/O ed elimina le anomalie tipografiche sui caratteri speciali.
+
+---
+
+### 🔹 v5.2.7: Semaforo diagnostico per fonte news con conteggio articoli e codice errore
+* **Commit:** `95f8513`
+* **Come era prima:** Nel pannello `/admin`, l'amministratore visualizzava solo l'elenco delle fonti configurate senza alcun indizio sull'effettivo funzionamento degli URL, sullo stato di raggiungibilità del server remoto o su eventuali feed rotti da tempo.
+* **Come è ora:** L'endpoint `/api/news` arricchisce ciascuna fonte con metadati diagnostici (`stato_fetch`, `http_code`, `articoli_validi`, `errore_dettaglio`, `ultimo_fetch_ts`). In `admin.html`, ogni fonte mostra un semaforo diagnostico visivo in tempo reale: 🟢 **Verde** (attivo e funzionante, con conteggio articoli estratti), 🔴 **Rosso** (errore con tooltip esplicativo: Timeout, HTTP 404, Parse Error), ⚪ **Grigio** (fonte disattivata).
+* **Perché questa modifica:** Consente all'amministratore di individuare all'istante problemi di connettività o URL errati dei feed RSS direttamente dal pannello web, senza consultare i log sul terminale.
+
+---
+
+### 🔹 v5.2.8: Sanitizzazione `escapeHTML()` centralizzata, ricerca nel News Hub, switch slider e `Referrer-Policy`
+* **Commit:** `a38fa7f`
+* **Come era prima:** Alcune interpolazioni di stringhe nel DOM (come titoli di notizie o descrizioni) potevano teoricamente prestarsi a XSS in presenza di feed malevoli. Il modale News Hub conteneva una tabella statica senza filtro di ricerca. I comandi di abilitazione fonti erano normali checkbox HTML.
+* **Come è ora:** Creata la funzione centralizzata `escapeHTML()` e applicata su tutte le interpolazioni dinamiche del DOM in `remoto.html`. Nel News Hub è stata introdotta la ricerca full-text in tempo reale con debounce a 150ms per filtrare gli articoli per titolo, fonte o data. Le checkbox delle fonti in `admin.html` sono state convertite in moderni interruttori a scorrimento (slider switch toggle). Rinforzato l'header di sicurezza HTTP `Referrer-Policy: no-referrer`.
+* **Perché questa modifica:** Completa l'hardening difensivo OWASP contro vulnerabilità XSS, protegge la privacy degli accessi esterni e migliora l'usabilità della consultazione notizie da smartphone e PC.
+
+---
+
+### 🔹 v5.2.9: Miniature lazy e lightbox con metadati per le locandine, escapeHTML in `admin.html`
+* **Commit:** `1db2f31`
+* **Come era prima:** Nella gestione locandine di `/admin`, la lista mostrava solo testo o immagini caricate a piena risoluzione che rallentavano l'interfaccia. Non era possibile visualizzare un'anteprima ingrandita né conoscere le dimensioni effettive su disco dei file senza accedere da SSH.
+* **Come è ora:** Introdotte miniature proporzionali con caricamento pigro (`loading="lazy"`, `max-height: 70px`, `max-width: 120px`). Facendo clic su una miniatura si apre una finestra Lightbox ad alta risoluzione con metadati completi: nome file, dimensioni, peso in KB e data/ora di caricamento. Esteso l'uso di `escapeHTML()` a tutte le renderizzazioni dinamiche in `admin.html`.
+* **Perché questa modifica:** Rende la gestione delle locandine visuale, rapida e intuitiva anche in presenza di molti contenuti promozionali memorizzati.
+
+---
+
+### 🔹 v5.2.10: Percorsi relativi `./`, `config.example.yaml`, file runtime esclusi da git, guardia `url_base` e security alert potenziato
+* **Commit:** `7075b58`
+* **Come era prima:** Le chiamate `fetch()` in `remoto.html` utilizzavano percorsi assoluti con slash iniziale (es. `/dati.json`), impedendo il funzionamento del totem se erogato dietro reverse proxy o sotto-cartelle URL. `config.yaml` e `kiosk.log` erano tracciati in git con rischio di sovrascritture di configurazioni locali. Il cambio di `url_base` CINECA da `/admin` non richiedeva la password di ateneo, rischiando disallineamenti di autenticazione. L'alert per la password predefinita in `/admin` non era sufficientemente esplicativo.
+* **Come è ora:** Tutti gli endpoint e gli asset di fallback in `remoto.html` e `server_api.py` sono convertiti in percorsi relativi (`./config_pubblica`, `./dati.json`, `./api/news`, `./lista_locandine.json`, `./stato`, `./logo.png`, `./locandine/...`). Creato il file modello documentato `config.example.yaml`; `config.yaml` e `kiosk.log` rimossi dall'indice git e protetti in `.gitignore`. Aggiunta guardia su `/api/admin/save`: modificando `url_base` viene richiesta la re-immissione esplicita della password CINECA. Il riquadro Digital Signage documenta i vantaggi di `?kiosk=1`. Spostati toggle e badge locandine nella sezione dedicata. Potenziato il banner `#security-banner` con avviso `SECURITY ALERT: Password predefinita in uso ("cambiami")` e link per impostare nuova password e subnet IP autorizzati.
+* **Perché questa modifica:** Garantisce massima portabilità della dashboard su qualsiasi architettura di rete (root o subpath), protegge le configurazioni di produzione, salvaguarda l'autenticazione CINECA e rafforza la sicurezza d'accesso al totem.
+
+---
+
 <a id="v51---backend-hardening--security-stability"></a>
 ## [v5.1] - Backend Hardening & Security Stability
 *Ramo di sviluppo:* `fix/backend-5.1`  
 *Data:* Ottobre 2026  
 *Stato:* Completato  
 
-Questa milestone introduce 12 interventi architetturali e di consolidamento (10 mini-commit sequenziali + 1 fix scoping a HEAD + 1 consolidamento finale post-collaudo) mirati a elevare l'affidabilità, la sicurezza difensiva, la salvaguardia dell'hardware (MicroSD dei Raspberry Pi) e la fluidità visiva del Kiosk prima del passaggio alla release major 6.0.
+Questa milestone introduce 13 interventi architetturali, di consolidamento e hotfix di produzione (10 mini-commit sequenziali + 1 fix scoping a HEAD + 1 consolidamento finale post-collaudo + 1 hotfix v5.1.12 CINECA auto-healing) mirati a elevare l'affidabilità, la sicurezza difensiva, la salvaguardia dell'hardware (MicroSD dei Raspberry Pi) e la fluidità visiva del Kiosk prima del passaggio alla release v5.2.
 
 Ciascun intervento è stato sviluppato, testato e consolidato tramite mini-commit atomici:
 
@@ -124,6 +222,19 @@ Ciascun intervento è stato sviluppato, testato e consolidato tramite mini-commi
   - **Ordinamento Cronologico nel News Hub (`remoto.html`):** La colonna "Data ↕" del modale notizie ordina ora gli articoli per timestamp effettivo anziché per stringa alfabetica, garantendo un ordinamento cronologico perfetto.
   - **Affinamento Log Diagnostico Circuit-Breaker (`server_api.py`):** Distinto chiaramente il messaggio di log in caso di attivazione del salvavita CINECA (`🛡️ Nessun nuovo dato CINECA: X impegni precedenti mantenuti a video`), evitando la precedente dicitura potenzialmente fuorviante `Dati ricevuti`.
 * **Perché questa modifica:** Conclude il collaudo sul campo in ambiente reale di produzione, rifinendo i dettagli emersi dai test operativi e portando la milestone v5.1 a uno stato di completa stabilità e maturità prima del merge sul ramo principale.
+
+---
+
+### 🔹 v5.1.12: Motore annullamenti a conferma d'assenza, auto-healing, filtri non distruttivi e sentinella limite 500
+* **Commit:** `1230679`
+* **Come era prima:** Quando un evento non compariva nel feed CINECA per un singolo glitch o timeout di rete, veniva subito bollato come "ANNULLATO". Se l'evento riappariva al polling successivo, l'avviso di annullamento persisteva fino alle 04:00 del mattino successivo. Gli eventi filtrati dalla configurazione (aule escluse o stato C nascosto) venivano erroneamente trattati come annullati anziché rimossi silenziosamente. Mancava inoltre un allarme nel caso in cui gli eventi giornalieri toccassero il tetto massimo interrogabile (500).
+* **Come è ora:**
+  - **Conferma d'assenza su 2 cicli consecutivi (`SOGLIA_ASSENZE_ANNULLAMENTO = 2`):** Un impegno viene marcato come ANNULLATO solo se risulta assente per 2 interrogazioni consecutive (10 minuti), azzerando i falsi positivi da jitter di rete.
+  - **Auto-Healing:** Se un evento precedentemente marcato ANNULLATO o SOSPESO ricompare regolarmente nel feed CINECA, il sistema ne ripristina all'istante lo stato regolare rimuovendo l'avviso.
+  - **Filtri non distruttivi:** Gli eventi esclusi a monte dalle preferenze (edificio o stati non selezionati) vengono rimossi dalla memoria senza generare falsi allarmi di cancellazione.
+  - **Sentinella LIMITE_EVENTI_CINECA:** Il demone verifica se il payload tocca i 500 eventi e genera un warning nei log (`⚠️ Raggiunto limite massimo eventi CINECA`) per sollecitare la riconfigurazione.
+  - Creata la prima suite di unit test automatizzati (`tests/test_annullamenti.py` con 14 test) e corretta la dicitura in `admin.html` in *"Mostra ANCHE eventi Confermati (Stato C)"*.
+* **Perché questa modifica:** Elimina qualsiasi falso allarme visivo per studenti e docenti, gestisce con intelligenza le fluttuazioni temporanee dei server di ateneo e introduce il framework di test automatizzati nel progetto.
 
 ---
 

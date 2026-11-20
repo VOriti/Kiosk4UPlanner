@@ -15,6 +15,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import socketserver
 import ssl
 import copy
+import re
+import math
+import xml.etree.ElementTree as ET
 
 try:
     from http.server import ThreadingHTTPServer
@@ -41,6 +44,8 @@ lock_config = threading.Lock()
 SESSIONS = {}
 LOGIN_ATTEMPTS = {}
 lock_login = threading.Lock()
+AVVIO_PROCESSO = time.time()
+ultimo_sync_cineca_ok = None
 memoria_dati = []
 lock_memoria = threading.Lock()
 token_cineca = None
@@ -55,6 +60,116 @@ news_poll_event = threading.Event()
 LIMITE_EVENTI_CINECA = 500          # tetto 'limit' richiesto a getImpegniCalendario
 SOGLIA_ASSENZE_ANNULLAMENTO = 2     # polling consecutivi senza l'evento prima di marcarlo ANNULLATO
 AVVISI_DI_STATO = ("ANNULLATO", "SOSPESO")
+
+LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
+LIMITE_POST_JSON = 1 * 1024 * 1024
+ESTENSIONI_LOCANDINE = ('.png', '.jpg', '.jpeg', '.webp')
+
+lock_locandine = threading.Lock()
+
+def cartella_locandine():
+    return os.path.join(PERCORSO_BASE, 'locandine')
+
+def percorso_ordine():
+    return os.path.join(cartella_locandine(), 'ordine.json')
+
+def leggi_ordine():
+    try:
+        with open(percorso_ordine(), 'r', encoding='utf-8') as f:
+            dati = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [n for n in dati if isinstance(n, str)] if isinstance(dati, list) else []
+
+def scrivi_ordine(nomi):
+    cartella = cartella_locandine()
+    os.makedirs(cartella, exist_ok=True)
+    tmp = percorso_ordine() + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(nomi, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, percorso_ordine())
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+def elenco_locandine_ordinato():
+    """Ordine di ordine.json, poi i file non elencati in ordine naturale; voci senza file ignorate."""
+    presenti = elenco_file_locandine()
+    insieme = set(presenti)
+    ordinati = [n for n in dict.fromkeys(leggi_ordine()) if n in insieme]
+    gia = set(ordinati)
+    return ordinati + [n for n in presenti if n not in gia]
+
+def rileva_formato_immagine(testa):
+    """Estensione dedotta dai magic bytes, None se il formato non è ammesso."""
+    if testa.startswith(b'\xff\xd8\xff'):
+        return '.jpg'
+    if testa.startswith(b'\x89PNG\r\n\x1a\n'):
+        return '.png'
+    if testa[:4] == b'RIFF' and testa[8:12] == b'WEBP':
+        return '.webp'
+    return None
+
+def chiave_ordinamento_naturale(nome):
+    # Tupla omogenea: la vecchia chiave int/str andava in TypeError con nomi misti (1.jpg + p..._ab12.jpg)
+    m = re.match(r'^(\d+)', nome)
+    return (0, int(m.group(1)), nome.lower()) if m else (1, 0, nome.lower())
+
+def elenco_file_locandine():
+    cartella = cartella_locandine()
+    if not os.path.isdir(cartella):
+        return []
+    nomi = [f for f in os.listdir(cartella)
+            if not f.startswith('.') and f.lower().endswith(ESTENSIONI_LOCANDINE)
+            and os.path.isfile(os.path.join(cartella, f))]
+    return sorted(nomi, key=chiave_ordinamento_naturale)
+
+def pulisci_upload_orfani():
+    cartella = cartella_locandine()
+    if os.path.isdir(cartella):
+        for f in os.listdir(cartella):
+            if f.startswith('.upload_') and f.endswith('.tmp'):
+                try:
+                    os.remove(os.path.join(cartella, f))
+                except OSError:
+                    pass
+
+def salva_locandina_da_stream(rfile, lunghezza):
+    """Scrive il body su .tmp a blocchi, valida i magic bytes e rinomina con un nome immutabile."""
+    cartella = cartella_locandine()
+    os.makedirs(cartella, exist_ok=True)
+    tmp = os.path.join(cartella, f'.upload_{secrets.token_hex(8)}.tmp')
+    testa, letti = b'', 0
+    try:
+        with open(tmp, 'wb') as f:
+            while letti < lunghezza:
+                blocco = rfile.read(min(65536, lunghezza - letti))
+                if not blocco:
+                    raise ValueError('Upload interrotto prima della fine')
+                if len(testa) < 12:
+                    testa += blocco[:12 - len(testa)]
+                f.write(blocco)
+                letti += len(blocco)
+            f.flush()
+            os.fsync(f.fileno())
+        ext = rileva_formato_immagine(testa)
+        if not ext:
+            raise ValueError('Formato non supportato: ammessi JPEG, PNG, WebP')
+        nome = f"p{int(time.time() * 1000)}_{secrets.token_hex(2)}{ext}"
+        os.replace(tmp, os.path.join(cartella, nome))
+        return nome
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 def get_tz_roma():
     """Restituisce il fuso orario di Roma (Europe/Rome).
@@ -172,13 +287,14 @@ frontend:
   mostra_confermati: true
   caroselloAttivo: true
   titoloSede: 'Impegni Aule'
-  urlLogo: '/logo.png'
+  urlLogo: './logo.png'
   mostraStatoPC: true
   messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
   messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
   pausaTraCaroselli: 180000
   esposizioneLocandina: 10000
-  intervalloAggiornamento: 5000
+  quotaCarosello: 0.30
+  intervalloAggiornamento: 15000
   urlCalendario: ''
   urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
   urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
@@ -591,6 +707,24 @@ def verifica_sentinella_limite(dati_grezzi):
         return True
     return False
 
+def intervallo_aggiornamento_sec():
+    try:
+        intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec') or 300)
+        return intervallo if intervallo > 0 else 300
+    except (ValueError, TypeError):
+        return 300
+
+def elabora_risposta_cineca(dati_grezzi):
+    global memoria_dati, ultimo_sync_cineca_ok
+    verifica_sentinella_limite(dati_grezzi)
+    with lock_memoria:
+        memoria_dati = estrai_e_formatta_dati(dati_grezzi)
+    ultimo_sync_cineca_ok = time.time()
+    if ultimo_aggiornamento_preservato:
+        logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
+    else:
+        logging.info(f"✅ Dati ricevuti da CINECA! Trovati {len(memoria_dati)} impegni.")
+
 def ciclo_aggiornamento_api():
     global token_cineca, memoria_dati
     logging.info("🚀 Avviato demone API CINECA (Modalità Admin Autenticata).")
@@ -601,10 +735,7 @@ def ciclo_aggiornamento_api():
             realm = sanitize_id_str(api_cineca.get('realm'))
             url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
             url_impegni = f"{url_base}/Impegni/getImpegniCalendario"
-            try:
-                intervallo = int(api_cineca.get('intervallo_aggiornamento_sec') or 300)
-            except (ValueError, TypeError):
-                intervallo = 300
+            intervallo = intervallo_aggiornamento_sec()
             
             if not token_cineca:
                 if not effettua_login():
@@ -661,7 +792,6 @@ def ciclo_aggiornamento_api():
                 continue
             elif risposta.status_code == 200:
                 dati_grezzi = risposta.json()
-                verifica_sentinella_limite(dati_grezzi)
                 if is_debug:
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")
                     edifici_scoperti = set()
@@ -676,179 +806,220 @@ def ciclo_aggiornamento_api():
                         logging.info(f"🕵️ DEBUG MAPPA EDIFICI RILEVATI ({len(edifici_scoperti)}): {sorted(list(edifici_scoperti))}")
                     else:
                         logging.info("🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.")
-                with lock_memoria:
-                    memoria_dati = estrai_e_formatta_dati(dati_grezzi)
-                if ultimo_aggiornamento_preservato:
-                    logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
-                else:
-                    logging.info(f"✅ Dati ricevuti da CINECA! Trovati {len(memoria_dati)} impegni.")
+                elabora_risposta_cineca(dati_grezzi)
             else:
                 logging.error(f"❌ Errore HTTP {risposta.status_code}: {risposta.text[:100]}")
                 
         except Exception as e:
             logging.error(f"❌ Errore critico nel ciclo API: {e}")
         
-        # Intervallo aggiornato con fallback sicuro per evitare che il thread si interrompa
-        try:
-            intervallo = int(CONFIG.get('api_cineca', {}).get('intervallo_aggiornamento_sec') or 300)
-            if intervallo <= 0:
-                intervallo = 300
-        except (ValueError, TypeError):
-            intervallo = 300
+        intervallo = intervallo_aggiornamento_sec()
         time.sleep(intervallo)
 
-def NewsPollingDaemon():
-    global memoria_news
-    logging.info("🚀 Avviato demone News (Footer).")
-    import xml.etree.ElementTree as ET
-    import re
-    
-    def clean_html(raw_html):
-        if not raw_html: return ""
-        cleanr = re.compile('<.*?>')
-        cleantext = re.sub(cleanr, '', str(raw_html))
-        return cleantext.strip()
+DIAGNOSTICA_NEWS = {}   # url -> {"stato", "articoli", "ora"}; sostituito per intero a ogni giro
 
-    def parse_data_notizia(raw):
-        if not raw: return ''
-        raw = raw.strip()
+def classifica_errore_fonte(exc):
+    risposta = getattr(exc, 'response', None)
+    if risposta is not None and getattr(risposta, 'status_code', None):
+        return f"HTTP {risposta.status_code}"
+    if 'Timeout' in type(exc).__name__:
+        return "Timeout"
+    if isinstance(exc, ET.ParseError):
+        return "Errore formato XML"
+    if isinstance(exc, ValueError):
+        return "Errore formato JSON"
+    return "Errore di rete"
+
+TIMEOUT_FONTE_NEWS_SEC = 5
+
+def clean_html(raw_html):
+    if not raw_html: return ""
+    cleanr = re.compile(r'<.*?>', re.DOTALL)
+    cleantext = re.sub(cleanr, '', str(raw_html))
+    return cleantext.strip()
+
+def parse_data_notizia(raw):
+    if not raw: return ''
+    raw = raw.strip()
+    try:
+        import email.utils
+        dt = email.utils.parsedate_to_datetime(raw)
+        if dt: return dt.strftime('%d/%m/%Y')
+    except Exception:
+        pass
+    m1 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
+    if m1:
+        d, m, y = m1.groups()
+        return f"{int(d):02d}/{int(m):02d}/{y}"
+    mesi = {
+        'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
+        'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
+        'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4, 'maggio': 5, 'giugno': 6,
+        'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
+    }
+    m2 = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', raw)
+    if m2:
+        d, mese_str, y = m2.groups()
+        mese_num = mesi.get(mese_str.lower()[:3]) or mesi.get(mese_str.lower())
+        if mese_num:
+            return f"{int(d):02d}/{mese_num:02d}/{y}"
+    m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', raw)
+    if m3:
+        y, m, d = m3.groups()
+        return f"{int(d):02d}/{int(m):02d}/{y}"
+    return raw
+
+def normalizza_peso(valore):
+    try:
+        return min(5, max(1, int(valore)))
+    except (TypeError, ValueError):
+        return 1
+
+def scarica_fonte(fonte):
+    url = fonte.get('url', '').strip()
+    tipo = fonte.get('tipo', '').lower()
+    nome = fonte.get('nome', 'Fonte')
+    visibile = fonte.get('visibile_di_default', True)
+
+    if not url:
+        return []
+
+    notizie_di_questa_fonte = []
+    res = requests.get(url, timeout=TIMEOUT_FONTE_NEWS_SEC)
+    res.raise_for_status()
+
+    if tipo == 'rest':
+        dati = res.json()
+        for item in dati:
+            title = item.get('title', {}).get('rendered', '')
+            link = item.get('link', '')
+            data = parse_data_notizia(item.get('date', ''))
+            titolo_pulito = clean_html(title)
+            if titolo_pulito:
+                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link, "data": data, "visibile": visibile})
+    elif tipo == 'rss':
+        root = ET.fromstring(res.content)
+        items = root.findall('./channel/item')
+        if not items:
+            # Supporto fallback per formati Atom (Drupal Views / feed alternativi)
+            items = root.findall('.//{http://www.w3.org/2005/Atom}entry') or root.findall('.//entry')
+
+        for item in items:
+            title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
+            link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
+            date_elem = None
+            for tag_candidate in ['{http://www.w3.org/2005/Atom}updated', '{http://www.w3.org/2005/Atom}published', 'pubDate', '{http://purl.org/dc/elements/1.1/}date', 'date']:
+                found_el = item.find(tag_candidate)
+                if found_el is not None:
+                    date_elem = found_el
+                    break
+
+            link = ''
+            if link_elem is not None:
+                link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
+            raw_data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
+            data = parse_data_notizia(raw_data)
+
+            titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
+            # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
+            if not link and title is not None:
+                a_elem = title.find('.//a')
+                if a_elem is not None and a_elem.get('href'):
+                    link = a_elem.get('href')
+                elif 'href=' in str(titolo_raw):
+                    m_href = re.search(r'href="([^"]+)"', str(titolo_raw)) or re.search(r"href='([^']+)'", str(titolo_raw))
+                    if m_href:
+                        link = m_href.group(1).strip()
+
+            titolo_pulito = clean_html(titolo_raw)
+            if titolo_pulito:
+                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link.strip(), "data": data, "visibile": visibile})
+    return notizie_di_questa_fonte
+
+def aggiorna_news_una_volta():
+    global memoria_news, DIAGNOSTICA_NEWS
+    footer_config = CONFIG.get('footer_news', {})
+    fonti = footer_config.get('fonti', [])
+    notizie_per_fonte = []
+    diagnostica = {}
+    tz_roma = get_tz_roma()
+
+    for fonte in fonti:
+        url = fonte.get('url', '').strip()
+        nome = fonte.get('nome', 'Fonte')
+        abilitata = fonte.get('abilitata', True)
+        peso = normalizza_peso(fonte.get('peso', 1))
+
+        if not url:
+            continue
+
+        if not abilitata:
+            diagnostica[url] = {"stato": "DISABILITATA", "articoli": 0, "ora": ""}
+            continue
+
         try:
-            import email.utils
-            dt = email.utils.parsedate_to_datetime(raw)
-            if dt: return dt.strftime('%d/%m/%Y')
-        except Exception:
-            pass
-        m1 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
-        if m1:
-            d, m, y = m1.groups()
-            return f"{int(d):02d}/{int(m):02d}/{y}"
-        mesi = {
-            'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
-            'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
-            'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4, 'maggio': 5, 'giugno': 6,
-            'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
-        }
-        m2 = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', raw)
-        if m2:
-            d, mese_str, y = m2.groups()
-            mese_num = mesi.get(mese_str.lower()[:3]) or mesi.get(mese_str.lower())
-            if mese_num:
-                return f"{int(d):02d}/{mese_num:02d}/{y}"
-        m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', raw)
-        if m3:
-            y, m, d = m3.groups()
-            return f"{int(d):02d}/{int(m):02d}/{y}"
-        return raw
-        
+            notizie_di_questa_fonte = scarica_fonte(fonte)
+            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
+            diagnostica[url] = {"stato": "OK", "articoli": len(notizie_di_questa_fonte), "ora": ora_roma}
+            if notizie_di_questa_fonte:
+                notizie_per_fonte.append({'notizie': notizie_di_questa_fonte, 'peso': peso})
+        except Exception as e:
+            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
+            diagnostica[url] = {"stato": classifica_errore_fonte(e), "articoli": 0, "ora": ora_roma}
+            logging.warning(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
+
+    DIAGNOSTICA_NEWS = diagnostica
+
+    notizie_estratte = []
+    if notizie_per_fonte:
+        ancora_notizie = True
+        indici = [0] * len(notizie_per_fonte)
+
+        while ancora_notizie:
+            ancora_notizie = False
+            for i, f in enumerate(notizie_per_fonte):
+                peso = f['peso']
+                notizie = f['notizie']
+                idx = indici[i]
+
+                for _ in range(peso):
+                    if idx < len(notizie):
+                        notizie_estratte.append(notizie[idx])
+                        idx += 1
+                        indici[i] = idx
+                        ancora_notizie = True
+
+    memoria_news = notizie_estratte
+
+def NewsPollingDaemon():
+    logging.info("🚀 Avviato demone News (Footer).")
     while True:
         try:
             footer_config = CONFIG.get('footer_news', {})
-            if not footer_config.get('abilitato', False):
-                news_poll_event.wait(3600)
-                news_poll_event.clear()
-                continue
-                
-            notizie_per_fonte = []
-            fonti = footer_config.get('fonti', [])
-            
-            for fonte in fonti:
-                url = fonte.get('url', '').strip()
-                tipo = fonte.get('tipo', '').lower()
-                nome = fonte.get('nome', 'Fonte')
-                abilitata = fonte.get('abilitata', True)
-                visibile = fonte.get('visibile_di_default', True)
-                peso = fonte.get('peso', 1)
-                
-                if not url or not abilitata:
-                    continue
-                    
-                notizie_di_questa_fonte = []
-                try:
-                    res = requests.get(url, timeout=10)
-                    res.raise_for_status()
-                    
-                    if tipo == 'rest':
-                        dati = res.json()
-                        for item in dati:
-                            title = item.get('title', {}).get('rendered', '')
-                            link = item.get('link', '')
-                            data = parse_data_notizia(item.get('date', ''))
-                            if title:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": clean_html(title), "link": link, "data": data, "visibile": visibile})
-                    elif tipo == 'rss':
-                        root = ET.fromstring(res.text)
-                        items = root.findall('./channel/item')
-                        if not items:
-                            # Supporto fallback per formati Atom (Drupal Views / feed alternativi)
-                            items = root.findall('.//{http://www.w3.org/2005/Atom}entry') or root.findall('.//entry')
-
-                        for item in items:
-                            title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
-                            link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
-                            date_elem = None
-                            for tag_candidate in ['{http://www.w3.org/2005/Atom}updated', '{http://www.w3.org/2005/Atom}published', 'pubDate', '{http://purl.org/dc/elements/1.1/}date', 'date']:
-                                found_el = item.find(tag_candidate)
-                                if found_el is not None:
-                                    date_elem = found_el
-                                    break
-                            
-                            link = ''
-                            if link_elem is not None:
-                                link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
-                            raw_data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
-                            data = parse_data_notizia(raw_data)
-                            
-                            titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
-                            # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
-                            if not link and title is not None:
-                                a_elem = title.find('.//a')
-                                if a_elem is not None and a_elem.get('href'):
-                                    link = a_elem.get('href')
-                                elif 'href=' in str(titolo_raw):
-                                    m_href = re.search(r'href="([^"]+)"', str(titolo_raw)) or re.search(r"href='([^']+)'", str(titolo_raw))
-                                    if m_href:
-                                        link = m_href.group(1).strip()
-                            
-                            titolo_pulito = clean_html(titolo_raw)
-                            if titolo_pulito:
-                                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link.strip(), "data": data, "visibile": visibile})
-                except Exception as e:
-                    logging.error(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
-                
-                if notizie_di_questa_fonte:
-                    # Aggiungiamo un dizionario che contiene sia la lista di notizie sia il peso
-                    notizie_per_fonte.append({'notizie': notizie_di_questa_fonte, 'peso': peso})
-            
-            notizie_estratte = []
-            if notizie_per_fonte:
-                max_len = max(len(f['notizie']) for f in notizie_per_fonte)
-                # Calcoliamo il numero di round massimi necessari (arrotondato per eccesso diviso il peso)
-                # Più semplicemente, iteriamo ciclicamente fino ad esaurire la fonte più lunga
-                
-                ancora_notizie = True
-                indici = [0] * len(notizie_per_fonte)
-                
-                while ancora_notizie:
-                    ancora_notizie = False
-                    for i, f in enumerate(notizie_per_fonte):
-                        peso = f['peso']
-                        notizie = f['notizie']
-                        idx = indici[i]
-                        
-                        # Aggiungi 'peso' notizie di questa fonte
-                        for k in range(peso):
-                            if idx < len(notizie):
-                                notizie_estratte.append(notizie[idx])
-                                idx += 1
-                                indici[i] = idx
-                                ancora_notizie = True
-                            
-            memoria_news = notizie_estratte
+            if footer_config.get('abilitato', False):
+                aggiorna_news_una_volta()
         except Exception as e:
             logging.error(f"❌ Errore critico demone News: {e}")
-            
+
         news_poll_event.wait(3600)
         news_poll_event.clear()
+
+HASH_PASSWORD_DEFAULT = frozenset({
+    '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+    '737a5c64f7f67b7f86e6b6b96698eb5d24b85ba933dd2710b867e16b6b6b9669',
+    'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0',
+})
+
+def password_default_bloccata(client_ip, hash_salvato):
+    """True se l'hash è di default e la richiesta non arriva da loopback."""
+    if hash_salvato not in HASH_PASSWORD_DEFAULT:
+        return False
+    try:
+        ip = ipaddress.ip_address(client_ip)
+        ip = getattr(ip, 'ipv4_mapped', None) or ip
+        return not ip.is_loopback
+    except ValueError:
+        return True
 
 class KioskServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass 
@@ -856,6 +1027,7 @@ class KioskServer(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header('X-Frame-Options', 'SAMEORIGIN')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
         super().end_headers() 
     
     def _check_security(self):
@@ -888,14 +1060,47 @@ class KioskServer(BaseHTTPRequestHandler):
 
     def _check_token(self):
         token = self.headers.get('X-Admin-Token')
+        valido = True
         if not token or token not in SESSIONS:
-            self.send_error(401, "Unauthorized")
-            return False
-        if SESSIONS[token] < time.time():
+            valido = False
+        elif SESSIONS[token] < time.time():
             del SESSIONS[token]
+            valido = False
+
+        if not valido:
+            try:
+                cl = int(self.headers.get('Content-Length', '0'))
+                if cl > 0:
+                    self.rfile.read(min(cl, 65536))
+            except Exception:
+                pass
             self.send_error(401, "Unauthorized")
             return False
         return True
+
+    def _invia_json(self, codice, oggetto):
+        self.send_response(codice)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(oggetto).encode('utf-8'))
+
+    def _leggi_content_length(self, limite):
+        """Lunghezza del body, oppure None dopo aver già risposto 400/413. Header assente = 0."""
+        grezzo = self.headers.get('Content-Length')
+        if grezzo is None:
+            return 0
+        try:
+            n = int(grezzo.strip())
+        except ValueError:
+            self.send_error(400, "Content-Length non valido")
+            return None
+        if n < 0:
+            self.send_error(400, "Content-Length non valido")
+            return None
+        if n > limite:
+            self.send_error(413, "Payload Too Large")
+            return None
+        return n
         
     def do_GET(self):
         is_ssl = getattr(self.server, 'is_ssl', False)
@@ -944,19 +1149,17 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             with lock_memoria: self.wfile.write(json.dumps(memoria_dati).encode('utf-8'))
+        elif parsed_path == '/stato':
+            self._invia_json(200, {"ultimo_sync_cineca": ultimo_sync_cineca_ok,
+                                   "preservato": ultimo_aggiornamento_preservato,
+                                   "ora_server": time.time(), "avvio_server": AVVIO_PROCESSO,
+                                   "intervallo_sec": intervallo_aggiornamento_sec()})
         elif parsed_path == '/logo.png': 
             self.serve_file(os.path.join(PERCORSO_BASE, 'logo.png'), 'image/png')
         elif parsed_path.startswith('/locandine/'): 
             nome_file = os.path.basename(parsed_path)
-            cartella_locandine = os.path.abspath(os.path.join(PERCORSO_BASE, 'locandine'))
-            percorso_file = os.path.abspath(os.path.join(cartella_locandine, nome_file))
-            
-            # Protezione path traversal e verifica file reale
-            if not percorso_file.startswith(cartella_locandine) or not os.path.isfile(percorso_file):
-                self.send_response(404)
-                self.end_headers()
-                return
-            
+            dir_locandine = os.path.abspath(cartella_locandine())
+            percorso_file = os.path.abspath(os.path.join(dir_locandine, nome_file))
             ext = os.path.splitext(nome_file)[1].lower()
             mime_map = {
                 '.jpg': 'image/jpeg',
@@ -964,26 +1167,45 @@ class KioskServer(BaseHTTPRequestHandler):
                 '.png': 'image/png',
                 '.webp': 'image/webp'
             }
-            mime = mime_map.get(ext, 'application/octet-stream')
-            self.serve_file(percorso_file, mime)
+            
+            # Protezione path traversal, verifica estensione immagine e file reale
+            prefix = dir_locandine if dir_locandine.endswith(os.sep) else dir_locandine + os.sep
+            if (not percorso_file.startswith(prefix) or 
+                ext not in mime_map or 
+                not os.path.isfile(percorso_file)):
+                self.send_response(404)
+                self.end_headers()
+                return
+            
+            self.serve_file(percorso_file, mime_map[ext])
         elif parsed_path == '/lista_locandine.json':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            try:
-                cartella_locandine = os.path.join(PERCORSO_BASE, 'locandine')
-                if os.path.exists(cartella_locandine):
-                    immagini = [f for f in os.listdir(cartella_locandine) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and os.path.isfile(os.path.join(cartella_locandine, f))]
-                    # Ordinamento naturale per supportare numeri progressivi (1.jpg, 2.png, 10.jpg)
-                    import re
-                    immagini.sort(key=lambda x: int(re.match(r'^(\d+)', x).group(1)) if re.match(r'^(\d+)', x) else x.lower())
-                    self.wfile.write(json.dumps(immagini).encode('utf-8'))
-                else:
-                    self.wfile.write(json.dumps([]).encode('utf-8'))
-            except Exception as e:
-                logging.error(f"Errore lettura locandine: {e}")
-                self.wfile.write(json.dumps([]).encode('utf-8'))
+            self.wfile.write(json.dumps(elenco_locandine_ordinato()).encode('utf-8'))
+        elif parsed_path == '/api/admin/locandine':
+            if not self._check_security() or not self._check_token():
+                return
+            cartella = cartella_locandine()
+            voci = []
+            for nome in elenco_locandine_ordinato():
+                percorso = os.path.join(cartella, nome)
+                try:
+                    stat = os.stat(percorso)
+                    size = stat.st_size
+                    mtime = stat.st_mtime
+                except OSError:
+                    size = 0
+                    mtime = time.time()
+                kb = math.ceil(size / 1024)
+                dt = datetime.datetime.fromtimestamp(mtime, tz=get_tz_roma())
+                voci.append({
+                    "nome": nome,
+                    "kb": kb,
+                    "caricata": dt.strftime("%d/%m/%Y %H:%M")
+                })
+            self._invia_json(200, voci)
         elif parsed_path == '/admin':
             if self._check_security():
                 self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html')
@@ -995,14 +1217,12 @@ class KioskServer(BaseHTTPRequestHandler):
                 
                 with lock_config:
                     safe_config = json.loads(json.dumps(CONFIG))
+                safe_config['diagnostica_news'] = dict(DIAGNOSTICA_NEWS)
                 if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
                     safe_config['api_cineca']['password'] = '********'
                 
                 hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
-                if hash_salvato in ['8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', '737a5c64f7f67b7f86e6b6b96698eb5d24b85ba933dd2710b867e16b6b6b9669', 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0']:
-                    safe_config['avviso_sicurezza'] = True
-                else:
-                    safe_config['avviso_sicurezza'] = False
+                safe_config['avviso_sicurezza'] = hash_salvato in HASH_PASSWORD_DEFAULT
                     
                 self.wfile.write(json.dumps(safe_config).encode('utf-8'))
         else:
@@ -1011,12 +1231,9 @@ class KioskServer(BaseHTTPRequestHandler):
     def do_POST(self):
         global CONFIG
         parsed_path = self.path.split('?')[0]
-        content_length = int(self.headers.get('Content-Length', 0))
-
-        # Protezione anti-OOM: 10 MB per upload locandine autenticato, 1 MB per tutte le altre API
-        max_size = 10 * 1024 * 1024 if parsed_path.startswith('/api/admin/locandine/upload') else 1 * 1024 * 1024
-        if content_length > max_size:
-            self.send_error(413, "Payload Too Large")
+        limite = LIMITE_UPLOAD_LOCANDINA if parsed_path == '/api/admin/locandine/upload' else LIMITE_POST_JSON
+        content_length = self._leggi_content_length(limite)
+        if content_length is None:
             return
 
         if parsed_path == '/api/admin/login':
@@ -1038,7 +1255,6 @@ class KioskServer(BaseHTTPRequestHandler):
                     }).encode('utf-8'))
                     return
 
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
             try:
                 data = json.loads(body)
@@ -1074,7 +1290,6 @@ class KioskServer(BaseHTTPRequestHandler):
         elif parsed_path == '/api/admin/save':
             if not self._check_security() or not self._check_token(): return
             
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
             try:
                 payload = json.loads(body)
@@ -1089,9 +1304,28 @@ class KioskServer(BaseHTTPRequestHandler):
                 
                 if 'frontend' in payload:
                     if 'frontend' not in nuova_config: nuova_config['frontend'] = {}
+                    if 'quotaCarosello' in payload['frontend']:
+                        raw_quota = payload['frontend']['quotaCarosello']
+                        if isinstance(raw_quota, bool) or raw_quota is None:
+                            payload['frontend']['quotaCarosello'] = 0.30
+                        else:
+                            try:
+                                val_quota = float(raw_quota)
+                                if not math.isnan(val_quota) and 0.10 <= val_quota <= 0.50:
+                                    payload['frontend']['quotaCarosello'] = round(val_quota, 2)
+                                else:
+                                    payload['frontend']['quotaCarosello'] = 0.30
+                            except (ValueError, TypeError):
+                                payload['frontend']['quotaCarosello'] = 0.30
                     nuova_config['frontend'].update(payload['frontend'])
                     
                 if 'api_cineca' in payload:
+                    nuovo_url = payload['api_cineca'].get('url_base')
+                    if nuovo_url is not None and nuovo_url != nuova_config.get('api_cineca', {}).get('url_base') \
+                            and payload['api_cineca'].get('password') in (None, '', '********'):
+                        self._invia_json(400, {"error": "Per modificare url_base reinserire la password CINECA."})
+                        return
+
                     if 'api_cineca' not in nuova_config: nuova_config['api_cineca'] = {}
                     nuova_pwd = payload['api_cineca'].get('password')
                     if nuova_pwd == '********':
@@ -1139,6 +1373,80 @@ class KioskServer(BaseHTTPRequestHandler):
                 logging.error(f"Errore salvataggio config: {e}")
                 self.send_error(400, "Bad Request")
                 
+        elif parsed_path == '/api/admin/locandine/upload':
+            if not self._check_security() or not self._check_token(): return
+            if content_length == 0:
+                self._invia_json(400, {"error": "Body vuoto"})
+                return
+            try:
+                nome = salva_locandina_da_stream(self.rfile, content_length)
+            except ValueError as e:
+                self._invia_json(400, {"error": str(e)})
+                return
+            logging.info(f"🖼️ Locandina caricata: {nome} ({content_length // 1024} KB).")
+            self._invia_json(200, {"status": "ok", "filename": nome})
+
+        elif parsed_path == '/api/admin/locandine/ordine':
+            if not self._check_security() or not self._check_token(): return
+            try:
+                raw_body = self.rfile.read(content_length)
+                payload = json.loads(raw_body.decode('utf-8'))
+            except Exception:
+                self._invia_json(400, {"error": "JSON non valido"})
+                return
+            if not isinstance(payload, dict) or 'ordine' not in payload:
+                self._invia_json(400, {"error": "Payload non valido: atteso campo 'ordine'"})
+                return
+            ordine = payload.get('ordine')
+            if not isinstance(ordine, list) or not all(isinstance(n, str) for n in ordine):
+                self._invia_json(400, {"error": "Campo 'ordine' deve essere una lista di stringhe"})
+                return
+
+            with lock_locandine:
+                presenti = elenco_file_locandine()
+                insieme = set(presenti)
+                nuovo = [n for n in dict.fromkeys(ordine) if n in insieme]
+                gia = set(nuovo)
+                nuovo += [n for n in presenti if n not in gia]
+                scrivi_ordine(nuovo)
+            self._invia_json(200, {"status": "ok", "ordine": nuovo})
+
+        elif parsed_path == '/api/admin/locandine/elimina':
+            if not self._check_security() or not self._check_token(): return
+            try:
+                raw_body = self.rfile.read(content_length)
+                payload = json.loads(raw_body.decode('utf-8'))
+            except Exception:
+                self._invia_json(400, {"error": "JSON non valido"})
+                return
+            if not isinstance(payload, dict):
+                self._invia_json(400, {"error": "Payload non valido"})
+                return
+            nome = payload.get('filename') if 'filename' in payload else payload.get('nome')
+            if (not isinstance(nome, str) or not nome or 
+                '\x00' in nome or 
+                nome in ('.', '..') or 
+                os.path.basename(nome) != nome or 
+                '/' in nome or '\\' in nome):
+                self._invia_json(400, {"error": "Nome file non valido o path traversal rilevato"})
+                return
+
+            with lock_locandine:
+                presenti = elenco_file_locandine()
+                if nome not in presenti:
+                    self._invia_json(404, {"error": "File non trovato"})
+                    return
+                percorso = os.path.join(cartella_locandine(), nome)
+                try:
+                    os.remove(percorso)
+                except OSError as e:
+                    logging.error(f"Errore rimozione file {nome}: {e}")
+                    self._invia_json(500, {"error": "Errore durante l'eliminazione del file"})
+                    return
+                scrivi_ordine(elenco_locandine_ordinato())
+                logging.info(f"🗑️ Locandina eliminata: {nome}")
+            self._invia_json(200, {"status": "ok"})
+
         elif parsed_path == '/api/admin/restart':
             if not self._check_security() or not self._check_token(): return
             
@@ -1148,7 +1456,6 @@ class KioskServer(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
             
             logging.info("Riavvio richiesto dall'Admin. Termino il processo (il watchdog Bash lo riavvierà).")
-            import os
             def restart():
                 time.sleep(1)
                 os._exit(0)
@@ -1204,6 +1511,7 @@ def avvia_server_https():
         logging.error(f"Errore critico avvio server HTTPS: {e}")
 
 if __name__ == '__main__':
+    pulisci_upload_orfani()
     threading.Thread(target=ciclo_aggiornamento_api, daemon=True).start()
     threading.Thread(target=NewsPollingDaemon, daemon=True).start()
     

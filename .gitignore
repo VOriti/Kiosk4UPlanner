@@ -1,3 +1,11 @@
 .agents/
 __pycache__/
 .venv/
+
+**/dashboard_aule/config.yaml
+**/dashboard_aule/kiosk.log*
+**/dashboard_aule/server_api_sys.log*
+**/dashboard_aule/stato_impegni.json*
+**/dashboard_aule/ultimo_reset.txt
+**/dashboard_aule/locandine/ordine.json
+**/dashboard_aule/locandine/.upload_*.tmp

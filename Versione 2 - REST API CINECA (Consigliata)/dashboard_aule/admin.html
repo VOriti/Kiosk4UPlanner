@@ -143,11 +143,15 @@
             display: none;
             background-color: var(--danger-color);
             color: white;
-            padding: 15px;
+            padding: 14px 18px;
             border-radius: 8px;
             margin-bottom: 20px;
-            font-weight: bold;
-            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            transition: filter 0.15s ease, transform 0.15s ease;
+        }
+
+        .security-banner:hover {
+            filter: brightness(1.12);
         }
 
         .toast {
@@ -470,6 +474,49 @@
                 width: 100%;
             }
         }
+
+        .miniatura-locandina {
+            max-height: 70px;
+            max-width: 120px;
+            object-fit: contain;
+            cursor: zoom-in;
+            border-radius: 4px;
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        #lightbox-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #lightbox-modal img {
+            max-width: 90vw;
+            max-height: 85vh;
+            object-fit: contain;
+            border-radius: 6px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        #lightbox-caption {
+            margin-top: 12px;
+            color: #c9d1d9;
+            font-size: 0.95rem;
+            text-align: center;
+            font-family: monospace;
+        }
     </style>
 </head>
 
@@ -494,7 +541,16 @@
         <!-- Vista Admin -->
         <div id="admin-view">
             <div id="security-banner" class="security-banner" style="cursor: pointer;" onclick="switchTab('sistema'); toggleAccordion('panel-rete'); document.getElementById('panel-rete')?.scrollIntoView({ behavior: 'smooth' });">
-                ⚠️ ATTENZIONE: Stai usando la password predefinita. Clicca qui per cambiarla nella scheda "Sistema e Rete".
+                <div style="display: flex; align-items: flex-start; gap: 14px; text-align: left;">
+                    <span style="font-size: 1.6rem; line-height: 1.1;">⚠️</span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 1.05rem; font-weight: 700; margin-bottom: 5px;">SECURITY ALERT: Password predefinita in uso</div>
+                        <div style="font-size: 0.9rem; font-weight: normal; line-height: 1.45; opacity: 0.95;">
+                            Stai utilizzando la password predefinita di fabbrica (<em>"cambiami"</em>). Chiunque conosca l'indirizzo del Kiosk sulla rete può accedere a questo pannello di controllo.<br>
+                            👉 <strong>Clicca qui</strong> per impostare una <strong>Nuova Password</strong> e per configurare gli <strong>IP Autorizzati</strong> (es. specificando la subnet o l'IP del tuo ufficio) per schermare il totem dal resto dell'Ateneo.
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Intestazione Pannello e Azioni Rapide -->
@@ -573,18 +629,17 @@
                     </div>
                 </div>
 
-                <!-- TENDINA: Interfaccia Frontend (Dashboard & Locandine) -->
+                <!-- TENDINA: Interfaccia Frontend & Digital Signage -->
                 <div class="accordion-panel" id="panel-frontend">
                     <div class="accordion-header" onclick="toggleAccordion('panel-frontend')">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🖥️</span>
                             <div class="accordion-title-box">
                                 <h3>Interfaccia Dashboard & Digital Signage</h3>
-                                <p>Aspetto grafico impegni, carosello locandine e modalità schermo secondario</p>
+                                <p>Aspetto grafico impegni, orari e modalità kiosk schermo secondario</p>
                             </div>
                         </div>
                         <div class="accordion-header-right">
-                            <span id="badge-summary-frontend" class="status-badge badge-on">Locandine: ON</span>
                             <span class="chevron-icon">▼</span>
                         </div>
                     </div>
@@ -601,24 +656,25 @@
                             <label for="fe_mostra_stato">Mostra Badge Stato P/C</label>
                         </div>
                         <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Mostra i pallini P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni.</p>
-                        
-                        <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="fe_carosello" onchange="aggiornaBadgesSommario()">
-                            <label for="fe_carosello">Abilita Carosello Locandine (Globale)</label>
-                        </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
 
                         <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-left: 4px solid var(--accent-color); border-radius: 6px; padding: 12px 15px; margin: 10px 0 20px 0;">
                             <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent-color); margin-bottom: 5px;">
-                                <span>📺 Schermi Secondari / Smart TV (Digital Signage)</span>
+                                <span>📺 Schermi Secondari, Smart TV & Totem Touch (Digital Signage)</span>
                             </div>
                             <p class="help-text" style="margin: 0; color: var(--text-primary); line-height: 1.4;">
-                                Se installi monitor secondari o Smart TV privi di Raspberry Pi, configurali per aprire l'indirizzo con il parametro <code>?kiosk=1</code>:<br>
+                                Se installi monitor secondari, Smart TV o postazioni pubbliche, configurali per aprire l'indirizzo con il parametro <code>?kiosk=1</code>:<br>
                                 <code style="display: inline-block; background-color: #161b22; padding: 4px 8px; border-radius: 4px; margin-top: 6px; color: #58a6ff; font-size: 0.95rem;" id="kiosk-url-preview">http://[IP_DEL_SERVER]:[PORTA]/?kiosk=1</code>
                             </p>
-                            <p class="help-text" style="margin-top: 6px; margin-bottom: 0;">
-                                Questo parametro fa partire le locandine <strong>attive di default</strong> sui display pubblici, mentre per i docenti/studenti che accedono da browser normale le locandine partono disattivate per consultare subito le aule.
+                            <p class="help-text" style="margin-top: 8px; margin-bottom: 4px; font-weight: 600; color: var(--accent-color);">
+                                Comportamento e protezioni della modalità Kiosk (<code>?kiosk=1</code>):
                             </p>
+                            <ul class="help-text" style="margin: 0; padding-left: 18px; line-height: 1.45;">
+                                <li><strong>Carosello Locandine attivo di default:</strong> parte automaticamente a rotazione (mentre da PC/smartphone dei singoli utenti parte spento per consultare subito le aule) e ignora/blocca le preferenze locali del browser.</li>
+                                <li><strong>Lock-down di sicurezza anti-manomissione:</strong> disabilita tutti i link esterni (calendario, GitHub, licenza) impedendo a chi tocca lo schermo di uscire dalla dashboard.</li>
+                                <li><strong>Auto-chiusura per inattività (60s):</strong> se un utente apre il cassetto informativo o il News Hub, dopo 60 secondi di inattività si richiude automaticamente tornando al tabellone orari.</li>
+                                <li><strong>Dismiss immediato al tocco (Touch / Click / ESC):</strong> toccando lo schermo o premendo ESC durante una locandina, questa scompare all'istante per mostrare subito gli orari delle aule.</li>
+                                <li><strong>Duty-Cycle a staffetta:</strong> le locandine ruotano a gruppi rispettando la quota massima impostata (10-50%), garantendo priorità assoluta agli orari.</li>
+                            </ul>
                         </div>
 
                         <div class="form-group">
@@ -637,20 +693,72 @@
                             <p class="help-text">URL del Calendario Pubblico U-Planner - cambiarlo con il link del calendario pubblico di U-Planner della propria sede.</p>
                         </div>
                         <div class="form-group">
-                            <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
-                            <input type="number" id="fe_pausa_carosello">
-                            <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es. 180000 = 3 minuti.</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
-                            <input type="number" id="fe_expo_locandina">
-                            <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000 = 10 secondi).</p>
-                        </div>
-                        <div class="form-group">
                             <label for="fe_intervallo">Intervallo ridisegno (ms)</label>
                             <input type="number" id="fe_intervallo">
                             <p class="help-text">Ogni quanti millisecondi l'interfaccia si aggiorna con i nuovi dati in memoria. Es. 5000 = 5 secondi.</p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- TENDINA: Locandine -->
+                <div class="accordion-panel" id="panel-locandine">
+                    <div class="accordion-header" onclick="toggleAccordion('panel-locandine')">
+                        <div class="accordion-header-left">
+                            <span class="accordion-icon">🖼️</span>
+                            <div class="accordion-title-box">
+                                <h3>Locandine</h3>
+                                <p>Caricamento e gestione locandine per il carosello</p>
+                            </div>
+                        </div>
+                        <div class="accordion-header-right">
+                            <span id="badge-summary-locandine" class="status-badge badge-on">Locandine: ON</span>
+                            <span class="chevron-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="accordion-body">
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="fe_carosello" onchange="aggiornaBadgesSommario()">
+                            <label for="fe_carosello">Abilita Carosello Locandine (Globale)</label>
+                        </div>
+                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 20px;">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
+
+                        <!-- Sezione Temporizzazione e Duty-Cycle Carosello -->
+                        <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; margin-bottom: 25px;">
+                            <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                <span>⏱️ Temporizzazione & Duty-Cycle Carosello</span>
+                            </h4>
+                            <p class="panel-description" style="margin-bottom: 16px;">Configura i tempi di esposizione e la quota di tempo massimo riservata alle locandine per garantire che il totem resti prioritariamente a disposizione degli orari di lezione.</p>
+
+                            <div class="form-group">
+                                <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
+                                <input type="number" id="fe_pausa_carosello">
+                                <p class="help-text">Tempo in millisecondi tra una riproduzione del carosello e la successiva. Es. 180000 = 3 minuti.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="fe_expo_locandina">Esposizione singola locandina (ms)</label>
+                                <input type="number" id="fe_expo_locandina">
+                                <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000 = 10 secondi).</p>
+                            </div>
+                            <div class="form-group">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                    <label for="fe_quota_carosello" style="margin-bottom: 0;">Quota Massima Carosello (Duty-Cycle)</label>
+                                    <span id="fe_quota_carosello_val" style="font-weight: bold; color: var(--accent-color); background-color: rgba(88, 166, 255, 0.15); padding: 2px 8px; border-radius: 4px; font-size: 0.9rem;">30%</span>
+                                </div>
+                                <input type="range" id="fe_quota_carosello" min="10" max="50" step="5" value="30" oninput="document.getElementById('fe_quota_carosello_val').textContent = this.value + '%'" onchange="document.getElementById('fe_quota_carosello_val').textContent = this.value + '%'" style="width: 100%; accent-color: var(--accent-color); cursor: pointer;">
+                                <p class="help-text">Quota massima di tempo a video riservata alle locandine (consigliato: 30%, min 10% - max 50%). Garantisce che almeno il 50-90% del tempo sia sempre dedicato alla visualizzazione degli orari per gli studenti. Il sistema calcola automaticamente quante locandine mostrare per ciclo senza mai superare questa soglia.</p>
+                            </div>
+                        </div>
+
+                        <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 10px;">Gestione File Locandine</h4>
+                        <p class="panel-description">Carica immagini per il carosello del totem (JPEG, PNG, WebP — max 10 MB per file).</p>
+                        
+                        <div class="form-group" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <input type="file" id="locandine_file" accept="image/jpeg,image/png,image/webp" multiple style="flex: 1; min-width: 200px; padding: 8px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            <button type="button" class="btn" onclick="caricaLocandine()">Carica</button>
+                        </div>
+                        
+                        <h4 style="color: var(--accent-color); margin-top: 25px; margin-bottom: 10px;">Locandine Attuali</h4>
+                        <ul id="locandine_lista" style="list-style: none; padding: 0; margin: 0; border: 1px solid var(--border-color); border-radius: 6px; background-color: #0d1117; min-height: 40px;"></ul>
                     </div>
                 </div>
 
@@ -902,7 +1010,39 @@
         <p>Il demone si sta riavviando. La pagina si ricaricherà tra <span id="countdown">5</span> secondi.</p>
     </div>
 
+    <!-- Lightbox Locandina Modal -->
+    <div id="lightbox-modal" onclick="if(event.target === this || event.target.id === 'lightbox-close-btn') chiudiLightbox()">
+        <button id="lightbox-close-btn" type="button" style="position: absolute; top: 15px; right: 20px; background: transparent; border: none; color: #fff; font-size: 2rem; cursor: pointer; line-height: 1;" aria-label="Chiudi">&times;</button>
+        <img id="lightbox-img" src="" alt="">
+        <div id="lightbox-caption"></div>
+    </div>
+
     <script>
+        function escapeHTML(valore) {
+            return String(valore ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
+        function apriLightbox(voce) {
+            const modal = document.getElementById('lightbox-modal');
+            const img = document.getElementById('lightbox-img');
+            const caption = document.getElementById('lightbox-caption');
+            if (!modal || !img || !caption) return;
+            img.src = '/locandine/' + encodeURIComponent(voce.nome);
+            caption.textContent = `${voce.nome} · ${voce.kb} KB · ${voce.caricata}`;
+            modal.style.display = 'flex';
+        }
+
+        function chiudiLightbox() {
+            const modal = document.getElementById('lightbox-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                chiudiLightbox();
+            }
+        });
+
         let currentConfig = {};
 
         function getAuthHeaders() {
@@ -975,7 +1115,12 @@
             showView('login-view');
         }
 
-        async function loadAdminData() {
+        async function loadAdminData(config) {
+            if (config) {
+                currentConfig = config;
+                populateForm(config);
+                return;
+            }
             const token = sessionStorage.getItem('adminToken');
             if (!token) {
                 showView('login-view');
@@ -993,6 +1138,7 @@
                 if (res.ok) {
                     currentConfig = await res.json();
                     populateForm(currentConfig);
+                    aggiornaElencoLocandine();
                     showView('admin-view');
                 }
             } catch (e) {
@@ -1052,6 +1198,19 @@
             document.getElementById('fe_pausa_carosello').value = config.frontend?.pausaTraCaroselli || 180000;
             document.getElementById('fe_expo_locandina').value = config.frontend?.esposizioneLocandina || 10000;
             document.getElementById('fe_intervallo').value = config.frontend?.intervalloAggiornamento || 5000;
+            let quotaVal = 30;
+            const rawQuota = config.frontend?.quotaCarosello;
+            if (typeof rawQuota === 'number' && Number.isFinite(rawQuota)) {
+                if (rawQuota >= 0.10 && rawQuota <= 0.50) {
+                    quotaVal = Math.round(rawQuota * 100);
+                } else if (rawQuota >= 10 && rawQuota <= 50) {
+                    quotaVal = Math.round(rawQuota);
+                }
+            }
+            const sliderQuota = document.getElementById('fe_quota_carosello');
+            if (sliderQuota) sliderQuota.value = quotaVal;
+            const badgeQuota = document.getElementById('fe_quota_carosello_val');
+            if (badgeQuota) badgeQuota.textContent = quotaVal + '%';
 
             // Footer News
             const fn = config.footer_news || {};
@@ -1066,13 +1225,17 @@
             document.getElementById('fn_alert_testo').value = fn.alert_testo || '';
             
             const fonti = fn.fonti || [];
+            const diagNews = config.diagnostica_news || {};
             const container = document.getElementById('fonti_container');
             container.innerHTML = '';
             for (let i = 0; i < 6; i++) {
                 const f = fonti[i] || { abilitata: false, nome: '', url: '', tipo: 'rss', visibile_di_default: true, peso: 1 };
                 const html = `
                     <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
-                        <h4 style="margin-top:0; color:var(--text-secondary);">Fonte ${i + 1}</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4 style="margin:0; color:var(--text-secondary);">Fonte ${i + 1}</h4>
+                            <span id="fn_f${i}_diagnostica" class="status-badge" style="font-size: 0.85rem; padding: 2px 8px; border-radius: 4px;"></span>
+                        </div>
                         <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                             <div class="form-group form-group-checkbox" style="margin-bottom:0;">
                                 <input type="checkbox" id="fn_f${i}_abilitata" ${f.abilitata !== false ? 'checked' : ''}>
@@ -1086,11 +1249,11 @@
                         <div style="display: flex; gap: 10px; margin-top: 10px;">
                             <div class="form-group" style="flex: 1;">
                                 <label>Nome Fonte</label>
-                                <input type="text" id="fn_f${i}_nome" value="${f.nome || ''}">
+                                <input type="text" id="fn_f${i}_nome" value="${escapeHTML(f.nome || '')}">
                             </div>
                             <div class="form-group" style="flex: 2;">
                                 <label>URL</label>
-                                <input type="text" id="fn_f${i}_url" value="${f.url || ''}">
+                                <input type="text" id="fn_f${i}_url" value="${escapeHTML(f.url || '')}">
                             </div>
                         </div>
                         <div style="display: flex; gap: 10px; margin-top: 5px;">
@@ -1109,6 +1272,46 @@
                     </div>
                 `;
                 container.insertAdjacentHTML('beforeend', html);
+
+                const badgeDiag = document.getElementById(`fn_f${i}_diagnostica`);
+                if (badgeDiag) {
+                    const u = (f.url || '').trim();
+                    badgeDiag.title = u;
+                    if (!u) {
+                        badgeDiag.textContent = '⚪ Non configurata';
+                        badgeDiag.style.color = '#8b949e';
+                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                        badgeDiag.style.border = '1px solid #30363d';
+                    } else if (f.abilitata === false) {
+                        badgeDiag.textContent = '⚪ Disattivata';
+                        badgeDiag.style.color = '#8b949e';
+                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                        badgeDiag.style.border = '1px solid #30363d';
+                    } else if (!diagNews || !diagNews[u]) {
+                        badgeDiag.textContent = '⚪ In attesa del primo aggiornamento';
+                        badgeDiag.style.color = '#8b949e';
+                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                        badgeDiag.style.border = '1px solid #30363d';
+                    } else {
+                        const d = diagNews[u];
+                        if (d.stato === 'OK') {
+                            badgeDiag.textContent = `🟢 OK: ${d.articoli} notizie (ore ${d.ora})`;
+                            badgeDiag.style.color = '#3fb950';
+                            badgeDiag.style.backgroundColor = 'rgba(63, 185, 80, 0.15)';
+                            badgeDiag.style.border = '1px solid rgba(63, 185, 80, 0.4)';
+                        } else if (d.stato === 'DISABILITATA') {
+                            badgeDiag.textContent = '⚪ Disattivata';
+                            badgeDiag.style.color = '#8b949e';
+                            badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
+                            badgeDiag.style.border = '1px solid #30363d';
+                        } else {
+                            badgeDiag.textContent = `🔴 Errore: ${d.stato} (ore ${d.ora})`;
+                            badgeDiag.style.color = '#f85149';
+                            badgeDiag.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
+                            badgeDiag.style.border = '1px solid rgba(248, 81, 73, 0.4)';
+                        }
+                    }
+                }
             }
             
             aggiornaBadgesSommario();
@@ -1128,6 +1331,9 @@
             const panel = document.getElementById(id);
             if (panel) {
                 panel.classList.toggle('open');
+                if (id === 'panel-locandine' && panel.classList.contains('open')) {
+                    aggiornaElencoLocandine();
+                }
             }
         }
 
@@ -1199,16 +1405,16 @@
                 }
             }
 
-            // 5. Frontend
+            // 5. Locandine
             const carosello = document.getElementById('fe_carosello')?.checked;
-            const badgeFrontend = document.getElementById('badge-summary-frontend');
-            if (badgeFrontend) {
+            const badgeLocandine = document.getElementById('badge-summary-locandine') || document.getElementById('badge-summary-frontend');
+            if (badgeLocandine) {
                 if (carosello) {
-                    badgeFrontend.className = 'status-badge badge-on';
-                    badgeFrontend.innerText = 'Locandine: ON';
+                    badgeLocandine.className = 'status-badge badge-on';
+                    badgeLocandine.innerText = 'Locandine: ON';
                 } else {
-                    badgeFrontend.className = 'status-badge badge-off';
-                    badgeFrontend.innerText = 'Locandine: OFF';
+                    badgeLocandine.className = 'status-badge badge-off';
+                    badgeLocandine.innerText = 'Locandine: OFF';
                 }
             }
 
@@ -1300,7 +1506,8 @@
                     urlCalendario: document.getElementById('fe_url_calendario').value,
                     pausaTraCaroselli: parseInt(document.getElementById('fe_pausa_carosello').value),
                     esposizioneLocandina: parseInt(document.getElementById('fe_expo_locandina').value),
-                    intervalloAggiornamento: parseInt(document.getElementById('fe_intervallo').value)
+                    intervalloAggiornamento: parseInt(document.getElementById('fe_intervallo').value),
+                    quotaCarosello: parseFloat((parseInt(document.getElementById('fe_quota_carosello').value) / 100).toFixed(2))
                 },
                 footer_news: {
                     ...currentConfig.footer_news,
@@ -1347,7 +1554,8 @@
                         loadAdminData();
                     }
                 } else {
-                    alert("Errore durante il salvataggio");
+                    const errData = await res.json().catch(() => ({}));
+                    alert(errData.error || "Errore durante il salvataggio");
                 }
             } catch (e) {
                 console.error(e);
@@ -1355,16 +1563,31 @@
             }
         }
 
+        const saveAdminData = salvaConfigurazione;
+
         function showView(viewId) {
             document.getElementById('login-view').classList.remove('active');
             document.getElementById('admin-view').classList.remove('active');
             document.getElementById(viewId).classList.add('active');
         }
 
-        function showToast() {
+        let toastTimeout = null;
+        function showToast(messaggio) {
             const toast = document.getElementById("toast");
+            if (!toast) return;
+            if (toastTimeout) {
+                clearTimeout(toastTimeout);
+                toastTimeout = null;
+            }
+            toast.textContent = messaggio || "Salvato con successo!";
+            toast.classList.remove("show");
+            void toast.offsetWidth;
             toast.classList.add("show");
-            setTimeout(() => { toast.classList.remove("show"); }, 3000);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove("show");
+                toast.textContent = "Salvato con successo!";
+                toastTimeout = null;
+            }, 3000);
         }
 
         function startRestartCountdown() {
@@ -1380,6 +1603,301 @@
                     window.location.reload();
                 }
             }, 1000);
+        }
+
+        let locandineOperazioneInCorso = false;
+
+        const LATO_MAX_LOCANDINA = 2160;
+
+        function calcolaDimensioniLocandina(larghezza, altezza, latoMax) {
+            const scala = Math.min(1, latoMax / Math.max(larghezza, altezza));
+            return { larghezza: Math.round(larghezza * scala), altezza: Math.round(altezza * scala), ridimensiona: scala < 1 };
+        }
+
+        async function preparaLocandina(file) {
+            const bitmap = await createImageBitmap(file);
+            const dim = calcolaDimensioniLocandina(bitmap.width, bitmap.height, LATO_MAX_LOCANDINA);
+            if (!dim.ridimensiona && file.size <= 2 * 1024 * 1024) { bitmap.close(); return file; }
+            const canvas = document.createElement('canvas');
+            canvas.width = dim.larghezza; canvas.height = dim.altezza;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0, dim.larghezza, dim.altezza);
+            bitmap.close();
+            let blob = await new Promise(r => canvas.toBlob(r, 'image/webp', 0.85));
+            if (!blob || blob.type !== 'image/webp') {            // browser senza encoder WebP: JPEG su fondo bianco
+                ctx.globalCompositeOperation = 'destination-over';
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, dim.larghezza, dim.altezza);
+                blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
+            }
+            return blob;
+        }
+
+        async function caricaLocandine() {
+            if (locandineOperazioneInCorso) return;
+            const input = document.getElementById('locandine_file');
+            if (!input || !input.files || input.files.length === 0) {
+                alert('Seleziona almeno un file immagine da caricare.');
+                return;
+            }
+
+            const MAX_SIZE = 10 * 1024 * 1024;
+            const files = Array.from(input.files);
+
+            locandineOperazioneInCorso = true;
+            try {
+                const token = sessionStorage.getItem('adminToken');
+                let qualcheRidimensionata = false;
+                for (const file of files) {
+                    let blob;
+                    try {
+                        blob = await preparaLocandina(file);
+                    } catch (err) {
+                        console.error(`Errore elaborazione immagine "${file.name}":`, err);
+                        await aggiornaElencoLocandine();
+                        alert(`Impossibile elaborare l'immagine "${file.name}". Assicurati che sia un'immagine valida (JPEG, PNG o WebP).`);
+                        return;
+                    }
+                    if (blob !== file) {
+                        qualcheRidimensionata = true;
+                    }
+                    if (blob.size > MAX_SIZE) {
+                        await aggiornaElencoLocandine();
+                        alert(`Il file "${file.name}" supera il limite massimo consentito di 10 MB.`);
+                        return;
+                    }
+                    try {
+                        const res = await fetch('/api/admin/locandine/upload', {
+                            method: 'POST',
+                            headers: {
+                                'X-Admin-Token': token,
+                                'Content-Type': blob.type || 'application/octet-stream'
+                            },
+                            body: blob
+                        });
+                        if (!res.ok) {
+                            let errText = `Errore HTTP ${res.status}`;
+                            try {
+                                const errJson = await res.json();
+                                if (errJson && errJson.error) errText = errJson.error;
+                            } catch (_) {}
+                            await aggiornaElencoLocandine();
+                            alert(`Errore durante il caricamento di "${file.name}": ${errText}`);
+                            return;
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        await aggiornaElencoLocandine();
+                        alert(`Errore di rete durante il caricamento di "${file.name}".`);
+                        return;
+                    }
+                }
+
+                input.value = '';
+                await aggiornaElencoLocandine();
+                showToast(qualcheRidimensionata ? "Locandina ridimensionata e caricata con successo!" : "Locandina caricata con successo!");
+            } finally {
+                locandineOperazioneInCorso = false;
+            }
+        }
+
+        let elencoLocandineCache = [];
+
+        async function spostaLocandina(index, offset) {
+            if (locandineOperazioneInCorso) return;
+            const nuovoIndex = index + offset;
+            if (nuovoIndex < 0 || nuovoIndex >= elencoLocandineCache.length) return;
+            locandineOperazioneInCorso = true;
+            const nomi = elencoLocandineCache.map(item => item.nome);
+            const temp = nomi[index];
+            nomi[index] = nomi[nuovoIndex];
+            nomi[nuovoIndex] = temp;
+
+            try {
+                const res = await fetch('/api/admin/locandine/ordine', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ ordine: nomi })
+                });
+                if (res.ok) {
+                    await aggiornaElencoLocandine();
+                    showToast();
+                } else {
+                    let errText = `Errore HTTP ${res.status}`;
+                    try {
+                        const errJson = await res.json();
+                        if (errJson && errJson.error) errText = errJson.error;
+                    } catch (_) {}
+                    alert(`Errore durante il riordino: ${errText}`);
+                }
+            } catch (e) {
+                console.error('Errore riordino locandine:', e);
+                alert('Errore di rete durante il riordino delle locandine.');
+            } finally {
+                locandineOperazioneInCorso = false;
+            }
+        }
+
+        async function eliminaLocandina(nome) {
+            if (locandineOperazioneInCorso) return;
+            if (!confirm(`Sei sicuro di voler eliminare la locandina "${nome}"?`)) {
+                return;
+            }
+            locandineOperazioneInCorso = true;
+            try {
+                const res = await fetch('/api/admin/locandine/elimina', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ filename: nome })
+                });
+                if (res.ok) {
+                    await aggiornaElencoLocandine();
+                    showToast();
+                } else {
+                    let errText = `Errore HTTP ${res.status}`;
+                    try {
+                        const errJson = await res.json();
+                        if (errJson && errJson.error) errText = errJson.error;
+                    } catch (_) {}
+                    alert(`Errore durante l'eliminazione: ${errText}`);
+                }
+            } catch (e) {
+                console.error('Errore eliminazione locandina:', e);
+                alert('Errore di rete durante l\'eliminazione della locandina.');
+            } finally {
+                locandineOperazioneInCorso = false;
+            }
+        }
+
+        async function aggiornaElencoLocandine() {
+            try {
+                const res = await fetch('/api/admin/locandine', { headers: getAuthHeaders() });
+                if (res.status === 401 || res.status === 403) return;
+                if (!res.ok) return;
+                const lista = await res.json();
+                elencoLocandineCache = Array.isArray(lista) ? lista : [];
+                const ul = document.getElementById('locandine_lista');
+                if (!ul) return;
+                ul.textContent = '';
+                if (elencoLocandineCache.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = 'Nessuna locandina presente.';
+                    li.style.color = 'var(--text-secondary)';
+                    li.style.padding = '10px 14px';
+                    li.style.fontStyle = 'italic';
+                    ul.appendChild(li);
+                    return;
+                }
+                elencoLocandineCache.forEach((v, index) => {
+                    const li = document.createElement('li');
+                    li.style.display = 'flex';
+                    li.style.justifyContent = 'space-between';
+                    li.style.alignItems = 'center';
+                    li.style.padding = '8px 14px';
+                    li.style.borderBottom = index === elencoLocandineCache.length - 1 ? 'none' : '1px solid var(--border-color)';
+                    li.style.gap = '12px';
+
+                    const colSinistra = document.createElement('div');
+                    colSinistra.style.display = 'flex';
+                    colSinistra.style.alignItems = 'center';
+                    colSinistra.style.gap = '12px';
+                    colSinistra.style.overflow = 'hidden';
+
+                    const colThumb = document.createElement('div');
+                    colThumb.style.flexShrink = '0';
+                    colThumb.innerHTML = `<img class="miniatura-locandina" loading="lazy" alt="" src="/locandine/${escapeHTML(encodeURIComponent(v.nome))}">`;
+                    const imgEl = colThumb.querySelector('img');
+                    if (imgEl) imgEl.onclick = () => apriLightbox(v);
+
+                    const colInfo = document.createElement('div');
+                    colInfo.style.display = 'flex';
+                    colInfo.style.flexDirection = 'column';
+                    colInfo.style.gap = '3px';
+                    colInfo.style.overflow = 'hidden';
+
+                    const nomeSpan = document.createElement('span');
+                    nomeSpan.textContent = v.nome;
+                    nomeSpan.style.fontFamily = 'monospace';
+                    nomeSpan.style.fontSize = '0.9rem';
+                    nomeSpan.style.color = 'var(--text-primary)';
+                    nomeSpan.style.fontWeight = '600';
+                    nomeSpan.style.wordBreak = 'break-all';
+
+                    const metaSpan = document.createElement('span');
+                    metaSpan.textContent = `${v.kb} KB • Caricata: ${v.caricata}`;
+                    metaSpan.style.fontSize = '0.78rem';
+                    metaSpan.style.color = 'var(--text-secondary)';
+
+                    colInfo.appendChild(nomeSpan);
+                    colInfo.appendChild(metaSpan);
+
+                    colSinistra.appendChild(colThumb);
+                    colSinistra.appendChild(colInfo);
+
+                    const colAzioni = document.createElement('div');
+                    colAzioni.style.display = 'flex';
+                    colAzioni.style.gap = '6px';
+                    colAzioni.style.flexShrink = '0';
+
+                    const btnSu = document.createElement('button');
+                    btnSu.type = 'button';
+                    btnSu.textContent = '▲';
+                    btnSu.title = 'Sposta in alto';
+                    btnSu.setAttribute('aria-label', `Sposta in alto ${v.nome}`);
+                    btnSu.className = 'btn';
+                    btnSu.style.padding = '4px 8px';
+                    btnSu.style.fontSize = '0.8rem';
+                    btnSu.style.backgroundColor = '#21262d';
+                    btnSu.style.border = '1px solid var(--border-color)';
+                    if (index === 0) {
+                        btnSu.disabled = true;
+                        btnSu.style.opacity = '0.35';
+                        btnSu.style.cursor = 'not-allowed';
+                    } else {
+                        btnSu.onclick = () => spostaLocandina(index, -1);
+                    }
+
+                    const btnGiu = document.createElement('button');
+                    btnGiu.type = 'button';
+                    btnGiu.textContent = '▼';
+                    btnGiu.title = 'Sposta in basso';
+                    btnGiu.setAttribute('aria-label', `Sposta in basso ${v.nome}`);
+                    btnGiu.className = 'btn';
+                    btnGiu.style.padding = '4px 8px';
+                    btnGiu.style.fontSize = '0.8rem';
+                    btnGiu.style.backgroundColor = '#21262d';
+                    btnGiu.style.border = '1px solid var(--border-color)';
+                    if (index === elencoLocandineCache.length - 1) {
+                        btnGiu.disabled = true;
+                        btnGiu.style.opacity = '0.35';
+                        btnGiu.style.cursor = 'not-allowed';
+                    } else {
+                        btnGiu.onclick = () => spostaLocandina(index, 1);
+                    }
+
+                    const btnElimina = document.createElement('button');
+                    btnElimina.type = 'button';
+                    btnElimina.textContent = '🗑';
+                    btnElimina.title = 'Elimina locandina';
+                    btnElimina.setAttribute('aria-label', `Elimina locandina ${v.nome}`);
+                    btnElimina.className = 'btn';
+                    btnElimina.style.padding = '4px 8px';
+                    btnElimina.style.fontSize = '0.8rem';
+                    btnElimina.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
+                    btnElimina.style.borderColor = 'rgba(248, 81, 73, 0.4)';
+                    btnElimina.style.color = 'var(--danger-color)';
+                    btnElimina.onclick = () => eliminaLocandina(v.nome);
+
+                    colAzioni.appendChild(btnSu);
+                    colAzioni.appendChild(btnGiu);
+                    colAzioni.appendChild(btnElimina);
+
+                    li.appendChild(colSinistra);
+                    li.appendChild(colAzioni);
+                    ul.appendChild(li);
+                });
+            } catch (e) {
+                console.error('Errore durante la lettura di locandine:', e);
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
