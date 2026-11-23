@@ -11,6 +11,7 @@ from core.cineca_client import (
     get_tz_roma,
     sanitize_id_str,
 )
+from core.news_engine import TIMEOUT_FONTE_SEC, NewsEngine
 
 __all__ = [
     'AVVISI_DI_STATO',
@@ -18,7 +19,9 @@ __all__ = [
     'BACKOFF_MAX_SEC',
     'LIMITE_EVENTI_CINECA',
     'SOGLIA_ASSENZE_ANNULLAMENTO',
+    'TIMEOUT_FONTE_SEC',
     'CinecaClient',
+    'NewsEngine',
     'get_giorno_operativo',
     'get_tz_roma',
     'sanitize_id_str',

@@ -49,6 +49,7 @@ from core.cineca_client import (
     get_tz_roma,
     sanitize_id_str,
 )
+from core.news_engine import TIMEOUT_FONTE_SEC, NewsEngine
 
 FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
@@ -318,6 +319,7 @@ def _crea_cineca_client():
 
 
 cineca_client = _crea_cineca_client()
+news_engine = NewsEngine(CONFIG.get('footer_news', {}).get('fonti', []))
 server_https_attivo = False
 
 import logging.handlers
@@ -651,179 +653,26 @@ def ciclo_aggiornamento_api():
         intervallo = intervallo_aggiornamento_sec()
         time.sleep(intervallo)
 
-DIAGNOSTICA_NEWS = {}   # url -> {"stato", "articoli", "ora"}; sostituito per intero a ogni giro
+DIAGNOSTICA_NEWS = {}   # url -> {"stato", "semaforo", "articoli", "ora", "ultimo_errore"}; sostituito per intero a ogni giro
+TIMEOUT_FONTE_NEWS_SEC = TIMEOUT_FONTE_SEC
 
-def classifica_errore_fonte(exc):
-    risposta = getattr(exc, 'response', None)
-    if risposta is not None and getattr(risposta, 'status_code', None):
-        return f"HTTP {risposta.status_code}"
-    if 'Timeout' in type(exc).__name__:
-        return "Timeout"
-    if isinstance(exc, ET.ParseError):
-        return "Errore formato XML"
-    if isinstance(exc, ValueError):
-        return "Errore formato JSON"
-    return "Errore di rete"
+classifica_errore_fonte = NewsEngine.classifica_errore_fonte
+clean_html = NewsEngine.clean_html
+parse_data_notizia = NewsEngine.parse_data_notizia
+normalizza_peso = NewsEngine.normalizza_peso
 
-TIMEOUT_FONTE_NEWS_SEC = 5
-
-def clean_html(raw_html):
-    if not raw_html: return ""
-    cleanr = re.compile(r'<.*?>', re.DOTALL)
-    cleantext = re.sub(cleanr, '', str(raw_html))
-    return cleantext.strip()
-
-def parse_data_notizia(raw):
-    if not raw: return ''
-    raw = raw.strip()
-    try:
-        import email.utils
-        dt = email.utils.parsedate_to_datetime(raw)
-        if dt: return dt.strftime('%d/%m/%Y')
-    except Exception:
-        pass
-    m1 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
-    if m1:
-        d, m, y = m1.groups()
-        return f"{int(d):02d}/{int(m):02d}/{y}"
-    mesi = {
-        'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
-        'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
-        'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4, 'maggio': 5, 'giugno': 6,
-        'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
-    }
-    m2 = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', raw)
-    if m2:
-        d, mese_str, y = m2.groups()
-        mese_num = mesi.get(mese_str.lower()[:3]) or mesi.get(mese_str.lower())
-        if mese_num:
-            return f"{int(d):02d}/{mese_num:02d}/{y}"
-    m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', raw)
-    if m3:
-        y, m, d = m3.groups()
-        return f"{int(d):02d}/{int(m):02d}/{y}"
-    return raw
-
-def normalizza_peso(valore):
-    try:
-        return min(5, max(1, int(valore)))
-    except (TypeError, ValueError):
-        return 1
 
 def scarica_fonte(fonte):
-    url = fonte.get('url', '').strip()
-    tipo = fonte.get('tipo', '').lower()
-    nome = fonte.get('nome', 'Fonte')
-    visibile = fonte.get('visibile_di_default', True)
+    return news_engine.scarica_fonte(fonte)
 
-    if not url:
-        return []
-
-    notizie_di_questa_fonte = []
-    res = requests.get(url, timeout=TIMEOUT_FONTE_NEWS_SEC)
-    res.raise_for_status()
-
-    if tipo == 'rest':
-        dati = res.json()
-        for item in dati:
-            title = item.get('title', {}).get('rendered', '')
-            link = item.get('link', '')
-            data = parse_data_notizia(item.get('date', ''))
-            titolo_pulito = clean_html(title)
-            if titolo_pulito:
-                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link, "data": data, "visibile": visibile})
-    elif tipo == 'rss':
-        root = ET.fromstring(res.content)
-        items = root.findall('./channel/item')
-        if not items:
-            # Supporto fallback per formati Atom (Drupal Views / feed alternativi)
-            items = root.findall('.//{http://www.w3.org/2005/Atom}entry') or root.findall('.//entry')
-
-        for item in items:
-            title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
-            link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
-            date_elem = None
-            for tag_candidate in ['{http://www.w3.org/2005/Atom}updated', '{http://www.w3.org/2005/Atom}published', 'pubDate', '{http://purl.org/dc/elements/1.1/}date', 'date']:
-                found_el = item.find(tag_candidate)
-                if found_el is not None:
-                    date_elem = found_el
-                    break
-
-            link = ''
-            if link_elem is not None:
-                link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
-            raw_data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
-            data = parse_data_notizia(raw_data)
-
-            titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
-            # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
-            if not link and title is not None:
-                a_elem = title.find('.//a')
-                if a_elem is not None and a_elem.get('href'):
-                    link = a_elem.get('href')
-                elif 'href=' in str(titolo_raw):
-                    m_href = re.search(r'href="([^"]+)"', str(titolo_raw)) or re.search(r"href='([^']+)'", str(titolo_raw))
-                    if m_href:
-                        link = m_href.group(1).strip()
-
-            titolo_pulito = clean_html(titolo_raw)
-            if titolo_pulito:
-                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link.strip(), "data": data, "visibile": visibile})
-    return notizie_di_questa_fonte
 
 def aggiorna_news_una_volta():
     global memoria_news, DIAGNOSTICA_NEWS
     footer_config = CONFIG.get('footer_news', {})
     fonti = footer_config.get('fonti', [])
-    notizie_per_fonte = []
-    diagnostica = {}
-    tz_roma = get_tz_roma()
-
-    for fonte in fonti:
-        url = fonte.get('url', '').strip()
-        nome = fonte.get('nome', 'Fonte')
-        abilitata = fonte.get('abilitata', True)
-        peso = normalizza_peso(fonte.get('peso', 1))
-
-        if not url:
-            continue
-
-        if not abilitata:
-            diagnostica[url] = {"stato": "DISABILITATA", "articoli": 0, "ora": ""}
-            continue
-
-        try:
-            notizie_di_questa_fonte = scarica_fonte(fonte)
-            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
-            diagnostica[url] = {"stato": "OK", "articoli": len(notizie_di_questa_fonte), "ora": ora_roma}
-            if notizie_di_questa_fonte:
-                notizie_per_fonte.append({'notizie': notizie_di_questa_fonte, 'peso': peso})
-        except Exception as e:
-            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
-            diagnostica[url] = {"stato": classifica_errore_fonte(e), "articoli": 0, "ora": ora_roma}
-            logging.warning(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
-
-    DIAGNOSTICA_NEWS = diagnostica
-
-    notizie_estratte = []
-    if notizie_per_fonte:
-        ancora_notizie = True
-        indici = [0] * len(notizie_per_fonte)
-
-        while ancora_notizie:
-            ancora_notizie = False
-            for i, f in enumerate(notizie_per_fonte):
-                peso = f['peso']
-                notizie = f['notizie']
-                idx = indici[i]
-
-                for _ in range(peso):
-                    if idx < len(notizie):
-                        notizie_estratte.append(notizie[idx])
-                        idx += 1
-                        indici[i] = idx
-                        ancora_notizie = True
-
+    news_engine.set_fonti(fonti)
+    notizie_estratte = news_engine.aggiorna()
+    DIAGNOSTICA_NEWS = news_engine.get_diagnostica()
     memoria_news = notizie_estratte
 
 def NewsPollingDaemon():
