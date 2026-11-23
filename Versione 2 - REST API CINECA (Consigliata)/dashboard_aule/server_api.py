@@ -37,6 +37,19 @@ class KioskHTTPServer(ThreadingHTTPServer):
 
 
 PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
+if PERCORSO_BASE not in sys.path:
+    sys.path.insert(0, PERCORSO_BASE)
+
+from core.cineca_client import (
+    AVVISI_DI_STATO,
+    LIMITE_EVENTI_CINECA,
+    SOGLIA_ASSENZE_ANNULLAMENTO,
+    CinecaClient,
+    get_giorno_operativo,
+    get_tz_roma,
+    sanitize_id_str,
+)
+
 FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
 CONFIG = {}
@@ -56,10 +69,6 @@ ultimo_stato_json_salvato = None
 ultimo_aggiornamento_preservato = False
 memoria_news = []
 news_poll_event = threading.Event()
-
-LIMITE_EVENTI_CINECA = 500          # tetto 'limit' richiesto a getImpegniCalendario
-SOGLIA_ASSENZE_ANNULLAMENTO = 2     # polling consecutivi senza l'evento prima di marcarlo ANNULLATO
-AVVISI_DI_STATO = ("ANNULLATO", "SOSPESO")
 
 LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
 LIMITE_POST_JSON = 1 * 1024 * 1024
@@ -170,37 +179,6 @@ def salva_locandina_da_stream(rfile, lunghezza):
                 os.remove(tmp)
             except OSError:
                 pass
-
-def get_tz_roma():
-    """Restituisce il fuso orario di Roma (Europe/Rome).
-    Supporta nativamente zoneinfo su Linux/Raspberry Pi con fallback robusto per Windows/UTC."""
-    try:
-        import zoneinfo
-        return zoneinfo.ZoneInfo("Europe/Rome")
-    except Exception:
-        pass
-    local_tz = datetime.datetime.now().astimezone().tzinfo
-    if local_tz and datetime.datetime.now().astimezone().utcoffset() != datetime.timedelta(0):
-        return local_tz
-    # Fallback calcolato CET (UTC+1) / CEST (UTC+2) per sistemi configurati in UTC puro
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    anno = now_utc.year
-    mar_last_sun = max(d for d in range(25, 32) if datetime.date(anno, 3, d).weekday() == 6)
-    oct_last_sun = max(d for d in range(25, 32) if datetime.date(anno, 10, d).weekday() == 6)
-    dst_start = datetime.datetime(anno, 3, mar_last_sun, 2, 0, tzinfo=datetime.timezone.utc)
-    dst_end = datetime.datetime(anno, 10, oct_last_sun, 3, 0, tzinfo=datetime.timezone.utc)
-    offset_ore = 2 if dst_start <= now_utc < dst_end else 1
-    return datetime.timezone(datetime.timedelta(hours=offset_ore))
-
-def get_giorno_operativo(dt_roma=None):
-    """Calcola la data del giorno operativo corrente per l'Ateneo.
-    La giornata didattica va dalle 04:00 del mattino alle 03:59 del giorno successivo."""
-    tz_roma = get_tz_roma()
-    now_roma = dt_roma or datetime.datetime.now(tz_roma)
-    if now_roma.hour >= 4:
-        return now_roma.date()
-    else:
-        return now_roma.date() - datetime.timedelta(days=1)
 
 def salva_stato(forza=False):
     """Salva lo stato degli impegni in modo condizionale e atomico.
@@ -326,6 +304,20 @@ def load_config():
             PERCORSO_BASE = pb
 
 load_config()
+
+
+def _crea_cineca_client():
+    api_cfg = CONFIG.get('api_cineca', {}) if isinstance(CONFIG, dict) else {}
+    return CinecaClient(
+        url_base=api_cfg.get('url_base') or 'https://cineca.prod.up.cineca.it/api',
+        realm=sanitize_id_str(api_cfg.get('realm')),
+        username=api_cfg.get('username', ''),
+        password=api_cfg.get('password', ''),
+        timeout=15,
+    )
+
+
+cineca_client = _crea_cineca_client()
 server_https_attivo = False
 
 import logging.handlers
@@ -374,13 +366,6 @@ def carica_stato():
         storico_impegni = {k: v for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) > mezzanotte_ts}
 
 carica_stato()
-
-def sanitize_id_str(val):
-    """Sanitizza gli identificativi CINECA rimuovendo spazi e apici accidentali ed evitando 'None'."""
-    if val is None:
-        return ''
-    import re
-    return re.sub(r"^[\s\'\"]+|[\s\'\"]+$", '', str(val))
 
 def salva_config_yaml(file_path=None, config_data=None):
     """Salva il dizionario di configurazione preservando commenti e struttura YAML."""
@@ -522,190 +507,38 @@ def salva_config_yaml(file_path=None, config_data=None):
 
 def effettua_login():
     global token_cineca
-    logging.info("Richiesta di un nuovo Token a CINECA (Admin) in corso...")
-    
     api_cineca = CONFIG.get('api_cineca', {})
-    url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
-    url_login = f"{url_base}/Utenti/login"
-    
-    realm = sanitize_id_str(api_cineca.get('realm'))
-    payload = {
-        "username": api_cineca.get('username', ''), 
-        "password": api_cineca.get('password', ''), 
-        "realm": realm,
-        "clientId": realm
-    }
-    try:
-        risposta = requests.post(url_login, json=payload, timeout=10)   
-        if risposta.status_code == 200:
-            dati = risposta.json()
-            token_cineca = dati.get("id")
-            logging.info("✅ Login effettuato con successo. Nuovo token acquisito.")
-            return True
-        else:
-            logging.error(f"❌ Errore di Login. Codice: {risposta.status_code}. Risposta: {risposta.text}")
-            return False
-    except Exception as e:
-        logging.error(f"❌ Errore di rete durante il login: {e}")
-        return False
+    cineca_client.url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
+    cineca_client.realm = sanitize_id_str(api_cineca.get('realm'))
+    cineca_client.username = str(api_cineca.get('username', ''))
+    cineca_client.password = str(api_cineca.get('password', ''))
+    token_cineca = cineca_client.login()
+    return bool(token_cineca)
+
 
 def estrai_e_formatta_dati(impegni_grezzi):
-    global storico_impegni, data_storico
+    global storico_impegni, data_storico, ultimo_aggiornamento_preservato
     tz_roma = get_tz_roma()
     ora_attuale = datetime.datetime.now(tz_roma)
     oggi_str = str(get_giorno_operativo(ora_attuale))
-    
     if oggi_str != data_storico:
         data_storico = oggi_str
-        
-    nuovi_estratti = {}
-    id_esclusi = set()      # presenti in CINECA ma esclusi dalla configurazione corrente (edificio, stato B, C nascosti)
-    id_illeggibili = set()  # presenti in CINECA ma non interpretabili: non vanno mai trattati come annullati
-    for item in impegni_grezzi:
-        id_imp = (item.get('id') or item.get('_id')) if isinstance(item, dict) else None
-        if not id_imp: continue
-        try:
-            aule = item.get('aule', [])
-            edifici_impegno = [sanitize_id_str(a.get('edificio', {}).get('codice')) for a in aule if isinstance(a, dict) and a.get('edificio')]
-            
-            id_edificio = sanitize_id_str(CONFIG.get('api_cineca', {}).get('id_edificio'))
-            if id_edificio != "":
-                edifici_norm = set(edifici_impegno) | {c.lstrip('0') or '0' for c in edifici_impegno}
-                id_norm = id_edificio.lstrip('0') or '0'
-                if id_edificio not in edifici_norm and id_norm not in edifici_norm:
-                    id_esclusi.add(id_imp)
-                    continue
-
-            stato = item.get('stato', 'P')
-            if isinstance(stato, dict):
-                stato = stato.get('codice') or stato.get('id') or 'P'
-            stato = str(stato).upper().strip()
-
-            if stato == 'B':
-                id_esclusi.add(id_imp)
-                continue
-                
-            mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
-            if stato == 'C' and not mostra_confermati:
-                id_esclusi.add(id_imp)
-                continue
-
-            is_cancellato = (stato == 'A')
-            avviso_stato = ""
-            if stato == 'A': avviso_stato = "ANNULLATO"
-            elif stato == 'S': avviso_stato = "SOSPESO"
-
-            str_inizio = item.get('dataInizio', '').replace('Z', '+00:00')
-            str_fine = item.get('dataFine', '').replace('Z', '+00:00')
-            dt_inizio = datetime.datetime.fromisoformat(str_inizio)
-            dt_fine = datetime.datetime.fromisoformat(str_fine)
-            
-            evento = item.get('evento', {})
-            
-            is_indisponibilita = (
-                item.get('indisponibilita', False) or 
-                item.get('indisponibilitaTotale', False) or 
-                item.get('indisponibilitaTotaleAule', False) or 
-                item.get('tipoImpegno') == 'INDISPONIBILITA'
-            )
-            
-            testo_estratto = (item.get('nome') or item.get('causaleIndisponibilita') or item.get('note') or evento.get('nome') or item.get('motivo') or item.get('descrizione') or evento.get('dettaglioDidattico', {}).get('nome') or "Attività programmata")
-            
-            if is_indisponibilita:
-                titolo_raw = f"INDISPONIBILITÀ: {testo_estratto}"
-            else:
-                titolo_raw = testo_estratto
-
-            nuovi_estratti[id_imp] = {
-                "id": id_imp,
-                "orario": f"{dt_inizio.astimezone(tz_roma).strftime('%H:%M')} - {dt_fine.astimezone(tz_roma).strftime('%H:%M')}",
-                "titolo": titolo_raw.strip(),
-                "docente": f"{item.get('docenti', [{}])[0].get('cognome', '')} {item.get('docenti', [{}])[0].get('nome', '')}".strip() if item.get('docenti') else "Dipartimento",
-                "aula": (aule[0].get('descrizione') or 'Da definire').strip() if aule else "Da definire",
-                "inCorso": (dt_inizio <= ora_attuale <= dt_fine),
-                "timestamp_inizio": dt_inizio.timestamp(),
-                "timestamp_fine": dt_fine.timestamp(),
-                "cancellato": is_cancellato,
-                "avviso": avviso_stato,
-                "stato_cineca": stato,
-                "assenze": 0
-            }
-        except Exception as e:
-            id_illeggibili.add(id_imp)
-            logging.warning(f"⚠️ Impegno CINECA {id_imp} non interpretabile ({e}): stato precedente preservato.")
-
-    # Un evento escluso dai filtri NON è annullato: esce semplicemente dallo storico
-    for id_escluso in id_esclusi:
-        storico_impegni.pop(id_escluso, None)
-
-    for id_nuovo, imp_nuovo in nuovi_estratti.items():
-        if id_nuovo not in storico_impegni:
-            storico_impegni[id_nuovo] = imp_nuovo
-        else:
-            imp_storico = storico_impegni[id_nuovo]
-
-            # Auto-healing: l'evento è di nuovo regolare in CINECA, si rimuove l'avviso di stato ereditato
-            if not imp_nuovo['avviso'] and imp_storico.get('avviso') in AVVISI_DI_STATO:
-                imp_storico['avviso'] = ""
-                imp_storico['cancellato'] = False
-
-            cambiata_aula = imp_storico['aula'] != imp_nuovo['aula']
-            cambiato_orario = imp_storico['orario'] != imp_nuovo['orario']
-            
-            if (cambiata_aula or cambiato_orario) and not imp_storico.get('avviso', '').startswith("Spostato"):
-                vecchia_aula = imp_storico['aula']
-                vecchio_orario = imp_storico['orario']
-                imp_storico['avviso'] = f"Spostato (da {vecchia_aula} ore {vecchio_orario})"
-            
-            if imp_nuovo['avviso']:
-                imp_storico['avviso'] = imp_nuovo['avviso']
-                imp_storico['cancellato'] = imp_nuovo['cancellato']
-            else:
-                imp_nuovo['avviso'] = imp_storico.get('avviso', "")
-            
-            imp_storico.update(imp_nuovo)
-
-    # Protezione anti-falso annullamento:
-    # Se la risposta da CINECA e vuota ma avevamo gia impegni validi nello storico,
-    # non marchiamo gli eventi come annullati per evitare falsi allarmi sul totem.
-    global ultimo_aggiornamento_preservato
-    if len(impegni_grezzi) == 0 and len(storico_impegni) > 0:
-        logging.warning("⚠️ Rilevato payload CINECA vuoto a fronte di impegni validi in memoria. Preservo lo stato per evitare falsi annullamenti.")
-        ultimo_aggiornamento_preservato = True
-    else:
-        ultimo_aggiornamento_preservato = False
-        # Un evento sparito diventa ANNULLATO solo dopo SOGLIA_ASSENZE_ANNULLAMENTO polling consecutivi
-        for id_storico, imp_storico in storico_impegni.items():
-            if id_storico in nuovi_estratti or id_storico in id_illeggibili:
-                continue
-            if imp_storico['timestamp_fine'] > ora_attuale.timestamp() and not imp_storico.get('cancellato'):
-                imp_storico['assenze'] = imp_storico.get('assenze', 0) + 1
-                if imp_storico['assenze'] >= SOGLIA_ASSENZE_ANNULLAMENTO:
-                    imp_storico["cancellato"] = True
-                    imp_storico["avviso"] = "ANNULLATO"
-                    logging.info(f"🚫 Impegno {id_storico} assente da CINECA per {imp_storico['assenze']} polling consecutivi: marcato ANNULLATO.")
-
-    dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(ora_attuale), datetime.time(0, 0, 0), tzinfo=tz_roma)
-    mezzanotte_oggi = dt_inizio_giorno.timestamp()
-    chiavi_scadute = [k for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) <= mezzanotte_oggi]
-    for k in chiavi_scadute:
-        del storico_impegni[k]
-
-    for imp in storico_impegni.values():
-         imp['inCorso'] = (imp['timestamp_inizio'] <= ora_attuale.timestamp() <= imp['timestamp_fine'])
-
+    id_edificio = sanitize_id_str(CONFIG.get('api_cineca', {}).get('id_edificio'))
+    mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
+    dati_puliti, ultimo_aggiornamento_preservato = CinecaClient.processa_impegni(
+        impegni_grezzi,
+        storico_impegni,
+        id_edificio=id_edificio,
+        mostra_confermati=mostra_confermati,
+        ora_attuale=ora_attuale,
+    )
     salva_stato()
-
-    dati_puliti = [imp for imp in storico_impegni.values() if imp['timestamp_fine'] > ora_attuale.timestamp() or imp['inCorso']]
-    dati_puliti.sort(key=lambda x: x['timestamp_inizio'])
     return dati_puliti
+
 
 def verifica_sentinella_limite(dati_grezzi):
     """Segnala nel log una risposta CINECA arrivata al tetto 'limit' (possibile troncatura)."""
-    if isinstance(dati_grezzi, list) and len(dati_grezzi) >= LIMITE_EVENTI_CINECA:
-        logging.warning(f"⚠️ SENTINELLA LIMITE CINECA: ricevuti {len(dati_grezzi)} impegni (limite {LIMITE_EVENTI_CINECA}). Possibile troncatura: valorizzare anno_accademico_id e contesto_id.")
-        return True
-    return False
+    return CinecaClient.verifica_sentinella_limite(dati_grezzi)
 
 def intervallo_aggiornamento_sec():
     try:
@@ -739,7 +572,7 @@ def ciclo_aggiornamento_api():
             
             if not token_cineca:
                 if not effettua_login():
-                    time.sleep(120)
+                    time.sleep(60)
                     continue
             
             headers = { 
@@ -788,9 +621,11 @@ def ciclo_aggiornamento_api():
             if risposta.status_code == 401:
                 logging.error("❌ Token scaduto o non valido (401). Forzo il rinnovo.")
                 token_cineca = None
+                cineca_client.invalida_token()
                 time.sleep(2)
                 continue
             elif risposta.status_code == 200:
+                cineca_client.reset_backoff()
                 dati_grezzi = risposta.json()
                 if is_debug:
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")

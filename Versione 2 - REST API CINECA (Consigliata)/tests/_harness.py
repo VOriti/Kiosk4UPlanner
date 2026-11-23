@@ -2,6 +2,7 @@
 
 All'import server_api.py legge o crea config.yaml, stato_impegni.json, ultimo_reset.txt e kiosk.log
 nella propria cartella: lavorando su una copia i test non toccano mai i file reali del kiosk.
+Salva e ripristina sys.path e sys.modules['core*'] per non invalidare i riferimenti di @mock.patch.
 """
 import datetime
 import hashlib
@@ -12,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import threading
 import urllib.error
@@ -19,27 +21,65 @@ import urllib.parse
 import urllib.request
 
 DIR_APP = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'dashboard_aule'))
-FILE_STATICI = ('remoto.html', 'admin.html', 'logo.png')
+FILE_STATICI = (
+    'remoto.html',
+    'admin.html',
+    os.path.join('static', 'remoto.js'),
+    os.path.join('static', 'admin.js'),
+    os.path.join('static', 'remoto.css'),
+    os.path.join('static', 'admin.css'),
+    'logo.png',
+    'config.example.yaml',
+)
 _contatore = itertools.count()
 
 
 def carica_server(con_locandine=False):
     tmp = tempfile.mkdtemp(prefix='kiosk_test_')
     shutil.copy(os.path.join(DIR_APP, 'server_api.py'), tmp)
+    dir_core_src = os.path.join(DIR_APP, 'core')
+    if os.path.isdir(dir_core_src):
+        shutil.copytree(
+            dir_core_src,
+            os.path.join(tmp, 'core'),
+            ignore=shutil.ignore_patterns('__pycache__', '*.pyc'),
+        )
+    dir_static_src = os.path.join(DIR_APP, 'static')
+    if os.path.isdir(dir_static_src):
+        shutil.copytree(
+            dir_static_src,
+            os.path.join(tmp, 'static'),
+            dirs_exist_ok=True,
+        )
     for nome in FILE_STATICI:
         sorgente = os.path.join(DIR_APP, nome)
         if os.path.exists(sorgente):
-            shutil.copy(sorgente, tmp)
+            destinazione = os.path.join(tmp, nome)
+            os.makedirs(os.path.dirname(destinazione), exist_ok=True)
+            shutil.copy(sorgente, destinazione)
     os.makedirs(os.path.join(tmp, 'locandine'), exist_ok=True)
     if con_locandine:
         cartella = os.path.join(DIR_APP, 'locandine')
-        for nome in os.listdir(cartella):
-            shutil.copy(os.path.join(cartella, nome), os.path.join(tmp, 'locandine'))
+        if os.path.isdir(cartella):
+            for nome in os.listdir(cartella):
+                sorgente_loc = os.path.join(cartella, nome)
+                if os.path.isfile(sorgente_loc):
+                    shutil.copy(sorgente_loc, os.path.join(tmp, 'locandine'))
+
+    prev_core_modules = {
+        k: v for k, v in list(sys.modules.items())
+        if k == 'core' or k.startswith('core.')
+    }
+    for k in prev_core_modules:
+        sys.modules.pop(k, None)
+
+    sys.path.insert(0, tmp)
     spec = importlib.util.spec_from_file_location(
         f'server_api_test_{next(_contatore)}', os.path.join(tmp, 'server_api.py'))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod._tmpdir = tmp
+    mod._prev_core_modules = prev_core_modules
     return mod
 
 
@@ -48,7 +88,13 @@ def chiudi_server(mod):
     for h in list(root.handlers):
         h.close()
         root.removeHandler(h)
-    shutil.rmtree(mod._tmpdir, ignore_errors=True)
+    if hasattr(mod, '_tmpdir') and mod._tmpdir in sys.path:
+        sys.path.remove(mod._tmpdir)
+    for k in [k for k in list(sys.modules) if k == 'core' or k.startswith('core.')]:
+        sys.modules.pop(k, None)
+    for k, v in getattr(mod, '_prev_core_modules', {}).items():
+        sys.modules[k] = v
+    shutil.rmtree(getattr(mod, '_tmpdir', ''), ignore_errors=True)
 
 
 def avvia_http(mod):
@@ -123,4 +169,3 @@ def post_grezzo(base, percorso, header, corpo=b''):
     esito = (risposta.status, risposta.read())
     conn.close()
     return esito
-
