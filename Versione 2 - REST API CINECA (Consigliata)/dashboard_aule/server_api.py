@@ -40,6 +40,12 @@ PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
 if PERCORSO_BASE not in sys.path:
     sys.path.insert(0, PERCORSO_BASE)
 
+from core.building_context import (
+    ESTENSIONI_LOCANDINE,
+    BuildingContext,
+    chiave_ordinamento_naturale,
+    rileva_formato_immagine,
+)
 from core.cineca_client import (
     AVVISI_DI_STATO,
     LIMITE_EVENTI_CINECA,
@@ -73,165 +79,61 @@ news_poll_event = threading.Event()
 
 LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
 LIMITE_POST_JSON = 1 * 1024 * 1024
-ESTENSIONI_LOCANDINE = ('.png', '.jpg', '.jpeg', '.webp')
 
-lock_locandine = threading.Lock()
+lock_locandine = threading.RLock()
+
 
 def cartella_locandine():
-    return os.path.join(PERCORSO_BASE, 'locandine')
+    return ctx.cartella_locandine()
+
 
 def percorso_ordine():
-    return os.path.join(cartella_locandine(), 'ordine.json')
+    return ctx.percorso_ordine()
+
 
 def leggi_ordine():
-    try:
-        with open(percorso_ordine(), 'r', encoding='utf-8') as f:
-            dati = json.load(f)
-    except (OSError, ValueError):
-        return []
-    return [n for n in dati if isinstance(n, str)] if isinstance(dati, list) else []
+    return ctx.leggi_ordine()
+
 
 def scrivi_ordine(nomi):
-    cartella = cartella_locandine()
-    os.makedirs(cartella, exist_ok=True)
-    tmp = percorso_ordine() + '.tmp'
-    try:
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(nomi, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, percorso_ordine())
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+    return ctx.scrivi_ordine(nomi)
+
 
 def elenco_locandine_ordinato():
     """Ordine di ordine.json, poi i file non elencati in ordine naturale; voci senza file ignorate."""
-    presenti = elenco_file_locandine()
-    insieme = set(presenti)
-    ordinati = [n for n in dict.fromkeys(leggi_ordine()) if n in insieme]
-    gia = set(ordinati)
-    return ordinati + [n for n in presenti if n not in gia]
+    return ctx.elenco_locandine_ordinato()
 
-def rileva_formato_immagine(testa):
-    """Estensione dedotta dai magic bytes, None se il formato non è ammesso."""
-    if testa.startswith(b'\xff\xd8\xff'):
-        return '.jpg'
-    if testa.startswith(b'\x89PNG\r\n\x1a\n'):
-        return '.png'
-    if testa[:4] == b'RIFF' and testa[8:12] == b'WEBP':
-        return '.webp'
-    return None
-
-def chiave_ordinamento_naturale(nome):
-    # Tupla omogenea: la vecchia chiave int/str andava in TypeError con nomi misti (1.jpg + p..._ab12.jpg)
-    m = re.match(r'^(\d+)', nome)
-    return (0, int(m.group(1)), nome.lower()) if m else (1, 0, nome.lower())
 
 def elenco_file_locandine():
-    cartella = cartella_locandine()
-    if not os.path.isdir(cartella):
-        return []
-    nomi = [f for f in os.listdir(cartella)
-            if not f.startswith('.') and f.lower().endswith(ESTENSIONI_LOCANDINE)
-            and os.path.isfile(os.path.join(cartella, f))]
-    return sorted(nomi, key=chiave_ordinamento_naturale)
+    return ctx.elenco_file_locandine()
+
 
 def pulisci_upload_orfani():
-    cartella = cartella_locandine()
-    if os.path.isdir(cartella):
-        for f in os.listdir(cartella):
-            if f.startswith('.upload_') and f.endswith('.tmp'):
-                try:
-                    os.remove(os.path.join(cartella, f))
-                except OSError:
-                    pass
+    return ctx.pulisci_upload_orfani()
+
 
 def salva_locandina_da_stream(rfile, lunghezza):
     """Scrive il body su .tmp a blocchi, valida i magic bytes e rinomina con un nome immutabile."""
-    cartella = cartella_locandine()
-    os.makedirs(cartella, exist_ok=True)
-    tmp = os.path.join(cartella, f'.upload_{secrets.token_hex(8)}.tmp')
-    testa, letti = b'', 0
-    try:
-        with open(tmp, 'wb') as f:
-            while letti < lunghezza:
-                blocco = rfile.read(min(65536, lunghezza - letti))
-                if not blocco:
-                    raise ValueError('Upload interrotto prima della fine')
-                if len(testa) < 12:
-                    testa += blocco[:12 - len(testa)]
-                f.write(blocco)
-                letti += len(blocco)
-            f.flush()
-            os.fsync(f.fileno())
-        ext = rileva_formato_immagine(testa)
-        if not ext:
-            raise ValueError('Formato non supportato: ammessi JPEG, PNG, WebP')
-        nome = f"p{int(time.time() * 1000)}_{secrets.token_hex(2)}{ext}"
-        os.replace(tmp, os.path.join(cartella, nome))
-        return nome
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+    return ctx.salva_locandina_da_stream(rfile, lunghezza)
+
 
 def salva_stato(forza=False):
-    """Salva lo stato degli impegni in modo condizionale e atomico.
-    Se i dati non sono cambiati, non effettua scritture su disco per tutelare la MicroSD.
-    Utilizza un file temporaneo e os.replace per prevenire corruzioni da blackout."""
+    """Salva lo stato degli impegni in modo condizionale e atomico fuori da lock_memoria (ST-09)."""
     global ultimo_stato_json_salvato
-    try:
-        nuovo_json = json.dumps(storico_impegni, indent=4, sort_keys=True)
-        if not forza and nuovo_json == ultimo_stato_json_salvato:
-            return  # Nessuna variazione: zero scritture su MicroSD
-        
-        percorso_def = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
-        percorso_tmp = os.path.join(PERCORSO_BASE, 'stato_impegni.json.tmp')
-        with open(percorso_tmp, 'w', encoding='utf-8') as f:
-            f.write(nuovo_json)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(percorso_tmp, percorso_def)
-        ultimo_stato_json_salvato = nuovo_json
-    except Exception as e:
-        logging.error(f"❌ Errore durante il salvataggio atomico dello stato: {e}")
+    esito = ctx.salva_stato(forza=forza)
+    ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
+    return esito
+
 
 def verifica_e_esegui_reset_04am(dt_roma=None):
-    """Verifica ed esegue il reset programmato alle 04:00 AM (o catch-up all'avvio).
-    Ritorna True se è stato eseguito un reset dello storico impegni."""
-    global storico_impegni, ultimo_reset_data
-    tz_roma = get_tz_roma()
-    now_roma = dt_roma or datetime.datetime.now(tz_roma)
-    giorno_op = get_giorno_operativo(now_roma)
-    giorno_op_str = str(giorno_op)
-
-    file_reset = os.path.join(PERCORSO_BASE, 'ultimo_reset.txt')
-    if ultimo_reset_data is None:
-        if os.path.exists(file_reset):
-            try:
-                with open(file_reset, 'r', encoding='utf-8') as f:
-                    ultimo_reset_data = f.read().strip()
-            except Exception:
-                ultimo_reset_data = None
-
-    if ultimo_reset_data != giorno_op_str:
-        logging.info(f"🔄 Esecuzione reset giornaliero impegni (precedente: {ultimo_reset_data} -> nuovo giorno operativo: {giorno_op_str}).")
-        storico_impegni.clear()
-        salva_stato()
-        ultimo_reset_data = giorno_op_str
-        try:
-            with open(file_reset, 'w', encoding='utf-8') as f:
-                f.write(giorno_op_str)
-        except Exception as e:
-            logging.warning(f"⚠️ Impossibile salvare ultimo_reset.txt: {e}")
-        return True
-    return False
+    """Verifica ed esegue il reset programmato alle 04:00 AM (o catch-up all'avvio) con ST-11.1."""
+    global memoria_dati, ultimo_reset_data, ultimo_stato_json_salvato
+    esito = ctx.verifica_e_esegui_reset_04am(dt_roma=dt_roma)
+    if esito:
+        memoria_dati = ctx.ottieni_dati_pubblici()
+    ultimo_reset_data = ctx.ultimo_reset_data
+    ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
+    return esito
 
 DEFAULT_CONFIG = """main:
   porta_server: 8080
@@ -342,30 +244,39 @@ handler_rotativo.setFormatter(logging.Formatter(
 ))
 root_logger.addHandler(handler_rotativo)
 
+ctx = BuildingContext(CONFIG, PERCORSO_BASE)
+lock_config = ctx.lock_config
+lock_memoria = ctx.lock_memoria
+lock_locandine = ctx.lock_locandine
+storico_impegni = ctx.storico_impegni
+
+
 def carica_stato():
-    global storico_impegni, ultimo_reset_data, ultimo_stato_json_salvato
-    file_stato = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
-    if os.path.exists(file_stato):
-        try:
-            with open(file_stato, 'r', encoding='utf-8') as f:
-                storico_impegni = json.load(f)
-                ultimo_stato_json_salvato = json.dumps(storico_impegni, indent=4, sort_keys=True)
-        except Exception as e:
-            logging.warning(f"⚠️ Impossibile leggere stato_impegni.json (file corrotto o non valido): {e}")
-            storico_impegni = {}
-            ultimo_stato_json_salvato = None
-    
+    global ultimo_reset_data, ultimo_stato_json_salvato
+    ctx.carica_stato()
     tz_roma = get_tz_roma()
     now_roma = datetime.datetime.now(tz_roma)
-    
+
     # Catch-up delle 04:00 AM all'avvio (es. accensione portineria alle 07:30):
-    if verifica_e_esegui_reset_04am(now_roma):
+    if ctx.verifica_e_esegui_reset_04am(now_roma):
         logging.info("🧹 Catch-up avvio: storico impegni resettato per la nuova giornata operativa.")
     else:
-        # Se siamo nella stessa giornata operativa, rimuoviamo solo eventuali eventi scaduti
-        dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(now_roma), datetime.time(0, 0, 0), tzinfo=tz_roma)
+        # Se siamo nella stessa giornata operativa, rimuoviamo solo eventuali eventi scaduti in-place
+        dt_inizio_giorno = datetime.datetime.combine(
+            get_giorno_operativo(now_roma), datetime.time(0, 0, 0), tzinfo=tz_roma
+        )
         mezzanotte_ts = dt_inizio_giorno.timestamp()
-        storico_impegni = {k: v for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) > mezzanotte_ts}
+        with ctx.lock_memoria:
+            chiavi_scadute = [
+                k for k, v in ctx.storico_impegni.items()
+                if v.get('timestamp_fine', 0) <= mezzanotte_ts
+            ]
+            for k in chiavi_scadute:
+                del ctx.storico_impegni[k]
+
+    ultimo_reset_data = ctx.ultimo_reset_data
+    ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
+
 
 carica_stato()
 
@@ -519,7 +430,7 @@ def effettua_login():
 
 
 def estrai_e_formatta_dati(impegni_grezzi):
-    global storico_impegni, data_storico, ultimo_aggiornamento_preservato
+    global data_storico, ultimo_aggiornamento_preservato
     tz_roma = get_tz_roma()
     ora_attuale = datetime.datetime.now(tz_roma)
     oggi_str = str(get_giorno_operativo(ora_attuale))
@@ -527,13 +438,15 @@ def estrai_e_formatta_dati(impegni_grezzi):
         data_storico = oggi_str
     id_edificio = sanitize_id_str(CONFIG.get('api_cineca', {}).get('id_edificio'))
     mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
-    dati_puliti, ultimo_aggiornamento_preservato = CinecaClient.processa_impegni(
-        impegni_grezzi,
-        storico_impegni,
-        id_edificio=id_edificio,
-        mostra_confermati=mostra_confermati,
-        ora_attuale=ora_attuale,
-    )
+    with ctx.lock_memoria:
+        dati_puliti, ultimo_aggiornamento_preservato = CinecaClient.processa_impegni(
+            impegni_grezzi,
+            ctx.storico_impegni,
+            id_edificio=id_edificio,
+            mostra_confermati=mostra_confermati,
+            ora_attuale=ora_attuale,
+        )
+        ctx.ultimo_aggiornamento_preservato = ultimo_aggiornamento_preservato
     salva_stato()
     return dati_puliti
 
@@ -552,9 +465,13 @@ def intervallo_aggiornamento_sec():
 def elabora_risposta_cineca(dati_grezzi):
     global memoria_dati, ultimo_sync_cineca_ok
     verifica_sentinella_limite(dati_grezzi)
+    dati_puliti = estrai_e_formatta_dati(dati_grezzi)
+    ctx.aggiorna_impegni(ctx.storico_impegni, nuovi_dati=dati_puliti)
     with lock_memoria:
-        memoria_dati = estrai_e_formatta_dati(dati_grezzi)
+        memoria_dati = ctx.memoria_dati
     ultimo_sync_cineca_ok = time.time()
+    ctx.ultimo_sync_cineca_ok = ultimo_sync_cineca_ok
+    ctx.ultimo_aggiornamento_preservato = ultimo_aggiornamento_preservato
     if ultimo_aggiornamento_preservato:
         logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
     else:
@@ -832,7 +749,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            with lock_memoria: self.wfile.write(json.dumps(memoria_dati).encode('utf-8'))
+            self.wfile.write(json.dumps(ctx.ottieni_dati_pubblici()).encode('utf-8'))
         elif parsed_path == '/stato':
             self._invia_json(200, {"ultimo_sync_cineca": ultimo_sync_cineca_ok,
                                    "preservato": ultimo_aggiornamento_preservato,
@@ -1041,9 +958,10 @@ class KioskServer(BaseHTTPRequestHandler):
                 # Aggiornamento custom su disco per preservare commenti YAML
                 salva_config_yaml(FILE_CONFIG, nuova_config)
                 
-                # Riassegnazione atomica thread-safe della configurazione in RAM
+                # Aggiornamento in-place thread-safe della configurazione in RAM (mantiene alias ctx.config)
                 with lock_config:
-                    CONFIG = nuova_config
+                    CONFIG.clear()
+                    CONFIG.update(nuova_config)
                 
                 news_poll_event.set() # Sveglia il demone per rileggere subito la config delle fonti
                 logging.info("💾 Configurazione salvata e applicata con successo da /admin.")
@@ -1116,19 +1034,18 @@ class KioskServer(BaseHTTPRequestHandler):
                 return
 
             with lock_locandine:
-                presenti = elenco_file_locandine()
-                if nome not in presenti:
+                if nome not in elenco_file_locandine():
                     self._invia_json(404, {"error": "File non trovato"})
                     return
-                percorso = os.path.join(cartella_locandine(), nome)
                 try:
-                    os.remove(percorso)
+                    ctx.elimina_locandina(nome)
+                except ValueError as e:
+                    self._invia_json(400, {"error": str(e)})
+                    return
                 except OSError as e:
                     logging.error(f"Errore rimozione file {nome}: {e}")
                     self._invia_json(500, {"error": "Errore durante l'eliminazione del file"})
                     return
-                scrivi_ordine(elenco_locandine_ordinato())
-                logging.info(f"🗑️ Locandina eliminata: {nome}")
             self._invia_json(200, {"status": "ok"})
 
         elif parsed_path == '/api/admin/restart':
