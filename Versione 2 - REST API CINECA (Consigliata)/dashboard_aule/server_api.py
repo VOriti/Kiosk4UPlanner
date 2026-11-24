@@ -113,6 +113,10 @@ CONFIG_WHITELIST = {
 FONTI_WHITELIST = {'abilitata', 'nome', 'url', 'tipo', 'visibile_di_default', 'peso'}
 RE_FILE_LOG_SICURO = re.compile(r'^[a-zA-Z0-9_\-\.]+\.log$')
 RE_NOME_CERT_SICURO = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data:; connect-src 'self'; "
+    "style-src 'self'; frame-ancestors 'self'"
+)
 
 lock_locandine = threading.RLock()
 
@@ -876,6 +880,7 @@ class KioskServer(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options', 'SAMEORIGIN')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', CONTENT_SECURITY_POLICY)
         super().end_headers() 
     
     def _check_security(self):
@@ -972,12 +977,22 @@ class KioskServer(BaseHTTPRequestHandler):
 
         parsed_path = self.path.split('?')[0]
         if parsed_path == '/':
-            self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html')
+            self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html; charset=utf-8')
         elif parsed_path == '/remoto.html':
             qs = ('?' + self.path.split('?', 1)[1]) if '?' in self.path else ''
             self.send_response(301)
             self.send_header('Location', '/' + qs)
             self.end_headers()
+        elif parsed_path == '/static/remoto.js':
+            self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'remoto.js'), 'application/javascript; charset=utf-8')
+        elif parsed_path == '/static/remoto.css':
+            self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'remoto.css'), 'text/css; charset=utf-8')
+        elif parsed_path == '/static/admin.js':
+            if self._check_security():
+                self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'admin.js'), 'application/javascript; charset=utf-8')
+        elif parsed_path == '/static/admin.css':
+            if self._check_security():
+                self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'admin.css'), 'text/css; charset=utf-8')
         elif parsed_path == '/config_pubblica':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -1056,7 +1071,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self._invia_json(200, voci)
         elif parsed_path == '/admin':
             if self._check_security():
-                self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html')
+                self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html; charset=utf-8')
         elif parsed_path == '/api/admin/config_full':
             if self._check_security() and self._check_token():
                 self.send_response(200)
@@ -1309,10 +1324,8 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', mime)
             self.end_headers()
-            if mime in ['text/html', 'text/javascript']:
-                with open(path, 'r', encoding='utf-8') as f: self.wfile.write(f.read().encode('utf-8'))
-            else:
-                with open(path, 'rb') as f: self.wfile.write(f.read())
+            with open(path, 'rb') as f:
+                self.wfile.write(f.read())
         else:
             self.send_response(404)
             self.end_headers()
