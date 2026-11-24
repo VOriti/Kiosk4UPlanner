@@ -11,10 +11,10 @@ Questa versione abbandona l'interazione visiva con l'interfaccia grafica di U-Pl
 Per comunicare con i server, Python esegue un Login inviando Username, Password e un parametro chiamato `realm` (che per CINECA corrisponde al codice univoco **`clienteId`** del tuo Ateneo). In risposta, CINECA consegna un **Bearer Token**: una lunga stringa crittografata che funge da "lasciapassare" per leggere i dati.
 
 Il demone Python gestisce:
-* Autenticazione: Gestisce il login e il rinnovo automatico del Bearer Token (Self-Healing).
-* Data Handling: Interroga l'endpoint /Impegni/getImpegniCalendario inviando il contesto del dipartimento.
-* Persistenza: Utilizza un database locale (stato_impegni.json) per mantenere memoria degli eventi "Annullati" o "Spostati" anche dopo il riavvio del server.
-* Filtro Intelligente: Scarica il contesto completo dell'ateneo e filtra localmente le aule basandosi sulla variabile ID_EDIFICIO.
+* Autenticazione: Gestisce il login e il rinnovo automatico del Bearer Token (Self-Healing con backoff esponenziale).
+* Data Handling: Interroga l'endpoint `/Impegni/getImpegniCalendario` circoscrivendo la richiesta all'**Anno Accademico** (`anno_accademico_id`) e al **Contesto** (`contesto_id`: Polo didattico, Dipartimento o Area aule).
+* Persistenza: Utilizza un database locale (`stato_impegni.json`) per mantenere memoria degli eventi "Annullati" o "Spostati" anche dopo il riavvio del server.
+* Filtro Intelligente a Due Stadi: Scarica l'intero Contesto selezionato (sotto la soglia di sicurezza di 500 impegni per chiamata) e filtra localmente le sole aule del palazzo basandosi su `id_edificio`.
 
 **La logica "Self-Healing":**
 Per motivi di sicurezza, il Token di CINECA scade dopo 14 giorni. Invece di usare un timer (che si resetterebbe a ogni riavvio del Raspberry), il nostro server Python sfrutta una logica di "cura automatica" basata sugli errori HTTP. 
@@ -31,7 +31,7 @@ Quando il server prova a scaricare i dati delle aule e si accorge che il Token �
 * **Layout Unificato e Responsive:** Un solo file `remoto.html` renderizza la dashboard per il monitor 40" dell'atrio (Fullscreen), per i PC degli uffici (Doppia colonna) e si adatta in modo nativo su Smartphone e Tablet comprimendosi a colonna singola.
 * **Menu Fluttuante a Scomparsa (Info Badge):** Un menu rapido e interattivo integrato nella UI che espone link utili e documentazione di contatto.
 * **Immunità agli Aggiornamenti:** Eventuali modifiche grafiche, banner istituzionali o manutenzioni dell'interfaccia Angular di U-Planner non romperanno mai la dashboard, poiché i dati viaggiano esclusivamente su un protocollo dati (JSON) che resta invariato.
-* **Mapping Dinamico Edifici:** Grazie alla DEBUG_MODE, il sistema può auto-mappare tutti gli edifici disponibili con un semplice riavvio, eliminando la necessità di cercare manualmente gli ID nel DB di CINECA.
+* **Auto-Discovery Anagrafiche CINECA (`Debug Mode`):** Attivando temporaneamente `debug_mode`, il sistema interroga U-Planner e stampa in `kiosk.log` le mappe complete di **Anni Accademici**, **Contesti** (Poli, Dipartimenti, Aule trasversali) ed **Edifici** disponibili, offrendo un'alternativa immediata all'ispezione manuale via browser `F12` (entrambi i metodi sono illustrati nella **[Sezione 4 di INSTALL.md](INSTALL.md#4-configurazione-credenziali-cineca)** e in **[LEGENDA_LOG.md](LEGENDA_LOG.md)**).
 * **Gestione Avanzata degli Stati (P e C):** Distingue nativamente gli eventi Pubblicati (P) dai Confermati (C) tramite indicatori visivi e permette di nascondere gli eventi non definitivi.
 * **Risoluzione Indisponibilità:** Identifica e mostra la causale reale per cui un'aula è indisponibile, evitando le vecchie diciture generiche (es. "Attività programmata").
 * **Gestione Annullamenti e Modifiche Live:** Gli eventi "Annullati" (A) dal gestionale vengono intercettati automaticamente; il sistema traccia inoltre i cambiamenti in tempo reale (spostamenti di aula/orario) e li rende persistenti sul disco.
@@ -81,7 +81,7 @@ La guida operativa è strutturata in 9 fasi pratiche:
 1. **Requisiti e Dipendenze:** Installazione pacchetti di sistema (`apt`).
 2. **Copia e Posizionamento:** Albero cartelle e permessi script.
 3. **Autostart e Modalità Kiosk:** Configurazione di `~/.bashrc` e `~/.xinitrc`.
-4. **Configurazione Credenziali CINECA:** Configurazione via web `/admin` o YAML con procedura F12 per i parametri.
+4. **Configurazione Credenziali e Codici CINECA:** Configurazione via web `/admin` o YAML, con recupero guidato di Anno Accademico, Contesto ed Edificio tramite **Auto-Discovery in Debug Mode** (`kiosk.log`) oppure tramite **procedura browser `F12`**.
 5. **Personalizzazione Iniziale:** Primo avvio e gestione dal pannello.
 6. **Rete e Porte Standard (80 e 443):** Comandi unificati `iptables` per evitare la porta nell'URL.
 7. **Configurazione HTTPS / SSL:** Certificati OpenSSL, server dual-thread e fail-safe.

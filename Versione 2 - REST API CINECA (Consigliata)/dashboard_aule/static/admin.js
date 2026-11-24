@@ -245,7 +245,7 @@ function populateForm(config) {
                         </select>
                     </div>
                     <div class="form-group fonte-col-1">
-                        <label title="Valore da 1 a 5. Determina quante volte ripetere le news di questa fonte (es. 5 = priorità massima, mostrate più spesso).">Peso (1-5) ℹ️</label>
+                        <label title="Intero da 1 (default) a 5. Le fonti vengono mescolate a turno e a ogni giro una fonte inserisce fino a 'Peso' notizie di fila: con Peso 2 contro 1 una fonte compare il doppio più spesso. Valori fuori range vengono riportati a 1-5.">Peso (1-5) ℹ️</label>
                         <input type="number" id="fn_f${i}_peso" min="1" max="5" value="${f.peso || 1}" class="admin-input-full">
                     </div>
                 </div>
@@ -368,17 +368,54 @@ function aggiornaBadgesSommario() {
         }
     }
 
-    // 4. CINECA
+    // 4. CINECA + Salvaguardia Anno Accademico e Contesto (v5.3.6)
     const edificio = document.getElementById('cineca_edificio')?.value.trim();
     const userCineca = document.getElementById('cineca_username')?.value.trim();
+    const pwdCineca = document.getElementById('cineca_password')?.value || '';
+    const debugAttivo = document.getElementById('debug_mode')?.checked === true;
+    const annoEl = document.getElementById('anno_accademico_id');
+    const contestoEl = document.getElementById('contesto_id');
+    const lblAnno = document.querySelector('label[for="anno_accademico_id"]');
+    const lblContesto = document.querySelector('label[for="contesto_id"]');
+    const paginazioneSupportata = currentConfig.paginazione_cineca_supportata === true;
+    const filtriObbligatori = Boolean(userCineca && pwdCineca && !paginazioneSupportata && !debugAttivo);
+    const safeIdPattern = /^[a-zA-Z0-9_-]{4,64}$/;
+    const annoVal = (annoEl?.value || '').trim().replace(/^[\s"']+|[\s"']+$/g, '');
+    const contestoVal = (contestoEl?.value || '').trim().replace(/^[\s"']+|[\s"']+$/g, '');
+    const annoInvalido = (filtriObbligatori && !annoVal) || (Boolean(annoVal) && !safeIdPattern.test(annoVal));
+    const contestoInvalido = (filtriObbligatori && !contestoVal) || (Boolean(contestoVal) && !safeIdPattern.test(contestoVal));
+
+    if (lblAnno) {
+        lblAnno.textContent = (userCineca && pwdCineca && !paginazioneSupportata)
+            ? (debugAttivo ? 'ID Anno Accademico (Scoperta via Debug Mode attiva)' : 'ID Anno Accademico (Obbligatorio)')
+            : 'ID Anno Accademico';
+    }
+    if (lblContesto) {
+        lblContesto.textContent = (userCineca && pwdCineca && !paginazioneSupportata)
+            ? (debugAttivo ? 'ID Contesto — Polo / Dipartimento / Area (Scoperta via Debug Mode attiva)' : 'ID Contesto — Polo / Dipartimento / Area (Obbligatorio)')
+            : 'ID Contesto — Polo / Dipartimento / Area';
+    }
+    if (annoEl) {
+        annoEl.style.borderColor = annoInvalido ? 'var(--danger-color)' : '';
+    }
+    if (contestoEl) {
+        contestoEl.style.borderColor = contestoInvalido ? 'var(--danger-color)' : '';
+    }
+
     const badgeCineca = document.getElementById('badge-summary-cineca');
     if (badgeCineca) {
-        if (edificio) {
+        if (annoInvalido || contestoInvalido) {
+            badgeCineca.className = 'status-badge badge-warn';
+            badgeCineca.innerText = 'ID Anno/Contesto da verificare';
+        } else if (debugAttivo && userCineca && (!annoVal || !contestoVal)) {
+            badgeCineca.className = 'status-badge badge-warn';
+            badgeCineca.innerText = 'Debug: scoperta ID in kiosk.log';
+        } else if (edificio) {
             badgeCineca.className = 'status-badge badge-info';
             badgeCineca.innerText = `Edificio: ${edificio}`;
         } else if (userCineca) {
             badgeCineca.className = 'status-badge badge-info';
-            badgeCineca.innerText = 'Tutti gli edifici';
+            badgeCineca.innerText = 'Intero Contesto';
         } else {
             badgeCineca.className = 'status-badge badge-off';
             badgeCineca.innerText = 'Non configurato';
@@ -434,16 +471,41 @@ async function salvaConfigurazione(riavvia) {
     const realm = sanitizeId(document.getElementById('cineca_realm').value);
     const edificio = sanitizeId(document.getElementById('cineca_edificio').value);
     const intervallo = parseInt(document.getElementById('cineca_intervallo').value) || 300;
+    const safeIdPattern = /^[a-zA-Z0-9_-]{4,64}$/;
     const hexPattern = /^[0-9a-fA-F]{24}$/;
 
+    const evidenziaPannelloCineca = () => {
+        switchTab('sistema');
+        const panelCineca = document.getElementById('panel-cineca');
+        if (panelCineca && !panelCineca.classList.contains('open')) {
+            panelCineca.classList.add('open');
+        }
+        aggiornaBadgesSommario();
+        panelCineca?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    if (annoId && !safeIdPattern.test(annoId)) {
+        evidenziaPannelloCineca();
+        alert("ID Anno Accademico non valido: inserire un codice identificativo pulito (4-64 caratteri alfanumerici, senza spazi o simboli; su U-Planner sono 24 caratteri esadecimali).");
+        return;
+    }
+
+    if (contestoId && !safeIdPattern.test(contestoId)) {
+        evidenziaPannelloCineca();
+        alert("ID Contesto non valido: inserire un codice identificativo pulito (4-64 caratteri alfanumerici, senza spazi o simboli; su U-Planner sono 24 caratteri esadecimali).");
+        return;
+    }
+
     if (annoId && !hexPattern.test(annoId)) {
-        if (!confirm("Attenzione: L'ID Anno Accademico inserito non sembra essere un identificativo CINECA valido (attesi 24 caratteri esadecimali).\n\nVuoi continuare comunque?")) {
+        if (!confirm(`Attenzione: l'ID Anno Accademico inserito ("${annoId}", ${annoId.length} caratteri) non ha il formato standard U-Planner di 24 caratteri esadecimali (0-9, a-f).\n\nSe si tratta di un errore di copia-incolla o di un testo di prova premi "Annulla".\nPremi "OK" solo se il tuo Ateneo utilizza codici personalizzati.`)) {
+            evidenziaPannelloCineca();
             return;
         }
     }
 
     if (contestoId && !hexPattern.test(contestoId)) {
-        if (!confirm("Attenzione: L'ID Contesto inserito non sembra essere un identificativo CINECA valido (attesi 24 caratteri esadecimali).\n\nVuoi continuare comunque?")) {
+        if (!confirm(`Attenzione: l'ID Contesto inserito ("${contestoId}", ${contestoId.length} caratteri) non ha il formato standard U-Planner di 24 caratteri esadecimali (0-9, a-f).\n\nSe si tratta di un errore di copia-incolla o di un testo di prova premi "Annulla".\nPremi "OK" solo se il tuo Ateneo utilizza codici personalizzati.`)) {
+            evidenziaPannelloCineca();
             return;
         }
     }
@@ -535,7 +597,17 @@ async function salvaConfigurazione(riavvia) {
             }
         } else {
             const errData = await res.json().catch(() => ({}));
-            alert(errData.error || "Errore durante il salvataggio");
+            const msgErr = errData.error || "Errore durante il salvataggio";
+            if (msgErr.includes('anno_accademico_id') || msgErr.includes('contesto_id')) {
+                switchTab('sistema');
+                const panelCineca = document.getElementById('panel-cineca');
+                if (panelCineca && !panelCineca.classList.contains('open')) {
+                    panelCineca.classList.add('open');
+                }
+                aggiornaBadgesSommario();
+                panelCineca?.scrollIntoView({ behavior: 'smooth' });
+            }
+            alert(msgErr);
         }
     } catch (e) {
         console.error(e);

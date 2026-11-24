@@ -52,6 +52,7 @@ from core.building_context import (
 from core.cineca_client import (
     AVVISI_DI_STATO,
     LIMITE_EVENTI_CINECA,
+    RE_ID_CINECA_SICURO,
     SOGLIA_ASSENZE_ANNULLAMENTO,
     CinecaClient,
     get_giorno_operativo,
@@ -173,41 +174,69 @@ def verifica_e_esegui_reset_04am(dt_roma=None):
     ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
     return esito
 
-DEFAULT_CONFIG = """main:
+DEFAULT_CONFIG = """# ==============================================================================
+# CONFIGURAZIONE ATTIVA - KIOSK4UPLANNER (Versione 2 - REST API CINECA)
+# ==============================================================================
+# Modificabile dal pannello web /admin o da terminale (i commenti vengono preservati).
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. PARAMETRI GENERALI DEL SERVER E MODALITÀ DEBUG
+# ------------------------------------------------------------------------------
+main:
   porta_server: 8080
   percorso_base: '{PERCORSO}'
   file_log: 'kiosk.log'
-  # ----------------------------------------------------------------------------
-  # MODALITÀ DEBUG E DIAGNOSTICA
-  # ----------------------------------------------------------------------------
-  # Imposta su 'true' solo in fase di test o se richiesto dall'assistenza.
+  # Imposta debug_mode su 'true' (o spunta "Abilita Debug Mode" nella tendina
+  # Credenziali e Connessione CINECA di /admin) per stampare in kiosk.log le
+  # mappe complete di Anni Accademici, Contesti ed Edifici rilevati su U-Planner.
   debug_mode: false
+
+# ------------------------------------------------------------------------------
+# 2. RETE E SICUREZZA DEL PANNELLO /admin
+# ------------------------------------------------------------------------------
 sicurezza:
   admin_attivo: true
+  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+  # Elenco IP o subnet CIDR autorizzati ad aprire /admin (lista vuota [] = accesso libero)
   admin_ip_autorizzati:
     - '127.0.0.1'
-  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+
+# ------------------------------------------------------------------------------
+# 3. SERVER HTTPS / SSL PARALLELO (OPZIONALE)
+# ------------------------------------------------------------------------------
 https:
   abilitato: false
   porta_https: 8443
   file_certificato: 'cert.pem'
   file_chiave: 'key.pem'
   forza_redirect_http: false
+
+# ------------------------------------------------------------------------------
+# 4. CREDENZIALI E FILTRI U-PLANNER CINECA
+# ------------------------------------------------------------------------------
+# anno_accademico_id e contesto_id sono obbligatori (24 caratteri esadecimali;
+# per edifici multi-dipartimento scegliere il Polo didattico in contesto_id).
+# Ricordarsi di aggiornare anno_accademico_id a ogni inizio di nuovo A.A.!
 api_cineca:
   username: ''
   password: ''
   realm: ''
-  id_edificio: ''
   anno_accademico_id: ''
   contesto_id: ''
+  id_edificio: ''
   intervallo_aggiornamento_sec: 300
   url_base: 'https://cineca.prod.up.cineca.it/api'
+
+# ------------------------------------------------------------------------------
+# 5. INTERFACCIA DASHBOARD, DIGITAL SIGNAGE (?kiosk=1) & CAROSELLO LOCANDINE
+# ------------------------------------------------------------------------------
 frontend:
   mostra_confermati: true
+  mostraStatoPC: true
   caroselloAttivo: true
   titoloSede: 'Impegni Aule'
   urlLogo: './logo.png'
-  mostraStatoPC: true
   messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
   messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
   pausaTraCaroselli: 180000
@@ -219,15 +248,34 @@ frontend:
   urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
   autore: 'Vincenzo Oriti'
   emailAutore: 'vincenzo.oriti@unipv.it'
+
+# ------------------------------------------------------------------------------
+# 6. AVVISO DI EMERGENZA (ALERT GIALLO) & FOOTER NOTIZIE RSS/REST
+# ------------------------------------------------------------------------------
 footer_news:
   abilitato: true
   stile_scorrimento: 'verticale'
   velocita: 20
   colore_testo: '#c9d1d9'
   colore_sfondo: '#3e3c3d'
+  colore_btn: '#30363d'
   dimensione_testo: '1.20rem'
   alert_fisso_attivo: false
   alert_testo: ''
+  # Lista fino a 6 fonti (nome, url, tipo: 'rss'|'rest', abilitata, visibile_di_default, peso: 1..5)
+  # peso (intero da 1 a 5, default 1): le notizie delle varie fonti vengono mescolate a turno e,
+  # a ogni giro, una fonte inserisce fino a 'peso' notizie di fila. Esempio: fonte A con peso 2 e
+  # fonte B con peso 1 -> A, A, B, A, A, B... (A compare il doppio più spesso). Valori fuori
+  # range vengono riportati nell'intervallo 1-5 (valori non numerici = 1).
+  # ESEMPIO: per attivare una fonte, sostituisci 'fonti: []' con il blocco seguente
+  # (togli il '#' iniziale e mantieni l'indentazione) oppure compilala da /admin:
+  #   fonti:
+  #     - nome: "ANSA - Ultima ora"
+  #       url: "https://www.ansa.it/sito/ansait_rss.xml"
+  #       tipo: "rss"                # 'rss' (RSS/Atom) oppure 'rest' (API JSON)
+  #       abilitata: true            # false = fonte disattivata
+  #       visibile_di_default: true  # true = selezionata di default nelle preferenze utente
+  #       peso: 1                    # 1..5 (vedi spiegazione sopra)
   fonti: []
 """
 
@@ -518,6 +566,8 @@ def elabora_risposta_cineca(dati_grezzi):
 def ciclo_aggiornamento_api():
     global token_cineca, memoria_dati
     logging.info("🚀 Avviato demone API CINECA (Modalità Admin Autenticata).")
+    sonda_paginazione_eseguita = False
+    anagrafiche_debug_loggate = False
     
     while True:
         try:
@@ -568,8 +618,40 @@ def ciclo_aggiornamento_api():
             if contesto_id:
                 payload["contestoId"] = contesto_id
 
+            if not sonda_paginazione_eseguita and token_cineca:
+                cineca_client.token = token_cineca
+                cineca_client.url_base = url_base
+                cineca_client.realm = realm
+                try:
+                    cineca_client.verifica_supporto_paginazione(
+                        giorno_op,
+                        anno_accademico_id=anno_id,
+                        contesto_id=contesto_id,
+                    )
+                except Exception as e_sonda:
+                    logging.warning(f"⚠️ Sonda paginazione CINECA non completata: {e_sonda}")
+                sonda_paginazione_eseguita = True
+
             
             is_debug = bool(CONFIG.get('main', {}).get('debug_mode', False))
+            if not is_debug:
+                anagrafiche_debug_loggate = False
+            elif not anagrafiche_debug_loggate and token_cineca:
+                cineca_client.token = token_cineca
+                cineca_client.url_base = url_base
+                cineca_client.realm = realm
+                cineca_client.scopri_anagrafiche_debug(
+                    anno_accademico_id=anno_id,
+                    contesto_id=contesto_id,
+                )
+                anagrafiche_debug_loggate = True
+                if not anno_id or not contesto_id:
+                    logging.info(
+                        "🕵️ DEBUG: anno_accademico_id o contesto_id non ancora configurati. "
+                        "Copia gli ID dalle mappe ANNI ACCADEMICI e CONTESTI qui sopra in /admin "
+                        "per abilitare il recupero degli orari e la MAPPA EDIFICI."
+                    )
+
             if is_debug:
                 logging.info(f"🕵️ DEBUG: Richiesta impegni a {url_impegni} (Payload: {payload})")
             
@@ -809,6 +891,17 @@ def valida_payload_admin_save(payload, config_attuale=None):
             ips = sic_cfg['admin_ip_autorizzati']
             if not isinstance(ips, list) or not all(isinstance(ip, str) for ip in ips):
                 raise ValueError("Campo 'admin_ip_autorizzati' non consentito: attesa lista di stringhe")
+
+    if 'api_cineca' in payload:
+        api_cfg = payload['api_cineca']
+        for nome_id in ('anno_accademico_id', 'contesto_id'):
+            if nome_id in api_cfg:
+                val_id = sanitize_id_str(api_cfg[nome_id])
+                if val_id and not RE_ID_CINECA_SICURO.match(val_id):
+                    raise ValueError(
+                        f"Formato non consentito per {nome_id}: inserire un codice identificativo valido "
+                        "(4-64 caratteri alfanumerici, senza spazi o simboli; su U-Planner solitamente 24 caratteri esadecimali)."
+                    )
 
     if 'footer_news' in payload:
         fn_cfg = payload['footer_news']
@@ -1086,6 +1179,9 @@ class KioskServer(BaseHTTPRequestHandler):
                 
                 hash_salvato = safe_config.get('sicurezza', {}).get('password_admin_hash', '')
                 safe_config['avviso_sicurezza'] = hash_salvato in HASH_PASSWORD_DEFAULT
+                safe_config['paginazione_cineca_supportata'] = bool(
+                    getattr(cineca_client, 'paginazione_supportata', False)
+                )
                     
                 self.wfile.write(json.dumps(safe_config).encode('utf-8'))
         else:
@@ -1187,6 +1283,31 @@ class KioskServer(BaseHTTPRequestHandler):
                         if field in payload['api_cineca']:
                             payload['api_cineca'][field] = sanitize_id_str(payload['api_cineca'][field])
                     nuova_config['api_cineca'].update(payload['api_cineca'])
+
+                    if not getattr(cineca_client, 'paginazione_supportata', False):
+                        credenziali_attive = bool(
+                            str(nuova_config['api_cineca'].get('username') or '').strip()
+                            and str(nuova_config['api_cineca'].get('password') or '').strip()
+                        )
+                        debug_attivo = bool(nuova_config.get('main', {}).get('debug_mode', False))
+                        if credenziali_attive and not CinecaClient.valida_configurazione_salvaguardia(nuova_config):
+                            if debug_attivo:
+                                logging.warning(
+                                    "🕵️ Salvataggio temporaneo consentito senza anno_accademico_id/contesto_id "
+                                    "perché Debug Mode è attiva (auto-discovery anagrafiche CINECA)."
+                                )
+                            else:
+                                logging.warning(
+                                    "🚫 Errore salvataggio config: anno_accademico_id e contesto_id obbligatori "
+                                    "quando la paginazione CINECA non è supportata."
+                                )
+                                self._invia_json(400, {
+                                    "error": (
+                                        "Specificare anno_accademico_id e contesto_id per evitare il troncamento a 500 impegni "
+                                        "(oppure spunta temporaneamente Abilita Debug Mode nella tendina Credenziali CINECA per scoprirne gli ID in kiosk.log)."
+                                    )
+                                })
+                                return
                     
                 if 'sicurezza' in payload:
                     if 'sicurezza' not in nuova_config: nuova_config['sicurezza'] = {}

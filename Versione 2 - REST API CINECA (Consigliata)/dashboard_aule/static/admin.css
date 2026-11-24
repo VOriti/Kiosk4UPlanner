@@ -723,8 +723,28 @@ h3 {
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+.accordion-panel.accent-blue {
+    border-left: 4px solid #58a6ff;
+}
+
 .accordion-panel.highlight-warning {
     border-left: 4px solid #d29922;
+}
+
+.accordion-panel.accent-purple {
+    border-left: 4px solid #a371f7;
+}
+
+.accordion-panel.accent-teal {
+    border-left: 4px solid #39c5cf;
+}
+
+.accordion-panel.accent-orange {
+    border-left: 4px solid #f0883e;
+}
+
+.accordion-panel.accent-green {
+    border-left: 4px solid #3fb950;
 }
 
 .accordion-panel.highlight-security {

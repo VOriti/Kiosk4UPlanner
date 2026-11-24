@@ -3,68 +3,111 @@
 # ==============================================================================
 # Copia questo file in config.yaml prima del primo avvio:
 #   cp config.example.yaml config.yaml
+# Tutte le voci sono modificabili anche via web dal pannello /admin
+# (i commenti del file vengono preservati ad ogni salvataggio).
 # ==============================================================================
 
+# ------------------------------------------------------------------------------
+# 1. PARAMETRI GENERALI DEL SERVER E MODALITÀ DEBUG
+# ------------------------------------------------------------------------------
 main:
-  porta_server: 8080
-  percorso_base: ''
-  file_log: 'kiosk.log'
-  # ----------------------------------------------------------------------------
-  # MODALITÀ DEBUG E DIAGNOSTICA
-  # ----------------------------------------------------------------------------
-  # Imposta su 'true' solo in fase di test o se richiesto dall'assistenza.
+  porta_server: 8080          # Porta HTTP locale (se cambiata, allineare ~/.xinitrc)
+  percorso_base: ''           # Lascia vuoto per rilevamento automatico cartella
+  file_log: 'kiosk.log'       # Nome file log applicativo rotativo (10 MB x 5)
+  # Imposta debug_mode su 'true' (o spunta "Abilita Debug Mode" nella tendina
+  # Credenziali e Connessione CINECA di /admin) per stampare in kiosk.log le
+  # mappe complete di Anni Accademici, Contesti ed Edifici rilevati su U-Planner.
   debug_mode: false
 
+# ------------------------------------------------------------------------------
+# 2. RETE E SICUREZZA DEL PANNELLO /admin
+# ------------------------------------------------------------------------------
 sicurezza:
-  admin_attivo: true
+  admin_attivo: true          # Abilita/disabilita l'accesso web a /admin
+  # Hash SHA-256 della password admin (default di fabbrica: "cambiami" — cambiarla subito da /admin!)
+  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+  # Elenco IP o subnet CIDR autorizzati ad aprire /admin (es. '192.168.1.0/24'; lista vuota [] = accesso libero)
   admin_ip_autorizzati:
     - '127.0.0.1'
-    # Esempio subnet autorizzata:
-    # - '192.168.1.0/24'
-  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
 
+# ------------------------------------------------------------------------------
+# 3. SERVER HTTPS / SSL PARALLELO (OPZIONALE)
+# ------------------------------------------------------------------------------
 https:
-  abilitato: false
-  porta_https: 8443
-  file_certificato: 'cert.pem'
-  file_chiave: 'key.pem'
-  forza_redirect_http: false
+  abilitato: false            # Avvia server SSL/TLS parallelo nello stesso processo
+  porta_https: 8443           # Porta HTTPS locale (mappabile su 443 via iptables)
+  file_certificato: 'cert.pem'# Nome file certificato pubblico in dashboard_aule/
+  file_chiave: 'key.pem'      # Nome file chiave privata in dashboard_aule/
+  forza_redirect_http: false  # Reindirizza i client remoti da HTTP a HTTPS (mai localhost)
 
+# ------------------------------------------------------------------------------
+# 4. CREDENZIALI E FILTRI U-PLANNER CINECA
+# ------------------------------------------------------------------------------
+# Come filtrano gli orari:
+#   1) CINECA estrae gli impegni di anno_accademico_id + contesto_id (obbligatori:
+#      senza di essi U-Planner restituisce 0 lezioni o taglia al limite di 500 impegni).
+#   2) Il Kiosk filtra localmente solo le aule di id_edificio (es. '05').
+# Se l'edificio ospita lezioni di più Dipartimenti, in contesto_id inserisci l'ID
+# del Polo didattico (es. Polo Centrale) e non del singolo Dipartimento.
+# Per scoprire tutti gli ID: attiva main.debug_mode: true e leggi kiosk.log,
+# oppure segui la procedura F12 nella Sezione 4 di INSTALL.md.
+# PROMEMORIA ANNUALE: aggiorna anno_accademico_id a ogni inizio di nuovo A.A.!
 api_cineca:
   username: ''
   password: ''
-  realm: ''
-  id_edificio: ''
-  anno_accademico_id: ''
-  contesto_id: ''
+  realm: ''                   # Cliente ID dell'Ateneo (24 caratteri esadecimali)
+  anno_accademico_id: ''      # ID Anno Accademico corrente (24 caratteri esadecimali)
+  contesto_id: ''             # ID Contesto: Polo / Dipartimento / Area (24 caratteri esadecimali)
+  id_edificio: ''             # Codice palazzo da mostrare (es. '05'; vuoto = intero Contesto)
   intervallo_aggiornamento_sec: 300
   url_base: 'https://cineca.prod.up.cineca.it/api'
 
+# ------------------------------------------------------------------------------
+# 5. INTERFACCIA DASHBOARD, DIGITAL SIGNAGE (?kiosk=1) & CAROSELLO LOCANDINE
+# ------------------------------------------------------------------------------
 frontend:
-  mostra_confermati: true
-  caroselloAttivo: true
-  titoloSede: 'Impegni Aule'
-  urlLogo: './logo.png'
-  mostraStatoPC: true
+  mostra_confermati: true     # true = mostra anche lezioni stato C; false = solo stato P
+  mostraStatoPC: true         # Mostra badge pallino P (Pubblicato) / C (Confermato)
+  caroselloAttivo: true       # Interruttore globale carosello locandine (/locandine/)
+  titoloSede: 'Impegni Aule'  # Titolo mostrato in alto a sinistra sulla dashboard
+  urlLogo: './logo.png'       # Percorso relativo del logo (vuoto '' = nascosto)
   messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
   messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
-  pausaTraCaroselli: 180000
-  esposizioneLocandina: 10000
-  quotaCarosello: 0.30
-  intervalloAggiornamento: 15000
-  urlCalendario: ''
+  pausaTraCaroselli: 180000   # Pausa tabellone orari tra due caroselli (ms, 180000 = 3 min)
+  esposizioneLocandina: 10000 # Durata singola schermata locandina (ms, 10000 = 10 s)
+  quotaCarosello: 0.30        # Duty-cycle massimo locandine (da 0.10 = 10% a 0.50 = 50%)
+  intervalloAggiornamento: 15000 # Frequenza polling locale dei client web (ms)
+  urlCalendario: ''           # Link calendario pubblico U-Planner nel cassetto info
   urlRepo: 'https://github.com/VOriti/Kiosk4Uplanner'
   urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
   autore: 'Vincenzo Oriti'
   emailAutore: 'vincenzo.oriti@unipv.it'
 
+# ------------------------------------------------------------------------------
+# 6. AVVISO DI EMERGENZA (ALERT GIALLO) & FOOTER NOTIZIE RSS/REST
+# ------------------------------------------------------------------------------
 footer_news:
-  abilitato: true
-  stile_scorrimento: 'verticale'
-  velocita: 20
+  abilitato: true             # Mostra la barra inferiore delle notizie
+  stile_scorrimento: 'verticale' # 'orizzontale' (telegiornale) oppure 'verticale' (tabellone)
+  velocita: 20                # Velocità scorrimento orizzontale (minore = più veloce)
   colore_testo: '#c9d1d9'
   colore_sfondo: '#3e3c3d'
+  colore_btn: '#30363d'       # Colore pulsante ingranaggio Preferenze / News Hub
   dimensione_testo: '1.20rem'
-  alert_fisso_attivo: false
-  alert_testo: ''
+  alert_fisso_attivo: false   # Attiva il banner giallo fisso per avvisi urgenti
+  alert_testo: ''             # Testo dell'avviso urgente mostrato nel footer
+  # Lista fino a 6 fonti (ogni elemento: nome, url, tipo: 'rss'|'rest', abilitata, visibile_di_default, peso: 1..5)
+  # peso (intero da 1 a 5, default 1): le notizie delle varie fonti vengono mescolate a turno e,
+  # a ogni giro, una fonte inserisce fino a 'peso' notizie di fila. Esempio: fonte A con peso 2 e
+  # fonte B con peso 1 -> A, A, B, A, A, B... (A compare il doppio più spesso). Valori fuori
+  # range vengono riportati nell'intervallo 1-5 (valori non numerici = 1).
+  # ESEMPIO: per attivare una fonte, sostituisci 'fonti: []' con il blocco seguente
+  # (togli il '#' iniziale e mantieni l'indentazione) oppure compilala da /admin:
+  #   fonti:
+  #     - nome: "ANSA - Ultima ora"
+  #       url: "https://www.ansa.it/sito/ansait_rss.xml"
+  #       tipo: "rss"                # 'rss' (RSS/Atom) oppure 'rest' (API JSON)
+  #       abilitata: true            # false = fonte disattivata
+  #       visibile_di_default: true  # true = selezionata di default nelle preferenze utente
+  #       peso: 1                    # 1..5 (vedi spiegazione sopra)
   fonti: []

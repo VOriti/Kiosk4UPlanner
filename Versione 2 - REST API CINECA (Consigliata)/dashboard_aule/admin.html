@@ -80,7 +80,7 @@
             <div id="tab-content-personalizzazione" class="tab-content active">
 
                 <!-- TENDINA: Interfaccia Frontend & Digital Signage -->
-                <div class="accordion-panel" id="panel-frontend">
+                <div class="accordion-panel accent-blue" id="panel-frontend">
                     <div class="accordion-header" data-accordion-target="panel-frontend">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🖥️</span>
@@ -187,7 +187,7 @@
                 </div>
 
                 <!-- TENDINA: Locandine -->
-                <div class="accordion-panel" id="panel-locandine">
+                <div class="accordion-panel accent-purple" id="panel-locandine">
                     <div class="accordion-header" data-accordion-target="panel-locandine">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🖼️</span>
@@ -249,7 +249,7 @@
                 </div>
 
                 <!-- TENDINA: Footer e Notizie -->
-                <div class="accordion-panel" id="panel-footer">
+                <div class="accordion-panel accent-teal" id="panel-footer">
                     <div class="accordion-header" data-accordion-target="panel-footer">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">📰</span>
@@ -302,7 +302,7 @@
 
                         <hr class="section-divider">
                         <h4 class="section-subtitle-fonti">Fonti Notizie (Fino a 6)</h4>
-                        <p class="panel-description panel-description-fonti">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga.</p>
+                        <p class="panel-description panel-description-fonti">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga. Il <strong>Peso</strong> (da 1 a 5, default 1) regola quanto spesso compare ogni fonte: le notizie sono mescolate a turno e, a ogni giro, una fonte inserisce fino a <em>Peso</em> notizie di fila (es. Peso 2 contro Peso 1 = il doppio delle notizie).</p>
                         <div id="diagnostica_news" class="diagnostica-news" hidden></div>
                         <div id="fonti_container"></div>
                     </div>
@@ -321,7 +321,7 @@
                 </div>
 
                 <!-- TENDINA: Credenziali e Connessione CINECA -->
-                <div class="accordion-panel" id="panel-cineca">
+                <div class="accordion-panel accent-blue" id="panel-cineca">
                     <div class="accordion-header" data-accordion-target="panel-cineca">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🎓</span>
@@ -349,22 +349,47 @@
                         <div class="form-group">
                             <label for="cineca_realm">Realm (Cliente ID)</label>
                             <input type="text" id="cineca_realm">
-                            <p class="help-text">Il codice identificativo del tuo ateneo (farselo dare dall' help desk oppure recuperarlo come spiegato nel file readme.md).</p>
+                            <p class="help-text">Codice identificativo di 24 caratteri del tuo Ateneo su U-Planner: richiedilo all'help-desk oppure recuperalo con il tasto <code>F12</code> dalla pagina di login U-Planner (vedi Sezione 4 di <code>INSTALL.md</code>).</p>
+                        </div>
+
+                        <div class="kiosk-info-box">
+                            <div class="kiosk-info-title">
+                                <span>🧭 Come filtrano gli orari Anno Accademico, Contesto ed Edificio</span>
+                            </div>
+                            <p class="help-text kiosk-info-lead">
+                                L'API di U-Planner (CINECA) non permette di chiedere direttamente le lezioni di un singolo palazzo, ma ragiona in <strong>due passaggi successivi</strong>: prima CINECA estrae tutti gli impegni del <strong>Contesto</strong> e dell'<strong>Anno Accademico</strong> indicati, poi il Kiosk filtra localmente solo le aule dell'<strong>ID Edificio</strong> scelto.
+                            </p>
+                            <p class="help-text kiosk-info-subhead">
+                                Cosa sapere per configurarli correttamente:
+                            </p>
+                            <ul class="help-text kiosk-info-list">
+                                <li><strong>Perché Anno Accademico e Contesto sono obbligatori:</strong> senza questi due codici U-Planner restituisce <strong>0 lezioni</strong>. Inoltre, CINECA invia al massimo <strong>500 impegni totali per chiamata</strong> (senza paginazione): circoscrivere la richiesta evita che, nelle giornate più affollate, parte delle lezioni resti tagliata fuori oltre il 500° risultato o venga segnata per errore come <em>ANNULLATA</em>.</li>
+                                <li><strong>Quale Contesto scegliere (Polo vs Dipartimento):</strong> in U-Planner il <em>Contesto</em> è l'ambito gestionale delle aule (un intero <strong>Polo didattico</strong> come <em>Polo Centrale / Polo B / Polo C</em>, un singolo <em>Dipartimento</em>, oppure aule trasversali come <em>Aule Storiche</em> o <em>Aule Informatiche</em>). <strong>Se il tuo edificio ospita lezioni di più Dipartimenti, inserisci l'ID del Polo</strong> (e non del singolo Dipartimento), poi usa <code>ID Edificio</code> per mostrare solo le aule del tuo palazzo.</li>
+                                <li><strong>Formato e come trovarli (Debug Mode oppure <code>F12</code>):</strong> <code>Realm</code>, <code>ID Anno Accademico</code> e <code>ID Contesto</code> sono codici di <strong>24 caratteri esadecimali</strong> (es. <code>5b97788424deec000e171a8f</code>). Puoi recuperarli in due modi: <strong>(1) Auto-scoperta in Debug Mode (consigliato)</strong> — inserisci <code>Username</code>, <code>Password</code> e <code>Realm</code>, spunta qui sotto <strong>Abilita Debug Mode</strong> e salva per leggere in <code>kiosk.log</code> l'elenco completo di Anni Accademici, Contesti ed Edifici del tuo Ateneo (poi disattiva il Debug Mode); <strong>(2) Procedura Browser <code>F12</code></strong> — ispezionando le chiamate di rete sul portale web U-Planner seguendo la guida passo-passo nella <strong>Sezione 4 di <code>INSTALL.md</code></strong> (utile anche per trovare il <code>Realm</code> iniziale).</li>
+                                <li><strong>📅 Promemoria di inizio Anno Accademico:</strong> mentre <code>Realm</code>, <code>ID Contesto</code> e <code>ID Edificio</code> restano fissi nel tempo, ricordati di <strong>aggiornare l'<code>ID Anno Accademico</code> una volta all'anno</strong> (a inizio nuovo A.A., es. settembre) con il codice della nuova annualità.</li>
+                            </ul>
+                        </div>
+
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="debug_mode">
+                            <label for="debug_mode">Abilita Debug Mode (Auto-Discovery Anni, Contesti ed Edifici in <code>kiosk.log</code>)</label>
+                        </div>
+                        <p class="help-text help-text-indent">Stampa in <code>kiosk.log</code> le mappe complete di <strong>Anni Accademici</strong>, <strong>Contesti</strong> (Poli/Dipartimenti/Aree) ed <strong>Edifici</strong> rilevati su CINECA e registra i payload API (vedi <code>LEGENDA_LOG.md</code> e Sezione 4 di <code>INSTALL.md</code>). Finché è attivo permette di salvare anche senza Anno/Contesto durante la prima configurazione; ricordati di disattivarlo a configurazione completata.</p>
+
+                        <div class="form-group">
+                            <label for="anno_accademico_id">ID Anno Accademico (Obbligatorio)</label>
+                            <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
+                            <p class="help-text">Codice identificativo U-Planner dell'anno accademico corrente (da aggiornare a ogni nuovo A.A.).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="contesto_id">ID Contesto — Polo / Dipartimento / Area (Obbligatorio)</label>
+                            <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
+                            <p class="help-text">Codice U-Planner del Polo didattico (consigliato per edifici multi-dipartimento), del Dipartimento o dell'area aule.</p>
                         </div>
                         <div class="form-group">
                             <label for="cineca_edificio">ID Edificio (Opzionale)</label>
                             <input type="text" id="cineca_edificio" placeholder="es. 05">
-                            <p class="help-text">Filtra gli impegni mostrando solo quelli per uno specifico edificio. Lascia vuoto per mostrare tutti gli edifici.</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="anno_accademico_id">ID Anno Accademico (Opzionale)</label>
-                            <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
-                            <p class="help-text">Identificativo interno U-Planner per l'anno accademico (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="contesto_id">ID Contesto (Opzionale)</label>
-                            <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
-                            <p class="help-text">Identificativo interno U-Planner per il contesto/dipartimento (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
+                            <p class="help-text">Filtra localmente le sole aule del palazzo indicato (es. 05). Lascia vuoto solo se vuoi mostrare tutte le aule dell'intero Contesto.</p>
                         </div>
                         <div class="form-group">
                             <label for="cineca_intervallo">Intervallo Aggiornamento (secondi)</label>
@@ -380,7 +405,7 @@
                 </div>
 
                 <!-- TENDINA: Rete e Sicurezza del Server -->
-                <div class="accordion-panel highlight-security" id="panel-rete">
+                <div class="accordion-panel accent-orange" id="panel-rete">
                     <div class="accordion-header" data-accordion-target="panel-rete">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🌐</span>
@@ -401,12 +426,6 @@
                             <label for="admin_attivo">Abilita l'accesso al pannello Admin remoto</label>
                         </div>
                         <p class="help-text help-text-indent">Imposta su 'true' SOLO se vuoi abilitare il pannello web per modificare queste impostazioni direttamente dal browser all'indirizzo /admin</p>
-
-                        <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="debug_mode">
-                            <label for="debug_mode">Abilita Debug Mode</label>
-                        </div>
-                        <p class="help-text help-text-indent">Registra eventi dettagliati nel file kiosk.log. Utile per risolvere problemi tecnici e leggere nei log i codici degli edifici disponibili.</p>
 
                         <div class="form-group">
                             <label for="admin_ip_autorizzati">IP Autorizzati</label>
@@ -429,7 +448,7 @@
                 </div>
 
                 <!-- TENDINA: Server HTTPS (SSL Nativo) -->
-                <div class="accordion-panel" id="panel-https">
+                <div class="accordion-panel accent-green" id="panel-https">
                     <div class="accordion-header" data-accordion-target="panel-https">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🔒</span>

@@ -10,10 +10,12 @@ from typing import Optional
 import requests
 
 LIMITE_EVENTI_CINECA = 500          # tetto 'limit' richiesto a getImpegniCalendario
+MAX_PAGINE_CINECA = 10              # tetto massimo pagine in caso di paginazione supportata
 SOGLIA_ASSENZE_ANNULLAMENTO = 2     # polling consecutivi senza l'evento prima di marcarlo ANNULLATO
 AVVISI_DI_STATO = ("ANNULLATO", "SOSPESO")
 BACKOFF_BASE_SEC = 120.0
 BACKOFF_MAX_SEC = 3600.0
+RE_ID_CINECA_SICURO = re.compile(r'^[a-zA-Z0-9_\-]{4,64}$')
 
 
 def sanitize_id_str(val) -> str:
@@ -249,11 +251,289 @@ class CinecaClient:
         if risposta.status_code == 200:
             self.reset_backoff()
             dati_grezzi = risposta.json()
+            if (
+                extra_params is None
+                and self.paginazione_supportata
+                and self.parametro_paginazione
+                and isinstance(dati_grezzi, list)
+                and len(dati_grezzi) >= int(limit)
+            ):
+                raccolti = list(dati_grezzi)
+                visti = {
+                    str(x.get('id') or x.get('_id'))
+                    for x in raccolti
+                    if isinstance(x, dict) and (x.get('id') or x.get('_id'))
+                }
+                for pagina_idx in range(1, MAX_PAGINE_CINECA):
+                    param = self.parametro_paginazione
+                    val_pag = (pagina_idx + 1) if param == 'page' else pagina_idx * int(limit)
+                    payload_pag = dict(payload)
+                    payload_pag[param] = val_pag
+                    try:
+                        risp_pag = requests.post(url_impegni, json=payload_pag, headers=headers, timeout=timeout)
+                    except Exception as e:
+                        logging.warning(f"⚠️ Interruzione recupero paginato alla pagina {pagina_idx + 1}: {e}")
+                        break
+                    if risp_pag.status_code != 200:
+                        break
+                    pagina_dati = risp_pag.json()
+                    if not isinstance(pagina_dati, list) or not pagina_dati:
+                        break
+                    nuovi = 0
+                    for elem in pagina_dati:
+                        chiave = str(elem.get('id') or elem.get('_id')) if isinstance(elem, dict) else ''
+                        if chiave and chiave in visti:
+                            continue
+                        if chiave:
+                            visti.add(chiave)
+                        raccolti.append(elem)
+                        nuovi += 1
+                    if nuovi == 0 or len(pagina_dati) < int(limit):
+                        break
+                return raccolti
             self.verifica_sentinella_limite(dati_grezzi)
             return dati_grezzi
 
         logging.error(f"❌ Errore HTTP {risposta.status_code}: {getattr(risposta, 'text', '')[:100]}")
         return None
+
+    def verifica_supporto_paginazione(
+        self,
+        giorno_op,
+        anno_accademico_id='',
+        contesto_id='',
+    ) -> dict:
+        """Sonda diagnostica su getImpegniCalendario per verificare se skip/offset/page sono supportati (ST-05 / D-17)."""
+        if not self.token and not self.login():
+            self.paginazione_supportata = False
+            self.parametro_paginazione = None
+            return {
+                "supportata": False,
+                "parametro": None,
+                "motivo": "Autenticazione CINECA non disponibile",
+            }
+
+        tz_roma = get_tz_roma()
+        dt_inizio_roma = datetime.datetime.combine(giorno_op, datetime.time(0, 0, 0), tzinfo=tz_roma)
+        dt_fine_roma = datetime.datetime.combine(giorno_op, datetime.time(23, 59, 59), tzinfo=tz_roma)
+        inizio_giornata = dt_inizio_roma.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        fine_giornata = dt_fine_roma.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        base_payload = {
+            "limit": 5,
+            "dataInizio": inizio_giornata,
+            "dataFine": fine_giornata,
+            "mostraImpegniSenzaAula": False,
+            "nascondiIndisponibilitaParziali": False,
+        }
+        anno_id = sanitize_id_str(anno_accademico_id)
+        if anno_id:
+            base_payload["annoAccademicoId"] = anno_id
+        ctx_id = sanitize_id_str(contesto_id)
+        if ctx_id:
+            base_payload["contestoId"] = ctx_id
+
+        with self._lock:
+            token_corrente = self.token
+            realm_corrente = self.realm
+            url_impegni = f"{self.url_base}/Impegni/getImpegniCalendario"
+            timeout = self.timeout
+
+        headers = {
+            "Authorization": token_corrente,
+            "Content-Type": "application/json",
+            "X-Realm": realm_corrente,
+        }
+
+        def _estrai_ids(elementi):
+            if not isinstance(elementi, list):
+                return set()
+            return {
+                str(el.get('id') or el.get('_id'))
+                for el in elementi
+                if isinstance(el, dict) and (el.get('id') or el.get('_id'))
+            }
+
+        try:
+            risp_p1 = requests.post(
+                url_impegni,
+                json={**base_payload, "skip": 0},
+                headers=headers,
+                timeout=timeout,
+            )
+        except Exception as e:
+            self.paginazione_supportata = False
+            self.parametro_paginazione = None
+            return {
+                "supportata": False,
+                "parametro": None,
+                "motivo": f"Errore di rete durante sonda paginazione: {e}",
+            }
+
+        if risp_p1.status_code != 200:
+            self.paginazione_supportata = False
+            self.parametro_paginazione = None
+            return {
+                "supportata": False,
+                "parametro": None,
+                "motivo": "Parametri skip/offset/page ignorati o rifiutati da CINECA UP",
+            }
+
+        ids_p1 = _estrai_ids(risp_p1.json())
+        if not ids_p1:
+            self.paginazione_supportata = False
+            self.parametro_paginazione = None
+            return {
+                "supportata": False,
+                "parametro": None,
+                "motivo": "Impegni insufficienti per verificare la paginazione; attiva modalita' conservativa",
+            }
+
+        for nome_param, valore_p2 in (("skip", 5), ("offset", 5), ("page", 2)):
+            try:
+                risp_p2 = requests.post(
+                    url_impegni,
+                    json={**base_payload, nome_param: valore_p2},
+                    headers=headers,
+                    timeout=timeout,
+                )
+            except Exception:
+                continue
+            if risp_p2.status_code != 200:
+                continue
+            ids_p2 = _estrai_ids(risp_p2.json())
+            if ids_p2 and ids_p1.isdisjoint(ids_p2):
+                self.paginazione_supportata = True
+                self.parametro_paginazione = nome_param
+                logging.info(f"✅ Sonda paginazione CINECA: parametro '{nome_param}' supportato.")
+                return {
+                    "supportata": True,
+                    "parametro": nome_param,
+                    "motivo": "Paginazione verificata",
+                }
+
+        self.paginazione_supportata = False
+        self.parametro_paginazione = None
+        logging.info(
+            "ℹ️ Sonda paginazione CINECA: parametri skip/offset/page ignorati o rifiutati da CINECA UP. "
+            "Attiva salvaguardia obbligatoria su anno_accademico_id e contesto_id."
+        )
+        return {
+            "supportata": False,
+            "parametro": None,
+            "motivo": "Parametri skip/offset/page ignorati o rifiutati da CINECA UP",
+        }
+
+    @staticmethod
+    def valida_configurazione_salvaguardia(config_dict) -> bool:
+        """Verifica che anno_accademico_id e contesto_id siano entrambi valorizzati e con formato ID sicuro (4-64 char)."""
+        if not isinstance(config_dict, dict):
+            return False
+        api = config_dict.get('api_cineca')
+        if not isinstance(api, dict):
+            return False
+        anno = sanitize_id_str(api.get('anno_accademico_id'))
+        contesto = sanitize_id_str(api.get('contesto_id'))
+        return bool(
+            anno
+            and contesto
+            and RE_ID_CINECA_SICURO.match(anno)
+            and RE_ID_CINECA_SICURO.match(contesto)
+        )
+
+    def scopri_anagrafiche_debug(self, anno_accademico_id='', contesto_id='') -> dict:
+        """Interroga /AnniAccademici e /Contesti in Debug Mode e registra le mappe leggibili in kiosk.log."""
+        if not self.token and not self.login():
+            return {"anni_accademici": [], "contesti": []}
+
+        anno_corrente_cfg = sanitize_id_str(anno_accademico_id)
+        contesto_corrente_cfg = sanitize_id_str(contesto_id)
+
+        with self._lock:
+            token_corrente = self.token
+            realm_corrente = self.realm
+            url_base = self.url_base
+            timeout = self.timeout
+
+        headers = {
+            "Authorization": token_corrente,
+            "Content-Type": "application/json",
+            "X-Realm": realm_corrente,
+        }
+
+        adesso_utc = datetime.datetime.now(datetime.timezone.utc)
+        voci_anni = []
+        try:
+            risp_anni = requests.get(f"{url_base}/AnniAccademici", headers=headers, timeout=timeout)
+            if risp_anni.status_code == 200:
+                dati_anni = risp_anni.json()
+                if isinstance(dati_anni, list):
+                    anni_ordinati = sorted(
+                        (a for a in dati_anni if isinstance(a, dict)),
+                        key=lambda x: str(x.get('codice') or x.get('descrizione') or ''),
+                    )
+                    for a in anni_ordinati:
+                        aid = sanitize_id_str(a.get('id') or a.get('_id'))
+                        if not aid:
+                            continue
+                        cod = str(a.get('codice') or '').strip()
+                        desc = str(a.get('descrizione') or a.get('nome') or cod or 'N/D').strip()
+                        tag = []
+                        try:
+                            ini_str = str(a.get('dataInizio') or '').replace('Z', '+00:00')
+                            fin_str = str(a.get('dataFine') or '').replace('Z', '+00:00')
+                            if ini_str and fin_str:
+                                dt_i = datetime.datetime.fromisoformat(ini_str)
+                                dt_f = datetime.datetime.fromisoformat(fin_str)
+                                if dt_i <= adesso_utc <= dt_f:
+                                    tag.append("ANNO IN CORSO")
+                        except Exception:
+                            pass
+                        if aid == anno_corrente_cfg:
+                            tag.append("IN USO")
+                        suffisso = f" [{' | '.join(tag)}]" if tag else ""
+                        etichetta = f"{desc} (cod. '{cod}')" if cod and cod != desc else desc
+                        voci_anni.append(f"{etichetta} -> ID '{aid}'{suffisso}")
+                if voci_anni:
+                    logging.info(f"🕵️ DEBUG MAPPA ANNI ACCADEMICI RILEVATI ({len(voci_anni)}): {voci_anni}")
+                else:
+                    logging.info("🕵️ DEBUG MAPPA ANNI ACCADEMICI: Nessun anno accademico restituito da CINECA.")
+            else:
+                logging.warning(f"🕵️ DEBUG MAPPA ANNI ACCADEMICI: HTTP {risp_anni.status_code} su /AnniAccademici.")
+        except Exception as e:
+            logging.warning(f"🕵️ DEBUG MAPPA ANNI ACCADEMICI non disponibile: {e}")
+
+        voci_contesti = []
+        try:
+            risp_ctx = requests.get(f"{url_base}/Contesti", headers=headers, timeout=timeout)
+            if risp_ctx.status_code == 200:
+                dati_ctx = risp_ctx.json()
+                if isinstance(dati_ctx, list):
+                    ctx_ordinati = sorted(
+                        (c for c in dati_ctx if isinstance(c, dict)),
+                        key=lambda x: (
+                            str(x.get('codice') or '').lower(),
+                            str(x.get('descrizione') or x.get('nome') or '').lower(),
+                        ),
+                    )
+                    for c in ctx_ordinati:
+                        cid = sanitize_id_str(c.get('id') or c.get('_id'))
+                        if not cid:
+                            continue
+                        cod = str(c.get('codice') or '').strip()
+                        desc = str(c.get('descrizione') or c.get('nome') or 'Nessuna descrizione').strip()
+                        suffisso = " [IN USO]" if cid == contesto_corrente_cfg else ""
+                        voci_contesti.append(f"Codice '{cod}' ({desc}) -> ID '{cid}'{suffisso}")
+                if voci_contesti:
+                    logging.info(f"🕵️ DEBUG MAPPA CONTESTI RILEVATI ({len(voci_contesti)}): {voci_contesti}")
+                else:
+                    logging.info("🕵️ DEBUG MAPPA CONTESTI: Nessun contesto restituito da CINECA.")
+            else:
+                logging.warning(f"🕵️ DEBUG MAPPA CONTESTI: HTTP {risp_ctx.status_code} su /Contesti.")
+        except Exception as e:
+            logging.warning(f"🕵️ DEBUG MAPPA CONTESTI non disponibile: {e}")
+
+        return {"anni_accademici": voci_anni, "contesti": voci_contesti}
 
     @staticmethod
     def verifica_sentinella_limite(dati_grezzi) -> bool:

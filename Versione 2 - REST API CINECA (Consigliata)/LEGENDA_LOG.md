@@ -73,21 +73,24 @@ Questi messaggi rappresentano la normale attività del chiosco a regime:
 
 ### 🕵️ Messaggi di Diagnostica Avanzata (`debug_mode: true`)
 
-Attivando la voce `debug_mode: true` in `config.yaml` (oppure spuntando "Modalità Debug" nel pannello `/admin`), ad ogni ciclo di interrogazione compaiono righe speciali precedute dall'icona 🕵️:
+Attivando la voce `debug_mode: true` in `config.yaml` (oppure spuntando **Abilita Debug Mode** in `/admin` → scheda *Sistema e Rete* → tendina *Credenziali e Connessione CINECA*), compaiono righe diagnostiche precedute dall'icona 🕵️ per ispezionare il traffico API e scoprire automaticamente gli ID di configurazione CINECA:
 
 | Livello | Messaggio nel Log | Significato e Utilità Pratica |
 | :--- | :--- | :--- |
-| **INFO** | `🕵️ DEBUG: Richiesta impegni a [URL] (Payload: {...})` | Mostra i parametri esatti inviati a CINECA: orari UTC di inizio/fine giornata, `annoAccademicoId`, `contestoId` e opzioni di visualizzazione. Utile per verificare che i filtri inviati siano corretti. |
-| **INFO** | `🕵️ DEBUG: Ricevuti X impegni grezzi.` | Mostra il numero **totale** di lezioni ed eventi restituiti da CINECA per l'intera sede prima del filtraggio per plesso. Se questo numero è `0`, significa che CINECA non ha eventi per la data oppure che `annoAccademicoId`/`contestoId` non sono corretti. |
-| **INFO** | `🕵️ DEBUG MAPPA EDIFICI RILEVATI (N): ['Codice 01: Sede Centrale', 'Codice 05: San Felice', ...]` | **Motore di auto-discovery degli edifici:** ispeziona tutti gli impegni grezzi del giorno ed elenca ogni codice edificio presente nel database con la sua descrizione. Permette di identificare all'istante il codice numerico da impostare in `id_edificio` senza dover esplorare le chiamate di rete da browser. |
-| **INFO** | `🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.` | Compare se gli impegni del giorno non contengono informazioni sulle aule o sugli edifici associati. |
+| **INFO** | `🕵️ DEBUG MAPPA ANNI ACCADEMICI RILEVATI (N): ["2026/2027 (cod. '2026') -> ID '5fefef...' [ANNO IN CORSO]", ...]` | **Auto-discovery degli Anni Accademici:** interroga `/AnniAccademici` all'attivazione del Debug Mode (e all'avvio) stampando tutti gli anni presenti su U-Planner con relativo ID esadecimale di 24 caratteri, evidenziando `[ANNO IN CORSO]` e `[IN USO]`. Utile sia alla prima installazione sia al cambio annuale di A.A. |
+| **INFO** | `🕵️ DEBUG MAPPA CONTESTI RILEVATI (N): ["Codice 'Polo A' (Polo Centrale) -> ID '5b9778...' [IN USO]", ...]` | **Auto-discovery dei Contesti:** interroga `/Contesti` stampando tutti i Poli didattici, Dipartimenti e contesti trasversali dell'Ateneo con codice, nome leggibile e ID di 24 caratteri da inserire in `contesto_id`. |
+| **INFO** | `🕵️ DEBUG: anno_accademico_id o contesto_id non ancora configurati. Copia gli ID dalle mappe...` | Compare quando si usa il Debug Mode in fase di prima installazione con Anno o Contesto ancora vuoti, ricordando di copiare i due ID appena stampati sopra per abilitare lo scaricamento orari. |
+| **INFO** | `🕵️ DEBUG: Richiesta impegni a [URL] (Payload: {...})` | Mostra ad ogni ciclo i parametri esatti inviati a `getImpegniCalendario`: orari UTC di inizio/fine giornata, `limit`, `annoAccademicoId`, `contestoId` e opzioni di visualizzazione. |
+| **INFO** | `🕵️ DEBUG: Ricevuti X impegni grezzi.` | Mostra il numero **totale** di impegni restituiti da CINECA per l'intero Contesto prima del filtro locale per `id_edificio`. Se è `0`, non ci sono eventi per la data oppure `contestoId`/`annoAccademicoId` non sono valorizzati o corretti. |
+| **INFO** | `🕵️ DEBUG MAPPA EDIFICI RILEVATI (N): ["Codice '01': Sede Centrale", "Codice '05': San Felice", ...]` | **Auto-discovery degli Edifici:** ispeziona gli impegni grezzi del giorno ed elenca ogni codice edificio rilevato con la sua descrizione, permettendo di individuare subito il valore da inserire in `id_edificio`. |
+| **INFO** | `🕵️ DEBUG MAPPA EDIFICI: Nessun edificio rilevato negli impegni grezzi ricevuti.` | Compare se nella giornata corrente non ci sono lezioni con aula/edificio associato (o prima di aver configurato `contesto_id`). |
 
 > [!TIP]
-> **Come trovare il proprio edificio con il Debug:**
-> 1. Imposta temporaneamente `debug_mode: true` nel file `config.yaml` o dal pannello `/admin`.
-> 2. Riavvia il demone.
-> 3. Apri il file `kiosk.log`: troverai la riga `🕵️ DEBUG MAPPA EDIFICI RILEVATI` con tutti i codici disponibili.
-> 4. Copia il codice desiderato (es. `"05"`) nel campo `id_edificio` e reimposta `debug_mode: false`.
+> **Come trovare Anno Accademico, Contesto ed Edificio con il Debug Mode (senza usare `F12`):**
+> 1. In `/admin` → scheda *Sistema e Rete* → tendina *Credenziali e Connessione CINECA* (o in `config.yaml`), inserisci `Username`, `Password` e `Realm`, spunta **Abilita Debug Mode** subito sotto il box guida e salva.
+> 2. Esegui `grep "DEBUG MAPPA" ~/dashboard_aule/kiosk.log`: troverai subito gli elenchi `MAPPA ANNI ACCADEMICI` e `MAPPA CONTESTI` con i rispettivi ID di 24 caratteri.
+> 3. Incolla `ID Anno Accademico` e `ID Contesto` (scegliendo il *Polo* se l'edificio è condiviso da più Dipartimenti), salva e attendi un ciclo per leggere anche `MAPPA EDIFICI`.
+> 4. Inserisci `ID Edificio` (es. `"05"`), **disattiva il Debug Mode** e salva. *(In alternativa, la procedura manuale via browser `F12` — inclusa la ricerca iniziale del `Realm` — è descritta nella **[Sezione 4 di INSTALL.md](INSTALL.md#4-configurazione-credenziali-cineca)**).*
 
 ---
 
@@ -156,7 +159,7 @@ Per monitorare i log in tempo reale direttamente da terminale SSH sul Raspberry 
   ```bash
   cat /home/vincenzo/dashboard_aule/server_api_sys.log
   ```
-* **Filtrare solo i messaggi di debug della mappa edifici:**
+* **Filtrare tutte le mappe di auto-discovery CINECA (Anni Accademici, Contesti ed Edifici):**
   ```bash
-  grep "DEBUG MAPPA EDIFICI" /home/vincenzo/dashboard_aule/kiosk.log
+  grep "DEBUG MAPPA" /home/vincenzo/dashboard_aule/kiosk.log
   ```

@@ -10,7 +10,7 @@ Questa guida operativa ti accompagna passo-passo nell'installazione, configurazi
 1. [Requisiti e Dipendenze di Sistema](#1-requisiti-e-dipendenze-raspberry-pi-os-lite)
 2. [Copia e Posizionamento dei File](#2-copia-e-posizionamento-dei-file)
 3. [Autostart e Modalità Kiosk (.bashrc e .xinitrc)](#3-autostart-e-modalità-kiosk-bashrc-e-xinitrc)
-4. [Configurazione Credenziali CINECA (con procedura F12)](#4-configurazione-credenziali-cineca)
+4. [Configurazione Credenziali e Codici CINECA (Debug Mode o procedura F12)](#4-configurazione-credenziali-cineca)
 5. [Personalizzazione Iniziale da Pannello Web o YAML](#5-personalizzazione-iniziale-file-yaml-o-pannello-admin)
 6. [Rete e Porte Standard (Porta 80 e Porta 443 con iptables)](#6-rete-e-porte-standard-come-evitare-di-digitare-la-porta-nellurl)
 7. [Configurazione HTTPS / SSL Nativo (Opzionale)](#7-configurazione-https--ssl-nativo-opzionale)
@@ -131,44 +131,68 @@ Per fare in modo che il Raspberry Pi accenda il monitor, avvii Python e lanci la
 ---
 
 ### 4. Configurazione Credenziali CINECA
-Tutta la configurazione strutturale (credenziali CINECA comprese) risiede nel file `config.yaml`.
+Tutta la configurazione strutturale (credenziali e parametri CINECA compresi) risiede nel file `config.yaml` ed è gestibile sia da interfaccia grafica che manualmente:
 
-Puoi procedere in due modalità:
-- **Tramite Pannello Web (Consigliato):** Apri `config.yaml` e imposta temporaneamente `admin_attivo: true`. Avvia il server (`python3 server_api.py`) e dal tuo PC collegati a `http://[IP_DEL_RASPBERRY]:8080/admin` per compilare comodamente tutti i campi da interfaccia grafica.
-- **Tramite Modifica Manuale:** Apri `config.yaml` con un editor (`nano config.yaml`) e compila la prima sezione `api_cineca` (`username`, `password`, `realm`, `id_edificio`, `anno_accademico_id`, `contesto_id`).
+- **Tramite Pannello Web (Consigliato):** Apri `config.yaml` (copiato da `config.example.yaml`), assicurati che `admin_attivo` sia `true`, avvia il server (`python3 server_api.py`) e dal tuo PC collegati a `http://[IP_DEL_RASPBERRY]:8080/admin` (scheda **⚙️ Sistema e Rete**).
+- **Tramite Modifica Manuale:** Apri `config.yaml` con un editor (`nano config.yaml`) e compila la sezione `api_cineca` (`username`, `password`, `realm`, `anno_accademico_id`, `contesto_id`, `id_edificio`).
 
-#### 💡 Procedura per il Recupero dei Parametri CINECA (Strumenti Sviluppatore / F12)
-I parametri identificativi di CINECA U-Planner (`realm`, `anno_accademico_id`, `contesto_id`) possono essere recuperati in pochi istanti analizzando il traffico di rete del browser durante l'uso del portale web U-Planner del tuo Ateneo:
+#### 🧭 A cosa corrispondono i 4 codici identificativi di CINECA U-Planner
+Oltre a `username`, `password` e `url_base` (`https://[ateneo].prod.up.cineca.it/api`), U-Planner utilizza 4 codici identificativi che lavorano insieme in due passaggi (prima CINECA estrae gli impegni del *Contesto* e dell'*Anno Accademico*, poi il Kiosk filtra localmente le aule dell'*Edificio*):
 
-* **Recupero `realm` (Cliente ID dell'Ateneo):**
-  1. Apri la pagina di login del portale U-Planner del tuo Ateneo (es. `https://[ateneo].prod.up.cineca.it/`) sul tuo PC.
-  2. Apri gli Strumenti per Sviluppatori premendo **F12** (o tasto destro -> *Ispeziona* -> scheda **Rete / Network**).
-  3. Attiva il filtro **Fetch/XHR** per isolare le chiamate API.
-  4. Effettua l'accesso inserendo le tue credenziali.
-  5. Individua la richiesta di autenticazione (solitamente denominata `login?include=user` o `login`).
-  6. Clicca sulla richiesta e apri la sottoscheda **Risposta (Response)**: copia il valore alfanumerico associato alla chiave `"clienteId"` (o `"realm"`), composto da 24 caratteri esadecimali (es. `5a6734b248e4aa0cdeaaf875`).  
-     *(Metodo alternativo: in qualsiasi chiamata successiva verso le API CINECA, apri la scheda Intestazioni/Headers e copia il valore dell'header `X-Realm`).*
+| Parametro (`config.yaml`) | Formato Tipico | Obbligatorio | Cosa identifica in CINECA U-Planner |
+| :--- | :--- | :---: | :--- |
+| **`realm`** | 24 caratteri hex (`5a6734...`) | **Sì** | Il **`clienteId` univoco dell'intero Ateneo** su U-Planner. Non cambia mai nel tempo; può fornirlo direttamente l'help-desk di Ateneo oppure si ricava con `F12` al login. |
+| **`anno_accademico_id`** | 24 caratteri hex (`5fefef...`) | **Sì** | L'identificativo interno dell'**Anno Accademico corrente** (es. `2026/2027`). **Va aggiornato una volta all'anno** (a inizio nuovo A.A., es. settembre). |
+| **`contesto_id`** | 24 caratteri hex (`5b9778...`) | **Sì** | L'**ambito gestionale delle aule** su U-Planner: può essere un intero **Polo didattico** (es. *Polo Centrale / Polo B / Polo C*), un singolo *Dipartimento*, oppure un gruppo trasversale (*Aule Storiche*, *Aule Informatiche*). **Importante:** se nel tuo edificio fanno lezione più Dipartimenti, scegli sempre l'ID del **Polo** (e non del singolo Dipartimento), altrimenti vedrai solo le lezioni di quel Dipartimento! Senza `contesto_id` U-Planner restituisce `0` lezioni; inoltre circoscrive la risposta sotto il limite massimo di 500 impegni per chiamata. |
+| **`id_edificio`** | Codice breve (`05`, `A1`, ecc.) | Opzionale (Consigliato) | Il codice del **singolo palazzo/plesso**. Filtra localmente gli impegni ricevuti dal Contesto mostrando solo le aule dell'edificio desiderato (se lasciato vuoto mostra tutte le aule dell'intero Contesto). |
 
-* **Recupero `anno_accademico_id` (ID Anno Accademico):**
-  1. All'interno del portale U-Planner, accedi alla visualizzazione del calendario/pianificazione delle lezioni.
-  2. Con la scheda **Rete (Network)** aperta (filtro **Fetch/XHR**), digita `getImpegniCalendario` nella casella di ricerca.
-  3. Seleziona la chiamata POST `getImpegniCalendario` (se non compare, cambia giorno o vista nel calendario per forzarne una).
-  4. Clicca sulla sottoscheda **Payload** (o *Carico utile / Richiesta*).
-  5. Individua il parametro **`annoAccademicoId`** e copia la stringa esadecimale di 24 caratteri (es. `5e1553cac831d600172af6d0`).
+Per trovare i codici hai a disposizione **due metodi equivalenti**:
 
-* **Recupero `contesto_id` (ID Contesto / Dipartimento):**
-  1. Nel portale U-Planner, seleziona la struttura didattica o dipartimento di competenza.
-  2. Nella medesima chiamata POST `getImpegniCalendario` (nella scheda **Payload**), individua il parametro **`contestoId`** e copia la stringa di 24 caratteri (es. `5b97788424deec000e171a8f`).
+---
 
-* **Recupero `id_edificio`:**
-  1. In `config.yaml` imposta `debug_mode: true` (oppure attivalo dalla scheda CINECA del Pannello Admin) e riavvia il server.
-  2. Attendi un ciclo di aggiornamento completo (circa 1 minuto).
-  3. Leggi il file di log eseguendo:
-     ```bash
-     cat /home/vincenzo/dashboard_aule/kiosk.log
-     ```
-  4. Individua la riga speciale `"🕵️ DEBUG MAPPA EDIFICI"` contenente tutti i codici numerici e i nomi dei palazzi del tuo Ateneo.
-  5. Inserisci l'ID del tuo palazzo nel campo `id_edificio` e rimetti `debug_mode: false`.
+#### 🕵️ Metodo 1 (Consigliato): Auto-Discovery guidata tramite `Debug Mode`
+Una volta inseriti **`username`**, **`password`** e **`realm`** (fornito dall'help-desk o letto una tantum col Metodo 2 qui sotto), il Kiosk può interrogare direttamente CINECA e stampare nei log l'elenco completo con nomi e ID di tutti gli **Anni Accademici**, **Contesti** ed **Edifici** del tuo Ateneo:
+
+1. Apri `/admin` → scheda **⚙️ Sistema e Rete** → tendina **🎓 Credenziali e Connessione CINECA**:
+   - Compila `Username CINECA`, `Password CINECA`, `Realm` e `URL Base API`.
+   - Spunta subito sotto il box informativo la voce **Abilita Debug Mode** (finché il Debug Mode è attivo il server ti permette di salvare anche lasciando vuoti Anno Accademico e Contesto).
+   - Clicca su **⚡ Salva e Riavvia Demone** (oppure imposta `main.debug_mode: true` in `config.yaml` e riavvia il server).
+2. Attendi circa 10 secondi e leggi le mappe generate in `kiosk.log` dal terminale del Raspberry Pi:
+   ```bash
+   grep "DEBUG MAPPA" ~/dashboard_aule/kiosk.log
+   ```
+3. Troverai stampate in chiaro le anagrafiche ufficiali del tuo Ateneo:
+   - **`🕵️ DEBUG MAPPA ANNI ACCADEMICI RILEVATI`:** elenca ogni anno (es. `2026/2027 (cod. '2026') -> ID '5fefefdef4653b001808e636' [ANNO IN CORSO]`), segnalando automaticamente quale copre la data odierna.
+   - **`🕵️ DEBUG MAPPA CONTESTI RILEVATI`:** elenca tutti i Poli, Dipartimenti e Aree del tuo Ateneo con codice, nome esteso e ID di 24 caratteri (es. `Codice 'Polo A' (Polo Centrale) -> ID '5b97788424deec000e171a8f'`).
+4. Copia l'`ID` dell'Anno in corso e l'`ID` del tuo Contesto/Polo in `/admin` e salva. Al ciclo successivo (o riavviando) comparirà nel log anche la terza mappa, calcolata sugli impegni reali di una giornata con lezioni attive:
+   - **`🕵️ DEBUG MAPPA EDIFICI RILEVATI`:** elenca i codici numerici/alfanumerici e i nomi di tutti i palazzi presenti nel Contesto (es. `Codice '05': Palazzo Centrale / San Felice`).
+5. Inserisci il codice del tuo palazzo in **`ID Edificio`**, **togli la spunta da `Abilita Debug Mode`** (`debug_mode: false`) e salva definitivamente. *(Consulta anche [LEGENDA_LOG.md](LEGENDA_LOG.md) per il dettaglio completo dei messaggi di debug).*
+
+---
+
+#### 🌐 Metodo 2 (Alternativo e per trovare il `realm`): Strumenti Sviluppatore del Browser (`F12`)
+Tutti i codici (incluso il **`realm`** iniziale dell'Ateneo qualora non ti sia stato comunicato dall'help-desk) possono essere letti analizzando dal PC il traffico di rete del portale web U-Planner del tuo Ateneo:
+
+* **1. Recupero `realm` (Cliente ID dell'Ateneo):**
+  1. Apri sul tuo PC la pagina di login del portale U-Planner del tuo Ateneo (es. `https://[ateneo].prod.up.cineca.it/`).
+  2. Premi **F12** (o tasto destro → *Ispeziona*) e apri la scheda **Rete (Network)** attivando il filtro **Fetch/XHR**.
+  3. Effettua l'accesso con le tue credenziali e clicca sulla richiesta `login` (o `login?include=user`).
+  4. Apri la sottoscheda **Risposta (Response)** e copia la stringa di 24 caratteri esadecimali associata a **`"clienteId"`** (o `"realm"`, es. `5a6734b248e4aa0cdeaaf875`).  
+     *(In alternativa: in qualunque chiamata successiva verso `/api/...`, apri la sottoscheda **Intestazioni / Headers** e copia il valore dell'header **`X-Realm`**).*
+
+* **2. Recupero `anno_accademico_id` (ID Anno Accademico):**
+  1. Dentro il portale U-Planner apri il calendario delle lezioni, seleziona l'anno accademico corrente e nella scheda **Rete (Fetch/XHR)** cerca **`getImpegniCalendario`** (cambia giorno o vista se non compare subito).
+  2. Nella sottoscheda **Payload** (Richiesta), copia i 24 caratteri esadecimali del campo **`annoAccademicoId`** (es. `5fefefdef4653b001808e636`).  
+     *(Suggerimento: se cerchi invece la chiamata GET `AnniAccademici` nella scheda Rete → Risposta, vedrai l'elenco completo degli anni con `"descrizione": "2026/2027"` e relativo `"id"`).*
+
+* **3. Recupero `contesto_id` (ID Contesto — Polo / Dipartimento / Area):**
+  1. Nel menu a tendina del contesto in alto sul portale U-Planner, seleziona il **Polo didattico** (consigliato per edifici condivisi da più Dipartimenti) oppure il Dipartimento/Area di competenza.
+  2. Nella chiamata POST **`getImpegniCalendario`** → sottoscheda **Payload**, copia i 24 caratteri esadecimali del campo **`contestoId`** (es. `5b97788424deec000e171a8f`).  
+     *(Suggerimento: cercando nella scheda Rete la chiamata GET `Contesti` → Risposta, puoi consultare la lista completa con `"codice"` — es. `"Polo A"` —, `"descrizione"` — es. `"Polo Centrale"` — e `"id"` per verificare a quale struttura corrisponde ciascun codice).*
+
+* **4. Recupero `id_edificio` (Codice Palazzo):**
+  1. Nella stessa chiamata POST **`getImpegniCalendario`**, apri la sottoscheda **Risposta (Response)** in un giorno con lezioni attive.
+  2. Espandi un impegno qualsiasi → array **`aule`** → oggetto **`edificio`**: troverai **`"codice"`** (es. `"05"`, il valore da inserire in `id_edificio`) e **`"descrizione"`** (il nome del palazzo per conferma).
 
 ---
 
@@ -182,7 +206,7 @@ Tutte le impostazioni visive e funzionali sono centralizzate nel file `config.ya
    - Configurare il carosello locandine (intervallo secondi, orari di accensione).
    - Impostare i feed del Ticker Notizie (fino a 6 fonti RSS/REST con colori e pesi personalizzati).
    - Personalizzare colori, loghi istituzionali e titoli delle colonne.
-5. Cliccando su **"Salva Configurazione"**, il server aggiorna il file su disco e invia un segnale di "Hot Reload" a tutti i Kiosk collegati, che si aggiorneranno all'istante senza bisogno di riavvii.
+5. Cliccando su **"💾 Salva Modifiche"**, il server aggiorna il file su disco e invia un segnale di "Hot Reload" a tutti i Kiosk collegati, che si aggiorneranno all'istante senza bisogno di riavvii.
 
 ---
 
@@ -247,7 +271,7 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 ```
 
 #### 2. Abilitazione del servizio HTTPS
-- **Dal Pannello `/admin`:** Vai nella scheda *Rete e Sicurezza*, attiva la spunta **"Abilita Server HTTPS"**, imposta la porta (predefinita `8443`) e salva.
+- **Dal Pannello `/admin`:** Vai nella scheda **⚙️ Sistema e Rete** → tendina **🔒 Server HTTPS (SSL Nativo)**, attiva la spunta **"Abilita Server HTTPS parallelo"**, imposta la porta (predefinita `8443`) e salva.
 - **Da `config.yaml`:**
   ```yaml
   https:
