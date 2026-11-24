@@ -8,10 +8,13 @@ import datetime
 import requests
 import yaml
 import hashlib
+import hmac
 import ipaddress
 import secrets
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import contextlib
+import socket
 import socketserver
 import ssl
 import copy
@@ -31,7 +34,7 @@ class KioskHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         # Ignora disconnessioni fisiologiche dei client remoti o bot scanner internet
         exc = sys.exception() if hasattr(sys, 'exception') else sys.exc_info()[1]
-        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, TimeoutError)):
             return
         super().handle_error(request, client_address)
 
@@ -79,6 +82,37 @@ news_poll_event = threading.Event()
 
 LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
 LIMITE_POST_JSON = 1 * 1024 * 1024
+
+MAX_CONCURRENT_REQUESTS = 40
+HTTP_REQUEST_TIMEOUT = 15.0
+HTTP_CONCURRENCY_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION_SEC = 600
+SLIDING_WINDOW_SEC = 900
+
+CONFIG_WHITELIST = {
+    'main': {'porta_server', 'file_log', 'debug_mode', 'percorso_base'},
+    'sicurezza': {'admin_attivo', 'admin_ip_autorizzati'},
+    'https': {'abilitato', 'porta_https', 'file_certificato', 'file_chiave', 'forza_redirect_http'},
+    'api_cineca': {
+        'username', 'password', 'realm', 'id_edificio',
+        'anno_accademico_id', 'contesto_id', 'intervallo_aggiornamento_sec', 'url_base',
+    },
+    'frontend': {
+        'mostra_confermati', 'caroselloAttivo', 'titoloSede', 'urlLogo', 'mostraStatoPC',
+        'messaggioNessunaLezione', 'messaggioErroreRete', 'pausaTraCaroselli',
+        'esposizioneLocandina', 'quotaCarosello', 'intervalloAggiornamento',
+        'urlCalendario', 'urlRepo', 'urlLicenza', 'autore', 'emailAutore',
+    },
+    'footer_news': {
+        'abilitato', 'stile_scorrimento', 'velocita', 'colore_testo', 'colore_sfondo',
+        'colore_btn', 'dimensione_testo', 'alert_fisso_attivo', 'alert_testo', 'fonti',
+    },
+}
+FONTI_WHITELIST = {'abilitata', 'nome', 'url', 'tipo', 'visibile_di_default', 'peso'}
+RE_FILE_LOG_SICURO = re.compile(r'^[a-zA-Z0-9_\-\.]+\.log$')
+RE_NOME_CERT_SICURO = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
 
 lock_locandine = threading.RLock()
 
@@ -622,7 +656,220 @@ def password_default_bloccata(client_ip, hash_salvato):
     except ValueError:
         return True
 
+
+def verifica_login_admin(client_ip, password_proposta, hash_corretto, now_ts=None):
+    """Controllo lockout, confronto HMAC a tempo costante e incremento atomico sotto un unico lock_login (ST-10.3)."""
+    ts = time.time() if now_ts is None else float(now_ts)
+    pwd_str = password_proposta if isinstance(password_proposta, str) else ''
+    pwd_hash = hashlib.sha256(pwd_str.encode('utf-8')).hexdigest()
+
+    with lock_login:
+        ip_scaduti = [
+            ip for ip, rec in LOGIN_ATTEMPTS.items()
+            if (ts - rec.get('ultimo_tentativo', ts) > 3600) and (rec.get('locked_until', 0) <= ts)
+        ]
+        for ip in ip_scaduti:
+            del LOGIN_ATTEMPTS[ip]
+
+        record = LOGIN_ATTEMPTS.get(client_ip)
+        if record is None:
+            record = {'count': 0, 'locked_until': 0, 'ultimo_tentativo': ts}
+
+        locked_until = record.get('locked_until', 0)
+        if locked_until > ts:
+            secondi_attesa = max(1, int(locked_until - ts))
+            return {
+                'status': 429,
+                'retry_after': secondi_attesa,
+                'secondi_attesa': secondi_attesa,
+                'token': None,
+            }
+
+        ultimo = record.get('ultimo_tentativo', ts)
+        if (0 < locked_until <= ts) or (ts - ultimo > SLIDING_WINDOW_SEC):
+            record['count'] = 0
+            record['locked_until'] = 0
+
+        if hmac.compare_digest(pwd_hash, str(hash_corretto or '')):
+            LOGIN_ATTEMPTS.pop(client_ip, None)
+            token = secrets.token_hex(16)
+            SESSIONS[token] = time.time() + 3600
+            return {
+                'status': 200,
+                'retry_after': 0,
+                'secondi_attesa': 0,
+                'token': token,
+            }
+
+        record['count'] = record.get('count', 0) + 1
+        record['ultimo_tentativo'] = ts
+        if record['count'] >= MAX_LOGIN_ATTEMPTS:
+            record['locked_until'] = ts + LOCKOUT_DURATION_SEC
+            logging.warning(
+                f"🚨 Troppi tentativi di login errati dall'IP {client_ip}. IP bloccato per 10 minuti."
+            )
+        LOGIN_ATTEMPTS[client_ip] = record
+        return {
+            'status': 401,
+            'retry_after': 0,
+            'secondi_attesa': 0,
+            'token': None,
+        }
+
+
+def _valida_porta(valore, nome_campo):
+    if isinstance(valore, bool):
+        raise ValueError(f"Valore non consentito per {nome_campo}")
+    if isinstance(valore, int):
+        porta = valore
+    elif isinstance(valore, str) and valore.strip().isdigit():
+        porta = int(valore.strip())
+    else:
+        raise ValueError(f"Valore non consentito per {nome_campo}: attesa porta numerica 1-65535")
+    if not (1 <= porta <= 65535):
+        raise ValueError(f"Porta {nome_campo} fuori intervallo consentito (1-65535)")
+    return porta
+
+
+def _valida_nome_file_sicuro(valore, pattern, nome_campo):
+    if not isinstance(valore, str) or not valore.strip():
+        raise ValueError(f"Nome file non consentito per {nome_campo}")
+    v = valore.strip()
+    if (
+        '..' in v
+        or '/' in v
+        or '\\' in v
+        or '\x00' in v
+        or os.path.isabs(v)
+        or not pattern.match(v)
+    ):
+        raise ValueError(f"Percorso o nome file non consentito per {nome_campo}")
+    return v
+
+
+def valida_payload_admin_save(payload, config_attuale=None):
+    """Validazione rigorosa a whitelist esplicita per POST /api/admin/save (N-10)."""
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Payload configurazione non consentito o vuoto")
+
+    chiavi_top_ammesse = set(CONFIG_WHITELIST) | {'admin_password'}
+    extra_top = set(payload.keys()) - chiavi_top_ammesse
+    if extra_top:
+        raise ValueError(f"Sezioni configurazione non consentite: {sorted(extra_top)}")
+
+    if 'admin_password' in payload and not isinstance(payload['admin_password'], str):
+        raise ValueError("Campo admin_password non consentito")
+
+    for sezione, chiavi_ammesse in CONFIG_WHITELIST.items():
+        if sezione not in payload:
+            continue
+        val_sez = payload[sezione]
+        if not isinstance(val_sez, dict):
+            raise ValueError(f"Sezione '{sezione}' non consentita: atteso oggetto JSON")
+        extra_keys = set(val_sez.keys()) - chiavi_ammesse
+        if extra_keys:
+            raise ValueError(f"Chiavi non consentite nella sezione '{sezione}': {sorted(extra_keys)}")
+
+    if 'main' in payload:
+        main_cfg = payload['main']
+        if 'percorso_base' in main_cfg:
+            pb_raw = main_cfg['percorso_base']
+            if pb_raw is not None and not isinstance(pb_raw, str):
+                raise ValueError("Modifica di percorso_base non consentita via API")
+            pb_attuale = str((config_attuale or {}).get('main', {}).get('percorso_base', '') or '').strip("'\"")
+            pb_nuovo = str(pb_raw or '').strip("'\"")
+            if pb_nuovo not in ('', pb_attuale):
+                raise ValueError("Modifica di percorso_base non consentita via API")
+            del main_cfg['percorso_base']
+        if 'file_log' in main_cfg:
+            main_cfg['file_log'] = _valida_nome_file_sicuro(main_cfg['file_log'], RE_FILE_LOG_SICURO, 'file_log')
+        if 'porta_server' in main_cfg:
+            main_cfg['porta_server'] = _valida_porta(main_cfg['porta_server'], 'porta_server')
+
+    if 'https' in payload:
+        https_cfg = payload['https']
+        if 'porta_https' in https_cfg:
+            https_cfg['porta_https'] = _valida_porta(https_cfg['porta_https'], 'porta_https')
+        if 'file_certificato' in https_cfg:
+            https_cfg['file_certificato'] = _valida_nome_file_sicuro(
+                https_cfg['file_certificato'], RE_NOME_CERT_SICURO, 'file_certificato'
+            )
+        if 'file_chiave' in https_cfg:
+            https_cfg['file_chiave'] = _valida_nome_file_sicuro(
+                https_cfg['file_chiave'], RE_NOME_CERT_SICURO, 'file_chiave'
+            )
+
+    if 'sicurezza' in payload:
+        sic_cfg = payload['sicurezza']
+        if 'admin_ip_autorizzati' in sic_cfg:
+            ips = sic_cfg['admin_ip_autorizzati']
+            if not isinstance(ips, list) or not all(isinstance(ip, str) for ip in ips):
+                raise ValueError("Campo 'admin_ip_autorizzati' non consentito: attesa lista di stringhe")
+
+    if 'footer_news' in payload:
+        fn_cfg = payload['footer_news']
+        if 'fonti' in fn_cfg:
+            fonti = fn_cfg['fonti']
+            if not isinstance(fonti, list) or len(fonti) > 6:
+                raise ValueError("Campo 'fonti' non consentito: attesa lista di al massimo 6 fonti")
+            for idx, fonte in enumerate(fonti):
+                if not isinstance(fonte, dict):
+                    raise ValueError(f"Fonte news #{idx + 1} non consentita: atteso oggetto JSON")
+                extra_f = set(fonte.keys()) - FONTI_WHITELIST
+                if extra_f:
+                    raise ValueError(
+                        f"Chiavi non consentite nella fonte news #{idx + 1}: {sorted(extra_f)}"
+                    )
+
+    return payload
+
+
 class KioskServer(BaseHTTPRequestHandler):
+    timeout = HTTP_REQUEST_TIMEOUT
+
+    def setup(self):
+        self.timeout = HTTP_REQUEST_TIMEOUT
+        super().setup()
+
+    def handle(self):
+        acquired = HTTP_CONCURRENCY_SEMAPHORE.acquire(blocking=False)
+        if not acquired:
+            corpo_503 = json.dumps({
+                'success': False,
+                'error': 'Server sovraccarico: limite concorrenza raggiunto',
+            }).encode('utf-8')
+            risposta_503 = (
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Retry-After: 5\r\n"
+                b"Connection: close\r\n"
+                b"Content-Length: " + str(len(corpo_503)).encode('ascii') + b"\r\n\r\n" + corpo_503
+            )
+            try:
+                self.wfile.write(risposta_503)
+                self.wfile.flush()
+                # Lingering close (RFC 7230 §6.6): segnala EOF in scrittura e drena i byte in arrivo
+                # per evitare che socket.close() generi TCP RST prima che il client legga il 503.
+                with contextlib.suppress(OSError):
+                    self.connection.shutdown(socket.SHUT_WR)
+                self.connection.settimeout(0.05)
+                drenati = 0
+                while drenati < 16384:
+                    try:
+                        chunk = self.connection.recv(4096)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    drenati += len(chunk)
+            except OSError:
+                pass
+            return
+        try:
+            super().handle()
+        finally:
+            HTTP_CONCURRENCY_SEMAPHORE.release()
+
     def log_message(self, format, *args): pass 
 
     def end_headers(self):
@@ -822,7 +1069,7 @@ class KioskServer(BaseHTTPRequestHandler):
                 if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
                     safe_config['api_cineca']['password'] = '********'
                 
-                hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
+                hash_salvato = safe_config.get('sicurezza', {}).get('password_admin_hash', '')
                 safe_config['avviso_sicurezza'] = hash_salvato in HASH_PASSWORD_DEFAULT
                     
                 self.wfile.write(json.dumps(safe_config).encode('utf-8'))
@@ -841,48 +1088,36 @@ class KioskServer(BaseHTTPRequestHandler):
             if not self._check_security(): return
             
             client_ip = self.client_address[0] if self.client_address else '127.0.0.1'
-            now_ts = time.time()
-            
-            with lock_login:
-                tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
-                if tentativo.get('locked_until', 0) > now_ts:
-                    secondi_attesa = int(tentativo['locked_until'] - now_ts)
+            body = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(body)
+                if not isinstance(data, dict):
+                    self.send_error(400, "Bad Request")
+                    return
+                pwd = data.get('password', '')
+                if not isinstance(pwd, str):
+                    self.send_error(400, "Bad Request")
+                    return
+
+                with lock_config:
+                    hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
+
+                esito = verifica_login_admin(client_ip, pwd, hash_salvato)
+
+                if esito['status'] == 200:
+                    self._invia_json(200, {"token": esito['token']})
+                elif esito['status'] == 429:
+                    secondi_attesa = esito['secondi_attesa']
                     self.send_response(429)
                     self.send_header('Content-type', 'application/json')
+                    self.send_header('Retry-After', str(esito['retry_after']))
                     self.end_headers()
                     self.wfile.write(json.dumps({
                         "error": f"Troppi tentativi falliti. Riprova tra {secondi_attesa} secondi.",
                         "secondi_attesa": secondi_attesa
                     }).encode('utf-8'))
-                    return
-
-            body = self.rfile.read(content_length).decode('utf-8')
-            try:
-                data = json.loads(body)
-                pwd = data.get('password', '')
-                pwd_hash = hashlib.sha256(pwd.encode('utf-8')).hexdigest()
-                
-                hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
-                
-                if pwd_hash == hash_salvato:
-                    with lock_login:
-                        if client_ip in LOGIN_ATTEMPTS:
-                            del LOGIN_ATTEMPTS[client_ip]
-                    token = secrets.token_hex(16)
-                    SESSIONS[token] = time.time() + 3600
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"token": token}).encode('utf-8'))
                 else:
-                    time.sleep(1)  # Delay difensivo anti-timing e anti-brute force
-                    with lock_login:
-                        tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
-                        tentativo['count'] = tentativo.get('count', 0) + 1
-                        if tentativo['count'] >= 5:
-                            tentativo['locked_until'] = now_ts + 600  # Blocco per 10 minuti
-                            logging.warning(f"🚨 Troppi tentativi di login errati dall'IP {client_ip}. IP bloccato per 10 minuti.")
-                        LOGIN_ATTEMPTS[client_ip] = tentativo
+                    time.sleep(1)  # Delay difensivo anti-timing e anti-brute force (fuori da lock_login)
                     self.send_error(401, "Unauthorized")
             except Exception as e:
                 logging.error(f"Errore login: {e}")
@@ -898,6 +1133,8 @@ class KioskServer(BaseHTTPRequestHandler):
                 # Copy-on-Write: prepariamo la nuova configurazione su una copia isolata
                 with lock_config:
                     nuova_config = copy.deepcopy(CONFIG)
+
+                valida_payload_admin_save(payload, config_attuale=nuova_config)
                 
                 if 'main' in payload:
                     if 'main' not in nuova_config: nuova_config['main'] = {}
@@ -971,9 +1208,12 @@ class KioskServer(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
                 
+            except ValueError as e:
+                logging.warning(f"🚫 Errore salvataggio config (payload rifiutato): {e}")
+                self._invia_json(400, {"error": str(e)})
             except Exception as e:
                 logging.error(f"Errore salvataggio config: {e}")
-                self.send_error(400, "Bad Request")
+                self._invia_json(400, {"error": "Bad Request"})
                 
         elif parsed_path == '/api/admin/locandine/upload':
             if not self._check_security() or not self._check_token(): return
@@ -1099,12 +1339,12 @@ def avvia_server_https():
         porta_https = int(https_cfg.get('porta_https', 8443))
         logging.info(f"Avvio KioskServer HTTPS (SSL) sulla porta {porta_https}")
         
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
+        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
         
         httpd_ssl = KioskHTTPServer(('0.0.0.0', porta_https), KioskServer)
         httpd_ssl.is_ssl = True
-        httpd_ssl.socket = ctx.wrap_socket(httpd_ssl.socket, server_side=True)
+        httpd_ssl.socket = ssl_ctx.wrap_socket(httpd_ssl.socket, server_side=True)
         server_https_attivo = True
         httpd_ssl.serve_forever()
     except Exception as e:
