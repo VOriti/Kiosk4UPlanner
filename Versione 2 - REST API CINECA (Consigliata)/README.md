@@ -1,167 +1,150 @@
-# Kiosk4Uplanner - Versione 2: REST API CINECA (Consigliata)
+# Kiosk4UPlanner - Versione 2: REST API CINECA (Consigliata)
 
-[⬅ Torna alla pagina principale](../README.md)
+[⬅ Torna alla Pagina Principale](../README.md) | [🛠️ Guida di Installazione (INSTALL.md)](INSTALL.md) | [📋 Legenda dei Log (LEGENDA_LOG.md)](LEGENDA_LOG.md) | [📜 Changelog](../CHANGELOG.md)
 
-> 🚀 **Devi installare o configurare il Raspberry Pi da zero?**  
-> 👉 **[Vai alla Guida di Installazione Passo-Passo (INSTALL.md)](INSTALL.md)**
+> 🚀 **Devi installare, aggiornare o configurare il Raspberry Pi passo-passo?**  
+> Apri la **[Guida di Installazione (INSTALL.md)](INSTALL.md)** per i requisiti di sistema, l'avvio automatico in modalità Kiosk (`.xinitrc`), il recupero dei codici CINECA (`Debug Mode` o `F12`), il port-forwarding `80`/`443` (`iptables`) e il server HTTPS.
 
-### 🧠 Come funziona la comunicazione API con CINECA
-Questa versione abbandona l'interazione visiva con l'interfaccia grafica di U-Planner (nessun browser nascosto che fa scraping). Il server Python si comporta come un vero e proprio "client", interrogando direttamente i database di CINECA tramite le **REST API ufficiali**.
+---
 
-Per comunicare con i server, Python esegue un Login inviando Username, Password e un parametro chiamato `realm` (che per CINECA corrisponde al codice univoco **`clienteId`** del tuo Ateneo). In risposta, CINECA consegna un **Bearer Token**: una lunga stringa crittografata che funge da "lasciapassare" per leggere i dati.
+## 🧠 Come funziona la comunicazione API con CINECA
 
-Il demone Python gestisce:
-* Autenticazione: Gestisce il login e il rinnovo automatico del Bearer Token (Self-Healing con backoff esponenziale).
-* Data Handling: Interroga l'endpoint `/Impegni/getImpegniCalendario` circoscrivendo la richiesta all'**Anno Accademico** (`anno_accademico_id`) e al **Contesto** (`contesto_id`: Polo didattico, Dipartimento o Area aule).
-* Persistenza: Utilizza un database locale (`stato_impegni.json`) per mantenere memoria degli eventi "Annullati" o "Spostati" anche dopo il riavvio del server.
-* Filtro Intelligente a Due Stadi: Scarica l'intero Contesto selezionato (sotto la soglia di sicurezza di 500 impegni per chiamata) e filtra localmente le sole aule del palazzo basandosi su `id_edificio`.
+Questa versione abbandona lo scraping DOM del calendario web pubblico (usato nella Versione 1): un demone Python locale interroga direttamente gli endpoint **REST API ufficiali** di U-Planner (CINECA) scambiando dati strutturati in formato JSON.
 
-**La logica "Self-Healing":**
-Per motivi di sicurezza, il Token di CINECA scade dopo 14 giorni. Invece di usare un timer (che si resetterebbe a ogni riavvio del Raspberry), il nostro server Python sfrutta una logica di "cura automatica" basata sugli errori HTTP. 
-Quando il server prova a scaricare i dati delle aule e si accorge che il Token è scaduto (ricevendo indietro un errore di sistema **HTTP 401 - Unauthorized**), non va in crash. Al contrario, riconosce l'errore, mette in pausa l'aggiornamento, riesegue istantaneamente il Login in background per ottenere un Token fresco e ritenta la lettura. Questo rende il sistema perpetuo e totalmente esente da manutenzione manuale.
+All'avvio il server effettua l'accesso su CINECA (endpoint `/Utenti/login`) inviando `username` e `password` dell'account fornito dall'Ateneo insieme al parametro `realm` / `clientId` (il codice identificativo di 24 caratteri esadecimali dell'Ateneo, chiamato `clienteId` su U-Planner). CINECA risponde con un **token di sessione** opaco (valido tipicamente 14 giorni), che Python conserva **esclusivamente in RAM** e allega alle richieste successive negli header `Authorization` e `X-Realm`.
 
-### 🚀 Funzionalità API
+Il ciclo operativo del backend si articola in quattro compiti:
 
-* **Leggerezza Assoluta:** Il Kiosk avvia unicamente una pagina web locale alleggerita. L'utilizzo di RAM e CPU del Raspberry Pi viene drasticamente ridotto rispetto alla Versione 1.
-* **Sistema Perpetuo:** Nessun rinnovo manuale dei token di sicurezza. Python intercetta le scadenze e rinnova l'accesso senza mai interrompere il servizio.
-* **Gestione Centralizzata (Nuovo in v4):** Un pannello di amministrazione accessibile via web (`/admin`) permette di configurare la dashboard in tempo reale (colori, loghi, ticker, avvisi) da remoto, senza mai riavviare o usare il terminale.
-* **Supporto Nativo HTTPS / SSL (Nuovo in v5.0):** Server Python a doppio canale in grado di servire in parallelo HTTP (8080) e HTTPS (8443) nello stesso processo, con fallback automatico e redirect configurabile.
-* **Hub Preferenze e Gestione Multi-Schermo (Nuovo in v5.0):** Icona universale a ingranaggio (`⚙`) per aprire il pannello preferenze. Le locandine sono attive di default sul totem fisico e sugli schermi Digital Signage secondari (`?kiosk=1`), ma disattivate di default per gli utenti web remoti.
-* **Ticker Notizie e Locandine:** Integrazione nativa di un feed scorrevole orizzontale o verticale per mostrare notizie (estraibili da fino a 6 fonti RSS o endpoint REST) e un carosello di locandine pubblicitarie, interamente gestibili dal pannello.
-* **Layout Unificato e Responsive:** Un solo file `remoto.html` renderizza la dashboard per il monitor 40" dell'atrio (Fullscreen), per i PC degli uffici (Doppia colonna) e si adatta in modo nativo su Smartphone e Tablet comprimendosi a colonna singola.
-* **Menu Fluttuante a Scomparsa (Info Badge):** Un menu rapido e interattivo integrato nella UI che espone link utili e documentazione di contatto.
-* **Immunità agli Aggiornamenti:** Eventuali modifiche grafiche, banner istituzionali o manutenzioni dell'interfaccia Angular di U-Planner non romperanno mai la dashboard, poiché i dati viaggiano esclusivamente su un protocollo dati (JSON) che resta invariato.
-* **Auto-Discovery Anagrafiche CINECA (`Debug Mode`):** Attivando temporaneamente `debug_mode`, il sistema interroga U-Planner e stampa in `kiosk.log` le mappe complete di **Anni Accademici**, **Contesti** (Poli, Dipartimenti, Aule trasversali) ed **Edifici** disponibili, offrendo un'alternativa immediata all'ispezione manuale via browser `F12` (entrambi i metodi sono illustrati nella **[Sezione 4 di INSTALL.md](INSTALL.md#4-configurazione-credenziali-cineca)** e in **[LEGENDA_LOG.md](LEGENDA_LOG.md)**).
-* **Gestione Avanzata degli Stati (P e C):** Distingue nativamente gli eventi Pubblicati (P) dai Confermati (C) tramite indicatori visivi e permette di nascondere gli eventi non definitivi.
-* **Risoluzione Indisponibilità:** Identifica e mostra la causale reale per cui un'aula è indisponibile, evitando le vecchie diciture generiche (es. "Attività programmata").
-* **Gestione Annullamenti e Modifiche Live:** Gli eventi "Annullati" (A) dal gestionale vengono intercettati automaticamente; il sistema traccia inoltre i cambiamenti in tempo reale (spostamenti di aula/orario) e li rende persistenti sul disco.
-* **Layout CSS a "Compressione Automatica":** Il frontend (remoto.html) utilizza Flexbox per garantire che tutte le card siano sempre visibili senza bisogno di scroll, comprimendosi dinamicamente in base al numero di lezioni.
+- **Autenticazione e Self-Healing (`HTTP 401`):** all'accensione viene richiesto un token fresco; se durante l'esercizio il token scade o viene revocato anticipatamente da CINECA (`HTTP 401 - Unauthorized`), il server lo invalida, attende `2 s`, ripete il login in background e riprende il servizio senza interventi manuali. Se invece il login stesso fallisce (credenziali errate o disservizio temporaneo del portale di accesso d'Ateneo), scatta un **backoff esponenziale** (`2 min → 60 min` con jitter) per evitare che tentativi ripetuti facciano bloccare l'account.
+- **Filtro Giornaliero a Due Stadi:** interroga `POST /Impegni/getImpegniCalendario` limitando la finestra temporale alle **24 ore della giornata corrente** (`Europe/Rome`) e circoscrivendo la richiesta ad **Anno Accademico** (`annoAccademicoId`) e **Contesto** (`contestoId`: Polo didattico, Dipartimento o Area aule), così da restare sotto il limite CINECA di **500 impegni per chiamata**. Dal risultato ricevuto filtra localmente le sole aule del palazzo configurato (`id_edificio`, opzionale: se lasciato vuoto mostra l'intero Contesto).
+- **Persistenza Giornaliera Anti-Blackout:** salva lo storico della giornata nel file locale `stato_impegni.json` tramite scrittura atomica (`.tmp` + `os.replace`) e **condizionale** (*zero scritture* su MicroSD finché gli orari non variano), azzerandolo ogni notte alle **04:00 AM** (`Europe/Rome`, tracciato in `ultimo_reset.txt` con recupero automatico all'accensione mattutina).
+- **Manutenzione Ordinaria Minima:** a regime il totem non richiede presidio quotidiano; l'unico adempimento periodico è l'**aggiornamento annuale di `anno_accademico_id`** all'inizio di ogni nuovo Anno Accademico (es. settembre).
 
-### 🏗️ Architettura del Sistema
+---
 
-Il progetto si compone di elementi fondamentali:
-1. **`server_api.py` (Il Motore):** Server HTTP/HTTPS Python. Si autentica in automatico su CINECA, interroga gli impegni del giorno, mappa i dati, scarica i feed RSS/REST e serve l'interfaccia sulle porte configurate (`8080` HTTP, `8443` HTTPS).
-2. **`remoto.html` (La UI):** Unica Web App in Dark Mode. Mantiene l'orologio, riproduce le locandine e disegna le aule attingendo ai dati del server. Riceve istruzioni per ricaricarsi in tempo reale ("Hot-Reload").
-3. **`admin.html` (Il Pannello Admin):** Interfaccia riservata per gestire la configurazione e salvarla su disco.
-4. **`~/.xinitrc` (L'Avvio Kiosk):** Script standard di Linux che si occupa di lanciare il server Python in background, aprire l'ambiente grafico e lanciare Chromium a tutto schermo in modalità Kiosk all'accensione del dispositivo.
+## 🚀 Caratteristiche Principali
+
+*(Per la cronologia completa di tutte le versioni consulta il **[Changelog generale](../CHANGELOG.md)**).*
+
+- **Leggerezza e Continuità Visiva:** invece di caricare sul Raspberry Pi la pesante web-app Angular di U-Planner, Chromium renderizza un'interfaccia locale leggerissima *(introdotta in v2.0)* con aggiornamento selettivo del DOM anti-sfarfallio *(aggiunto in v5.1)*. Le lezioni passano nella colonna *"In Corso"* al secondo esatto tramite ricalcolo in RAM e un **badge di freschezza (`/stato`)** mostra l'orario dell'ultimo sync CINECA mantenendo sempre visibile l'ultimo tabellone valido anche se cade la rete (`🔴 OFFLINE`) *(aggiunti in v5.2)*.
+- **Layout Responsive a Scorrimento Invisibile:** un'unica vista Dark Mode *(responsive mobile e cassetto info aggiunti in v3.0; file JS/CSS separati in `static/` in v5.3)* dispone le due colonne (*In Corso* e *Prossimi Eventi*) su griglia CSS con scorrimento verticale fluido a scrollbar invisibile senza mai comprimere o tagliare i testi *(aggiunto in v4.5)* e intestazioni colonne fisse *sticky* *(aggiunte in v5.0)*; sotto i `768px` (smartphone) passa automaticamente a colonna singola.
+- **Stati U-Planner, Indisponibilità e Motore Annullamenti:** traccia **annullamenti e spostamenti di aula/orario** *(introdotti in v2.0)*, distingue gli impegni **Pubblicati (`P`)** dai **Confermati (`C`, nascondibili)** con indicatori `P`/`C` opzionali, rileva gli stati **Annullati (`A`)** ed espone la **causale reale delle indisponibilità aula** *(aggiunti in v3.5)*. Per azzerare i falsi allarmi su glitch di rete integra *circuit-breaker* su risposte vuote, gestione stato **Sospeso (`S`)**, conferma d'assenza su **2 cicli consecutivi** (~10 min) e **auto-healing** istantaneo se la lezione ricompare *(aggiunti in v5.1)*.
+- **Pannello Web `/admin` e Hot-Reload:** configurazione centralizzata in `config.yaml` e interfaccia `/admin` con aggiornamento a caldo dei browser collegati *(introdotti in v4.0; parametri Anno/Contesto dinamici aggiunti in v4.5)*, organizzata in due macro-schede con tendine collassabili e **Avviso di Emergenza (Alert Giallo)** con anteprima live *(aggiunti in v5.0)*. Protetta da filtro IP CIDR (di fabbrica `127.0.0.1`), rate-limiter anti-brute force con countdown *(aggiunto in v5.1)*, guardia cambio `url_base` *(aggiunta in v5.2)*, login atomico, whitelist rigorosa e box guida CINECA *(aggiunti in v5.3; il riavvio del demone serve solo cambiando porte o SSL)*.
+- **Ticker Multi-Fonte e News Hub Modale:** barra inferiore configurabile a scorrimento *orizzontale* o dissolvenza *verticale* ogni `6 s` *(introdotta in v4.0)*, alimentata da fino a **6 fonti** con pesi `1–5` e **News Hub** modale ordinabile con preferenze `localStorage` *(aggiunti in v4.6)*. Supporta feed RSS 2.0 / Atom / Drupal Views e REST JSON WordPress con normalizzazione date `DD/MM/YYYY` *(aggiunti in v5.0–v5.1)*, timeout `5 s` per fonte, **semaforo diagnostico** in `/admin` e **ricerca full-text** istantanea *(aggiunti in v5.2)*, con motore 100% in RAM a zero scritture su MicroSD *(aggiunto in v5.3)*.
+- **Pipeline Locandine Ottimizzata:** supporto formati JPEG, PNG e WebP protetto contro *path-traversal* *(aggiunto in v5.1)*, caricamento binario da `/admin` (max `10 MB` con verifica *magic bytes*), ridimensionamento automatico lato client (Canvas max `2160px` WebP), anteprima Lightbox, riordino logico senza rinominare i file e cache browser permanente `immutable` *(aggiunti in v5.2)*.
+- **Auto-Discovery Anagrafiche in `Debug Mode`:** una volta impostati `username`, `password` e `realm`, attivando temporaneamente `debug_mode` il demone elenca in `kiosk.log` i codici **Edificio** rilevati negli impegni della giornata *(aggiunto in v5.0)* e interroga `/AnniAccademici` e `/Contesti` stampando tutti gli ID dell'Ateneo *(aggiunto in v5.3)* — in alternativa alla procedura via browser `F12` (vedi **[Sezione 4 di INSTALL.md](INSTALL.md#4-configurazione-credenziali-cineca)** e **[LEGENDA_LOG.md](LEGENDA_LOG.md)**).
+- **Server HTTP + HTTPS Parallelo:** erogazione simultanea su porta HTTP (`8080`) e porta HTTPS/TLS (`8443`) in thread dedicati dello stesso processo Python, con fail-safe automatico su HTTP se i certificati SSL mancano e bypass del redirect per il browser locale del totem *(aggiunto in v5.0)*, blindato da timeout socket `15 s`, semaforo a `40` slot e `Content-Security-Policy` anti-XSS *(aggiunti in v5.3)*.
+
+---
+
+## 🏗️ Architettura del Sistema
+
+Il codice della Versione 2 separa i motori di dominio nel pacchetto `dashboard_aule/core/` e le risorse frontend nella cartella `dashboard_aule/static/`:
 
 ```text
-Workflow di Avvio del Sistema
-
-[ 🔌 Accensione Raspberry Pi ]
-               │
-               ▼
-[ 1. Kernel & Systemd ] ──► Esegue l'Autologin sulla console (TTY1) come Utente designato
-               │
-               ▼
-[ 2. ~/.bashrc ] ────────► Rileva la console TTY1 in assenza di ambiente grafico
-                           ed esegue automaticamente il comando: startx
-               │
-               ▼
-[ 3. ~/.xinitrc ] ───────► Inizializza l'ambiente grafico X11:
-                           ├─ Disabilita lo screensaver e risparmio energetico (xset)
-                           ├─ Nasconde il cursore del mouse inattivo (unclutter)
-                           ├─ Lancia server_api.py in background (&)
-                           ├─ Avvia il gestore finestre leggero (openbox)
-                           └─ Avvia Chromium a tutto schermo (Kiosk) su http://localhost:8080/?kiosk=1
-               │
-               ▼
-[ 🖥️ Dashboard Operativa a Schermo Intero ]
+Versione 2 - REST API CINECA (Consigliata)/
+├── .xinitrc                        # Script avvio X11: rotazione xrandr, openbox, watchdog Python e Chromium Kiosk
+├── README.md                       # Architettura e guida funzionale della Versione 2
+├── INSTALL.md                      # Manuale di installazione passo-passo su Raspberry Pi OS Lite
+├── LEGENDA_LOG.md                  # Guida alla lettura di kiosk.log e server_api_sys.log
+└── dashboard_aule/
+    ├── server_api.py               # Entry-point HTTP/HTTPS, ciclo di polling, semaforo 40 slot, login e CSP
+    ├── core/                       # Motori backend disaccoppiati
+    │   ├── __init__.py
+    │   ├── cineca_client.py        # Autenticazione CINECA, backoff esponenziale, sonda paginazione e annullamenti
+    │   ├── news_engine.py          # Motore feed RSS/Atom/Drupal e WordPress REST 100% in RAM (zero I/O su disco)
+    │   └── building_context.py     # Stato edificio, lock memoria/disco separati (fsync fuori lock) e locandine
+    ├── static/                     # Asset frontend serviti su rotte dedicate sotto Content-Security-Policy
+    │   ├── remoto.js               # Logica client dashboard pubblica, carosello duty-cycle e News Hub
+    │   ├── remoto.css              # Foglio di stile responsive Dark Mode e Kiosk Lockdown
+    │   ├── admin.js                # Logica client pannello /admin, downscaling Canvas WebP e diagnostica
+    │   └── admin.css               # Foglio di stile del pannello di amministrazione
+    ├── remoto.html                 # Markup HTML puro della dashboard pubblica (zero script/stili/handler inline)
+    ├── admin.html                  # Markup HTML puro del pannello di amministrazione (zero script/stili/handler inline)
+    ├── logo.png                    # Logo istituzionale predefinito
+    ├── config.example.yaml         # Modello di configurazione commentato (da copiare in config.yaml)
+    └── locandine/                  # Cartella locandine (esempi 1.jpg–4.jpg; in produzione p<epoch>_<hex>.<ext> + ordine.json)
 ```
 
----
+Le responsabilità sono ripartite in quattro livelli:
 
-### 🛠️ Installazione e Configurazione
-
-Tutti i passaggi operativi per installare il software su Raspberry Pi OS Lite, configurare le dipendenze, abilitare l'autostart grafico a tutto schermo, recuperare le credenziali CINECA e configurare la rete sono descritti passo-passo nella guida dedicata:
-
-👉 **[Apri la Guida all'Installazione Passo-Passo (INSTALL.md)](INSTALL.md)**
-
-La guida operativa è strutturata in 9 fasi pratiche:
-1. **Requisiti e Dipendenze:** Installazione pacchetti di sistema (`apt`).
-2. **Copia e Posizionamento:** Albero cartelle e permessi script.
-3. **Autostart e Modalità Kiosk:** Configurazione di `~/.bashrc` e `~/.xinitrc`.
-4. **Configurazione Credenziali e Codici CINECA:** Configurazione via web `/admin` o YAML, con recupero guidato di Anno Accademico, Contesto ed Edificio tramite **Auto-Discovery in Debug Mode** (`kiosk.log`) oppure tramite **procedura browser `F12`**.
-5. **Personalizzazione Iniziale:** Primo avvio e gestione dal pannello.
-6. **Rete e Porte Standard (80 e 443):** Comandi unificati `iptables` per evitare la porta nell'URL.
-7. **Configurazione HTTPS / SSL:** Certificati OpenSSL, server dual-thread e fail-safe.
-8. **Spegnimento Programmato:** Cronjob o moduli RTC per salvaguardare l'hardware.
-9. **Verifica e Collaudo Finale:** Checklist di primo avvio.
+1. **`server_api.py` (Entry-Point, Polling e Router HTTP/HTTPS):**
+   - Gestisce l'ascolto parallelo su IPv4 per HTTP (`8080`) e HTTPS (`8443`), i thread daemon di sincronizzazione e il salvataggio Copy-on-Write di `config.yaml` preservando i commenti.
+   - Protegge il server con timeout socket di `15 s` e semaforo di concorrenza `BoundedSemaphore(40)` (rispondendo subito `HTTP 503` + `Retry-After: 5` oltre i 40 slot simultanei).
+   - Applica su `/api/admin/login` un rate-limiter atomico (max 5 tentativi / blocco IP 10 min) con confronto dell'hash `SHA-256` a tempo costante (`hmac.compare_digest`), valida `/api/admin/save` tramite whitelist rigorosa delle chiavi ammesse e inietta su tutte le risposte gli header di sicurezza OWASP e la `Content-Security-Policy` (`default-src 'self'; img-src 'self' data:; connect-src 'self'; style-src 'self'; frame-ancestors 'self'`).
+2. **`core/` (I Motori di Dominio):**
+   - **`cineca_client.py` (`CinecaClient`):** gestisce login e sessione U-Planner (timeout `15 s`), backoff esponenziale sui login falliti (`120 s → 3600 s` con jitter), sonda diagnostica di paginazione con salvaguardia obbligatoria su `anno_accademico_id` e `contesto_id`, interrogazione di `/AnniAccademici` e `/Contesti` in `Debug Mode`, sentinella del tetto di `500` eventi e motore di riconciliazione annullamenti/spostamenti.
+   - **`news_engine.py` (`NewsEngine`):** scarica i feed RSS 2.0 / Atom / Drupal Views e gli endpoint JSON WordPress REST con timeout di `5 s` per fonte, parsing XML da byte nativi (`res.content`, compatibile con codifiche `UTF-8`, `ISO-8859-1` e `Windows-1252`), sanitizzazione HTML multilinea, interleaving pesato (`1–5`) e semaforo diagnostico (`🟢` / `🔴` / `⚪`), operando **interamente in RAM con zero scritture su MicroSD**.
+   - **`building_context.py` (`BuildingContext`):** incapsula lo stato dell'edificio, separa `lock_memoria` da `lock_disco` eseguendo `os.fsync()` **fuori** dal lock di lettura per mantenere `/dati.json` istantaneo anche su MicroSD lente, persiste atomicamente `stato_impegni.json` e `ultimo_reset.txt` (reset delle `04:00 AM`) e governa l'archivio locandine (`ordine.json`, controllo *magic bytes* e guardia anti *path-traversal*).
+3. **`remoto.html`, `admin.html` e `static/`:**
+   - Separazione netta tra struttura DOM (markup HTML semantico privo di blocchi `<script>`, `<style>`, attributi `style=` o handler `on*=`) e i 4 asset statici serviti su rotte esplicite (`/static/remoto.js` e `/static/remoto.css` pubbliche; `/static/admin.js` e `/static/admin.css` protette dai medesimi controlli IP/abilitazione di `/admin`) con percorsi relativi `./`, requisito fondamentale per la `Content-Security-Policy` anti-XSS.
+4. **`.xinitrc` (Avvio Grafico X11 e Watchdog Kiosk):**
+   - Disabilita screensaver e risparmio energetico (`xset`), applica l'orientamento del display tramite `xrandr` (`NOME_MONITOR` e `ROTAZIONE_MONITOR` configurabili in testa allo script per monitor orizzontali o totem verticali), nasconde il cursore inattivo (`unclutter`) e avvia `openbox-session`.
+   - Lancia `server_api.py` in un ciclo watchdog `while true` con rotazione automatica di `server_api_sys.log` a `5 MB` e, dopo `5 s` di avvio, esegue Chromium in modalità `--kiosk --incognito` su `http://localhost:8080/remoto.html?kiosk=1` *(vedi lo schema completo nella **[Sezione 3 di INSTALL.md](INSTALL.md#3-autostart-e-modalità-kiosk-bashrc-e-xinitrc)**)*.
 
 ---
 
-### 🖥️ Schermi Secondari e Digital Signage (`?kiosk=1`)
+## 🖥️ Modalità di Installazione: Monitor a Parete, Totem Touchscreen e PC/Smartphone
 
-A partire dalla versione 5.0 è stata introdotta una gestione intelligente e dinamica del carosello delle locandine pubblicitarie/informative:
+La stessa interfaccia supporta nativamente **tre scenari reali di utilizzo** negli spazi universitari, adattando locandine, interazione touch e blocchi di sicurezza:
 
-1. **Monitor Fisico del Totem (`localhost` / `127.0.0.1`):**
-   - Le locandine sono **attive per impostazione predefinita**.
-2. **Utenti da PC o Smartphone (Rete locale / Uffici):**
-   - Le locandine sono **disattivate per impostazione predefinita**, permettendo a studenti e personale di consultare immediatamente l'orario delle aule senza interruzioni a tutto schermo.
-   - Ogni utente può comunque attivarle a piacimento cliccando sull'icona a ingranaggio (`⚙`) in basso a destra: la preferenza verrà memorizzata nel `localStorage` del dispositivo.
-3. **Schermi Secondari, Smart TV e Totem Extra (`?kiosk=1`):**
-   - Se desideri collegare al server un monitor secondario, una Smart TV da corridoio o un player multimediale privo di tastiera, è sufficiente impostare l'URL includendo il parametro `?kiosk=1`:
+1. **Monitor Fisico Appeso / Smart TV da Corridoio (Solo visualizzazione passiva):**
+   - Ideale per schermi montati in alto negli atri o nei corridoi, privi di tastiera e fuori dalla portata del pubblico (sia il monitor collegato direttamente al Raspberry Pi su `localhost`, sia eventuali Smart TV o mini-PC secondari collegati via rete).
+   - Per i display secondari basta configurare il browser integrato aprendo l'indirizzo con il parametro **`?kiosk=1`**:
      ```text
      http://[IP_DEL_RASPBERRY]:8080/?kiosk=1
-     # oppure in HTTPS:
      https://[IP_DEL_RASPBERRY]:8443/?kiosk=1
      ```
-   - Con questo parametro, il dispositivo viene immediatamente riconosciuto come postazione Kiosk: le locandine risulteranno attive di default senza richiedere alcuna interazione manuale sul browser o telecomando.
+   - Il carosello delle locandine informative parte **automaticamente attivo** (purché abilitato globalmente in `/admin`), alternandosi da solo al tabellone delle aule secondo la quota di *Duty-Cycle* impostata.
+2. **Totem a Colonna Touchscreen nell'Atrio (Postazione Pubblica Interattiva):**
+   - Il sistema è già pronto per essere installato su **totem touch a pavimento** (sia orizzontali sia verticali) a disposizione di studenti e docenti, usando lo stesso indirizzo Kiosk (`localhost` sul Raspberry del totem oppure `?kiosk=1`):
+     - **Scomparsa istantanea delle locandine al tocco:** se uno studente si avvicina mentre è a schermo una locandina, basta **toccare qualsiasi punto del display** perché la locandina sparisca all'istante lasciando subito spazio agli orari delle lezioni;
+     - **Consultazione interattiva degli orari e degli avvisi:** dal display touch è possibile scorrere con il dito le colonne delle lezioni e toccare l'ingranaggio (`⚙`) **in basso a sinistra** per aprire il **News Hub**, cercare tra gli avvisi o leggere i titoli delle fonti d'Ateneo;
+     - **Kiosk Lockdown anti-manomissione:** tutti i link verso pagine esterne (articoli web, calendario pubblico, crediti nel cassetto in basso a destra) sono **bloccati (`pointer-events: none`)**, impedendo a chiunque di uscire dalla dashboard o usare il totem per navigare altrove;
+     - **Auto-ripristino dopo `60 s` di inattività:** se un utente apre il News Hub o il cassetto informativo e poi si allontana, dopo `60 s` senza tocchi tutte le finestre si richiudono automaticamente riportando il totem sul tabellone orari (e il carosello resta sempre forzato attivo, senza che un passante possa disabilitarlo).
+3. **PC d'Ufficio e Smartphone Personali (Consultazione da Remoto):**
+   - Aprendo l'indirizzo normale **senza** `?kiosk=1`, il carosello locandine parte **disattivato di default** per mostrare immediatamente l'occupazione delle aule senza attese.
+   - Tutti i collegamenti esterni agli articoli delle notizie e al calendario pubblico sono regolarmente cliccabili, e tramite l'icona a ingranaggio (`⚙`) **in basso a sinistra** nel footer (visibile quando il footer notizie è abilitato) ciascun utente può personalizzare fonti e locandine salvando la preferenza nel `localStorage` del proprio dispositivo.
 
-#### ⏱️ Duty-Cycle del Carosello, Rotazione a Staffetta e Chiusura Rapida
+### ⏱️ Duty-Cycle del Carosello e Rotazione a Staffetta
 
-A partire dalla versione 5.2.4, il carosello delle locandine adotta una politica rigorosa di **Duty-Cycle** e rotazione concatenata per tutelare l'esperienza d'uso fondamentale del totem: la consultazione immediata degli orari da parte degli studenti.
+Per evitare che la proiezione di molte locandine nasconda troppo a lungo gli orari delle lezioni, il carosello applica una politica di **Duty-Cycle** con rotazione circolare *(introdotta in v5.2)*:
 
-1. **Che cos'è il Duty-Cycle (Percentuale di Occupazione Schermo):**
-   - Rappresenta la quota massima di tempo complessivo riservata alle locandine rispetto all'intero ciclo operativo (tabellone aule + locandine).
-   - È configurabile nel pannello di amministrazione (`/admin` nel pannello **Locandine**) tramite un comodo **slider graduato da 10% a 50%** con passo del 5% (valore consigliato e predefinito: **30%**).
-   - Impostando ad esempio la quota al 30%, il sistema assicura matematicamente che almeno il **70% del tempo totale** (e tra il **50% e il 90%** su tutto il range ammissibile) sia costantemente dedicato alla visualizzazione degli impegni delle aule.
+- **Quota Massima (Duty-Cycle `10%–50%`):** dallo slider in `/admin` → *Locandine* si imposta la percentuale massima di tempo riservata alle locandine (valore predefinito: **30%**, che lascia circa il **70%** del ciclo al tabellone aule).
+- **Gruppi e Rotazione a Staffetta (*Round-Robin*):** ogni schermata (*gruppo*) mostra **2 locandine affiancate** sui display orizzontali oppure **1 singola locandina** sui totem verticali. Se le locandine caricate superano il tempo concesso in un singolo ciclo, il sistema mostra solo i gruppi consentiti dal budget e al giro successivo riparte esattamente dal gruppo seguente *(toccando lo schermo, facendo clic o premendo `Esc`, l'overlay si chiude subito e il ciclo successivo riprenderà dopo `pausaTraCaroselli`)*.
+- **Calcolo dei Gruppi per Ciclo:** detti `pausa` l'intervallo di tabellone orari tra due caroselli (default `180 s`), `quota` la frazione scelta (default `0.30`), `esposizione` la durata di ogni schermata (default `10 s`, comprensiva di `1.5 s` di dissolvenza in ingresso) e `transizione` il tempo tecnico di chiusura verso il tabellone (`1.55 s`: `0.05 s` di preparazione DOM + `1.5 s` di fade-out CSS):
 
-2. **Rotazione Circolare a Staffetta (Round-Robin):**
-   - Nei totem universitari tradizionali, quando vengono caricate decine di locandine, un carosello standard che mostri tutti i file consecutivamente blocca la consultazione per svariati minuti consecutivi.
-   - Kiosk4UPlanner risolve il problema con la rotazione a staffetta: a ogni ciclo viene proiettato solo un sottoinsieme ristretto di locandine (calcolato in modo da non superare la quota di duty cycle consentita).
-   - Il puntatore circolare (`indiceRotazione`) memorizza la posizione: al ciclo successivo la proiezione ripartirà esattamente dal gruppo seguente, garantendo visibilità equa a tutte le locandine senza mai sequestrare lo schermo.
+$$
+\text{budget} = \text{pausa} \times \frac{\text{quota}}{1 - \text{quota}}, \qquad \text{gruppiPerCiclo} = \max\!\left(1,\, \left\lfloor \frac{\text{budget}}{\text{esposizione} + \text{transizione}} \right\rfloor\right)
+$$
 
-3. **Formula Matematica del Calcolo Gruppi:**
-   Il numero di gruppi di locandine mostrati per ogni singolo ciclo viene ricavato dalla seguente formula:
-   $$\text{budget} = \text{pausaMs} \times \frac{\text{quota}}{1 - \text{quota}}$$
-   $$\text{gruppiPerCiclo} = \max\left(1, \left\lfloor \frac{\text{budget}}{\text{esposizioneMs} + \text{transizioneMs}} \right\rfloor\right)$$
-   *Dove:*
-   - `pausaMs`: tempo di permanenza fisso del tabellone aule tra due caroselli (es. 180.000 ms = 3 minuti).
-   - `quota`: quota frazionaria impostata dallo slider (es. 0.30 per 30%).
-   - `esposizioneMs`: tempo di esposizione a schermo di ogni singola schermata (es. 10.000 ms = 10 secondi).
-   - `transizioneMs`: tempo tecnico di transizione (costante fissa pari a 1.550 ms: 50 ms di setup del DOM + 1.500 ms di dissolvenza incrociata CSS).
-
-4. **Chiusura Rapida al Tocco, Clic o Tasto Escape (Instant Dismiss):**
-   - Se uno studente o un docente si avvicina al totem mentre è in riproduzione una locandina, non deve attendere il termine del ciclo.
-   - Un semplice **tocco sul display touchscreen** (`pointerdown`), un **clic del mouse** o la pressione del tasto **Escape** interrompe istantaneamente il carosello in corso, chiudendo l'overlay e ripristinando all'istante la vista del tabellone orari.
-   - Sui totem Kiosk (`?kiosk=1` o `localhost`), un timer di inattività (`INATTIVITA_KIOSK_MS` = 60 secondi) ripristina automaticamente lo stato di quiete e riarma la rotazione periodica se nessun utente interagisce ulteriormente.
+  *(Con i valori predefiniti: $\text{budget} \approx 77.1\text{ s}$, pari a **6 schermate per ciclo** — fino a **12 locandine** su schermo orizzontale o **6** su schermo verticale; il vincolo $\max(1, \dots)$ garantisce comunque almeno 1 schermata per ciclo anche con pause molto brevi).*
 
 ---
 
-### 💾 Gestione Stato e Persistenza
-Il sistema genera automaticamente il file `stato_impegni.json` nella cartella di progetto.
-* **Reset manuale:** Se desideri "pulire" la memoria di tutti gli annullamenti o spostamenti salvati, basta eliminare il file con questo comando: 
-  `rm /home/vincenzo/dashboard_aule/stato_impegni.json`
-* **Log:** Il file `kiosk.log` è lo strumento principale per il monitoraggio e il debug. Per la guida completa a tutti i messaggi operativi, codici di errore e diagnostica di entrambi i file (`kiosk.log` e `server_api_sys.log`), consulta la 👉 **[Guida e Legenda dei Log (LEGENDA_LOG.md)](LEGENDA_LOG.md)**. 
+<a id="troubleshooting-e-manutenzione-v2"></a>
+## 🔧 Persistenza, Log e Manutenzione
 
-### 🔧 Troubleshooting e Manutenzione (V2)
+Tutti i file runtime generati in locale dentro `~/dashboard_aule/` (`config.yaml`, `stato_impegni.json`, `ultimo_reset.txt`, `locandine/ordine.json`, `kiosk.log` e `server_api_sys.log`) sono esclusi da Git per non essere sovrascritti durante gli aggiornamenti, e i file di stato/configurazione vengono salvati con scrittura atomica (`.tmp` + `os.replace`).
 
-* **Verifica stato server:** Se la dashboard non carica i dati, verifica che il demone sia attivo:
-    ```bash
-    ps aux | grep server_api.py
-    ```
-* **Log di sistema:** Consulta il log per errori di autenticazione o API:
-    ```bash
-    tail -f /home/vincenzo/dashboard_aule/kiosk.log
-    ```
-* **Problemi di formattazione (Caratteri strani/Errori):** Se il file Python è stato modificato su Windows, pulisci i caratteri di fine riga:
-    ```bash
-    dos2unix /home/vincenzo/dashboard_aule/server_api.py
-    ```
-* **Reset stato:** Se vuoi resettare gli annullamenti/spostamenti salvati cancella il file `stato_impegni.json`:
-    ```bash
-    rm /home/vincenzo/dashboard_aule/stato_impegni.json
-    ```
+- **Verifica stato del demone:** per controllare se il processo Python è in esecuzione:
+  ```bash
+  pgrep -af server_api.py
+  ```
+- **Consultazione Log Applicativo e Log di Sistema:** `kiosk.log` registra l'attività ordinaria e il `Debug Mode` (rotazione `10 MB x 5`), mentre `server_api_sys.log` raccoglie eventuali errori critici di avvio o traceback Python non gestiti (rotazione a `5 MB`; in condizioni normali resta a `0 byte`). Per tutti i messaggi consulta **[LEGENDA_LOG.md](LEGENDA_LOG.md)**:
+  ```bash
+  tail -f ~/dashboard_aule/kiosk.log
+  cat ~/dashboard_aule/server_api_sys.log
+  ```
+- **Fine riga Windows/Linux (`dos2unix`):** se hai copiato o modificato gli script da un PC Windows, converti i caratteri `CRLF` in `LF` sia su `~/.xinitrc` (fondamentale per Bash) sia sui file Python:
+  ```bash
+  dos2unix ~/.xinitrc ~/dashboard_aule/server_api.py ~/dashboard_aule/core/*.py
+  ```
+- **Reset manuale di annullamenti e spostamenti del giorno:** per azzerare subito sia su disco sia in RAM gli annullamenti/spostamenti memorizzati nella giornata corrente, rimuovi `stato_impegni.json` e termina il processo Python (se avviato tramite `~/.xinitrc`, il watchdog lo rilancerà automaticamente entro `2 s`; se invece lo avevi lanciato manualmente da SSH, riavvialo con `python3 ~/dashboard_aule/server_api.py`):
+  ```bash
+  rm -f ~/dashboard_aule/stato_impegni.json && pkill -f server_api.py
+  ```
 
 ---
+
+[⬆ Torna all'inizio](#kiosk4uplanner---versione-2-rest-api-cineca-consigliata) | [⬅ Torna alla Pagina Principale](../README.md) | [🛠️ Guida di Installazione](INSTALL.md) | [📋 Legenda dei Log](LEGENDA_LOG.md)

@@ -33,29 +33,51 @@ sudo apt install --no-install-recommends xserver-xorg x11-xserver-utils xinit op
 ---
 
 ### 2. Copia e Posizionamento dei File
-Scarica o clona il repository e posiziona la cartella `dashboard_aule` direttamente nella tua home directory.
+Scarica o clona il repository e posiziona l'intera cartella `dashboard_aule` (comprensiva delle sottocartelle obbligatorie `core/` e `static/`) direttamente nella tua home directory.
 
 ⚠️ **Attenzione:** il file nascosto `.xinitrc` va posizionato *fuori* dalla cartella `dashboard_aule`, direttamente nella radice della tua home utente (`~/.xinitrc`).
 
-La struttura finale (sostituendo `vincenzo` con il tuo effettivo nome utente) dovrà essere la seguente:
+La struttura finale secondo l'organizzazione modulare della **Milestone v5.3 (Opzione 1 `D-19`)** — sostituendo `vincenzo` con il tuo effettivo nome utente — dovrà essere la seguente:
 ```text
 /home/vincenzo/
-├── .xinitrc               <-- Script di avvio ambiente X11 (fondamentale)
+├── .xinitrc                    <-- Script di avvio ambiente X11 + watchdog (fondamentale)
 └── dashboard_aule/
-    ├── server_api.py      <-- Demone Python
-    ├── remoto.html        <-- Dashboard pubblica
-    ├── admin.html         <-- Pannello di Amministrazione
-    ├── config.example.yaml<-- Template di configurazione commentato
-    ├── config.yaml        <-- File di configurazione (creato da config.example.yaml)
-    ├── kiosk.log          <-- (Generato in automatico) Log dell'applicazione
-    ├── server_api_sys.log <-- (Generato in automatico) Log del server
-    └── locandine/         <-- (Opzionale) Immagini JPG per lo slideshow
+    ├── server_api.py           <-- Router HTTP/HTTPS Python (entry-point e hardening concorrenza)
+    ├── core/                   <-- Pacchetto backend disaccoppiato (Milestone v5.3)
+    │   ├── __init__.py
+    │   ├── cineca_client.py    <-- Client REST API CINECA con backoff esponenziale e motore D-01
+    │   ├── news_engine.py      <-- Motore RSS/REST confinato in RAM e semaforo diagnostico
+    │   └── building_context.py <-- Gestione stato edificio, lock I/O separati e pipeline locandine
+    ├── static/                 <-- Asset frontend JS e CSS disaccoppiati (protetti da CSP SEC-06)
+    │   ├── remoto.js           <-- Logica JavaScript della dashboard pubblica e carosello
+    │   ├── remoto.css          <-- Foglio di stile responsive Dark Mode della dashboard
+    │   ├── admin.js            <-- Logica JavaScript del pannello di amministrazione
+    │   └── admin.css           <-- Foglio di stile del pannello di amministrazione
+    ├── remoto.html             <-- Markup HTML puro della dashboard pubblica
+    ├── admin.html              <-- Markup HTML puro del pannello di amministrazione (/admin)
+    ├── logo.png                <-- Logo istituzionale di default
+    ├── config.example.yaml     <-- Template di configurazione commentato (versionato)
+    ├── config.yaml             <-- File di configurazione attivo (generato/personalizzato in locale)
+    ├── stato_impegni.json      <-- (Generato in automatico) Persistenza atomica stato lezioni del giorno
+    ├── ultimo_reset.txt        <-- (Generato in automatico) Data dell'ultimo reset giornaliero 04:00
+    ├── kiosk.log               <-- (Generato in automatico) Log applicativo rotativo (10 MB x 5)
+    ├── server_api_sys.log      <-- (Generato in automatico) Log di sistema/stderr (ruotato a 5 MB)
+    └── locandine/              <-- Immagini per lo slideshow (JPG/PNG/WebP) + ordine.json
 ```
 
-> 💡 **Suggerimento permessi Windows/Linux:** Se hai modificato o copiato i file da un PC Windows, assicurati che i fine riga siano in formato Unix (LF) eseguendo:
+#### Ruolo delle cartelle e dei file principali:
+* **`core/` (Motori Backend):** contiene i moduli Python disaccoppiati da `server_api.py` per la comunicazione con U-Planner (`cineca_client.py`), il recupero feed notizie in sola RAM senza scritture su MicroSD (`news_engine.py`) e la gestione thread-safe dello stato e delle locandine (`building_context.py`). Deve sempre essere copiata per intero insieme a `server_api.py`.
+* **`static/` (Risorse Statiche Frontend):** raccoglie i fogli di stile e gli script JavaScript estratti da `remoto.html` e `admin.html` (`remoto.js`, `remoto.css`, `admin.js`, `admin.css`), serviti dal server sotto `/static/*` con header `Content-Security-Policy` rigoroso contro attacchi XSS.
+* **Configurazione e dati runtime locali:** `config.example.yaml` è il modello commentato versionato nel repository; `config.yaml` (creato copiando `config.example.yaml` oppure autogenerato al primo avvio), `stato_impegni.json`, `ultimo_reset.txt`, i log (`kiosk.log*`, `server_api_sys.log`) e `locandine/ordine.json` sono file runtime locali esclusi da Git per preservare i dati della sede durante gli aggiornamenti. *(Questa struttura mantiene i percorsi storici nella radice di `dashboard_aule/`, preparando la transizione automatica alla separazione `app/` vs `data/` prevista nella futura Milestone v5.4 Campus Edition).*
+
+> ⚠️ **Aggiornamento di un Raspberry Pi già attivo da versioni precedenti a `v5.3`:**  
+> 1. Esegui sempre un backup preventivo di `config.yaml` (`cp ~/dashboard_aule/config.yaml ~/dashboard_aule/config.yaml.bak`, indispensabile prima di un eventuale `git pull` se provieni da `<= v5.1`).  
+> 2. Se aggiorni manualmente via `scp`/`cp`, copia **anche le due nuove cartelle obbligatorie `core/` e `static/`** oltre a `server_api.py`, `remoto.html` e `admin.html` (preservando `config.yaml` e `locandine/`), altrimenti il demone non troverà i moduli `core` o gli stili `/static/*`.
+
+> 💡 **Suggerimento permessi Windows/Linux:** Se hai modificato o copiato i file da un PC Windows, assicurati che i fine riga di tutti gli script Bash e Python (inclusi i moduli in `core/`) siano in formato Unix (LF) eseguendo:
 > ```bash
 > dos2unix /home/vincenzo/.xinitrc
-> dos2unix /home/vincenzo/dashboard_aule/server_api.py
+> dos2unix /home/vincenzo/dashboard_aule/server_api.py /home/vincenzo/dashboard_aule/core/*.py
 > chmod +x /home/vincenzo/.xinitrc
 > ```
 
@@ -327,4 +349,4 @@ Al riavvio, il sistema deve:
 3. Lanciare `server_api.py` in background.
 4. Aprire Chromium a tutto schermo in modalità Kiosk puntando alla dashboard.
 
-Per qualsiasi anomalia o diagnostica rapida, consulta la sezione **Troubleshooting** nel [README principale](README.md#🔧-troubleshooting-e-manutenzione-v2).
+Per qualsiasi anomalia o diagnostica rapida, consulta la sezione **Troubleshooting** nel [README della Versione 2](README.md#troubleshooting-e-manutenzione-v2).
