@@ -5,519 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pannello Amministrazione - Kiosk4UPlanner</title>
-    <style>
-        :root {
-            --bg-color: #0d1117;
-            --panel-bg: #161b22;
-            --text-primary: #c9d1d9;
-            --text-secondary: #8b949e;
-            --border-color: #30363d;
-            --accent-color: #58a6ff;
-            --accent-hover: #1f6feb;
-            --danger-color: #da3633;
-            --success-color: #238636;
-        }
-
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-primary);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 800px;
-        }
-
-        h1,
-        h2,
-        h3 {
-            color: var(--accent-color);
-        }
-
-        .panel {
-            background-color: var(--panel-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
-
-        .form-group {
-            margin-bottom: 15px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .form-group label {
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .form-group input[type="text"],
-        .form-group input[type="password"],
-        .form-group input[type="number"] {
-            padding: 10px;
-            background-color: #0d1117;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            color: var(--text-primary);
-            font-size: 1rem;
-        }
-
-        .form-group input[type="text"]:focus,
-        .form-group input[type="password"]:focus,
-        .form-group input[type="number"]:focus {
-            border-color: var(--accent-color);
-            outline: none;
-        }
-
-        .form-group-checkbox {
-            flex-direction: row;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .form-group-checkbox input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            accent-color: var(--accent-color);
-        }
-
-        .btn {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1rem;
-            font-weight: bold;
-            color: #fff;
-            background-color: var(--accent-color);
-            transition: background-color 0.2s;
-        }
-
-        .btn:hover {
-            background-color: var(--accent-hover);
-        }
-
-        .btn-danger {
-            background-color: var(--danger-color);
-        }
-
-        .btn-danger:hover {
-            background-color: #b02a28;
-        }
-
-        .btn-success {
-            background-color: var(--success-color);
-        }
-
-        .btn-success:hover {
-            background-color: #2ea043;
-        }
-
-        .buttons-row {
-            display: flex;
-            gap: 15px;
-            justify-content: flex-end;
-            margin-top: 20px;
-        }
-
-        #login-view,
-        #admin-view {
-            display: none;
-        }
-
-        #login-view.active,
-        #admin-view.active {
-            display: block;
-        }
-
-        .security-banner {
-            display: none;
-            background-color: var(--danger-color);
-            color: white;
-            padding: 14px 18px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            transition: filter 0.15s ease, transform 0.15s ease;
-        }
-
-        .security-banner:hover {
-            filter: brightness(1.12);
-        }
-
-        .toast {
-            visibility: hidden;
-            min-width: 250px;
-            background-color: var(--success-color);
-            color: #fff;
-            text-align: center;
-            border-radius: 4px;
-            padding: 16px;
-            position: fixed;
-            z-index: 1;
-            right: 30px;
-            bottom: 30px;
-            font-size: 17px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
-
-        .toast.show {
-            visibility: visible;
-            animation: fadein 0.5s, fadeout 0.5s 2.5s;
-        }
-
-        @keyframes fadein {
-            from {
-                bottom: 0;
-                opacity: 0;
-            }
-
-            to {
-                bottom: 30px;
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeout {
-            from {
-                bottom: 30px;
-                opacity: 1;
-            }
-
-            to {
-                bottom: 0;
-                opacity: 0;
-            }
-        }
-
-        #restart-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-color: rgba(13, 17, 23, 0.95);
-            z-index: 9999;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            color: white;
-        }
-
-        #restart-modal h2 {
-            font-size: 2rem;
-            color: var(--accent-color);
-        }
-
-        .list-input {
-            width: 100%;
-        }
-
-        .panel-description {
-            font-size: 0.95rem;
-            color: var(--text-secondary);
-            margin-bottom: 20px;
-            margin-top: -10px;
-            line-height: 1.4;
-        }
-
-        .help-text {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-top: 5px;
-            margin-bottom: 0;
-            line-height: 1.3;
-        }
-
-        .accordion-panel {
-            background-color: var(--panel-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            margin-bottom: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-
-        .accordion-panel.highlight-warning {
-            border-left: 4px solid #d29922;
-        }
-
-        .accordion-panel.highlight-security {
-            border-left: 4px solid var(--accent-color);
-        }
-
-        .accordion-header {
-            padding: 16px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-            background-color: rgba(255, 255, 255, 0.02);
-            transition: background-color 0.2s;
-        }
-
-        .accordion-header:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
-
-        .accordion-header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .accordion-icon {
-            font-size: 1.4rem;
-            line-height: 1;
-        }
-
-        .accordion-title-box h3 {
-            margin: 0;
-            font-size: 1.15rem;
-            color: var(--text-primary);
-        }
-
-        .accordion-title-box p {
-            margin: 3px 0 0 0;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-        }
-
-        .accordion-header-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .status-badge {
-            font-size: 0.78rem;
-            font-weight: 600;
-            padding: 4px 10px;
-            border-radius: 12px;
-            letter-spacing: 0.3px;
-            white-space: nowrap;
-        }
-
-        .status-badge.badge-off {
-            background-color: #30363d;
-            color: #8b949e;
-        }
-
-        .status-badge.badge-on {
-            background-color: rgba(35, 134, 54, 0.25);
-            color: #3fb950;
-            border: 1px solid rgba(63, 185, 80, 0.4);
-        }
-
-        .status-badge.badge-warn {
-            background-color: rgba(210, 153, 34, 0.25);
-            color: #e3b341;
-            border: 1px solid rgba(227, 179, 65, 0.4);
-        }
-
-        .status-badge.badge-info {
-            background-color: rgba(56, 139, 253, 0.15);
-            color: #58a6ff;
-            border: 1px solid rgba(88, 166, 255, 0.4);
-        }
-
-        .chevron-icon {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            transition: transform 0.25s ease;
-            display: inline-block;
-        }
-
-        .accordion-panel.open .chevron-icon {
-            transform: rotate(180deg);
-        }
-
-        .accordion-body {
-            display: none;
-            padding: 20px;
-            border-top: 1px solid var(--border-color);
-            background-color: var(--panel-bg);
-        }
-
-        .accordion-panel.open .accordion-body {
-            display: block;
-        }
-
-        .sticky-actions {
-            position: sticky;
-            bottom: 15px;
-            background-color: rgba(22, 27, 34, 0.95);
-            backdrop-filter: blur(8px);
-            padding: 14px 20px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-            z-index: 100;
-            margin-top: 25px;
-        }
-
-        /* Navigazione Schede (Tabs) */
-        .admin-tabs-nav {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 22px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 14px;
-        }
-
-        .admin-tab-btn {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            gap: 12px;
-            padding: 12px 18px;
-            background-color: var(--panel-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-align: left;
-            position: relative;
-        }
-
-        .admin-tab-btn:hover {
-            background-color: #21262d;
-            border-color: #8b949e;
-        }
-
-        .admin-tab-btn.active {
-            background-color: rgba(88, 166, 255, 0.08);
-            border-color: var(--accent-color);
-            box-shadow: 0 0 10px rgba(88, 166, 255, 0.12);
-        }
-
-        .admin-tab-btn .tab-icon {
-            font-size: 1.6rem;
-            line-height: 1;
-        }
-
-        .admin-tab-btn .tab-info {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            flex: 1;
-        }
-
-        .admin-tab-btn .tab-title {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            transition: color 0.2s;
-        }
-
-        .admin-tab-btn.active .tab-title {
-            color: var(--accent-color);
-        }
-
-        .admin-tab-btn .tab-desc {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-
-        .tab-badge-tech {
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.3px;
-            padding: 3px 8px;
-            border-radius: 10px;
-            background-color: rgba(210, 153, 34, 0.15);
-            color: #e3b341;
-            border: 1px solid rgba(227, 179, 65, 0.3);
-            white-space: nowrap;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-            animation: tabFadeIn 0.2s ease;
-        }
-
-        @keyframes tabFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(4px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @media (max-width: 600px) {
-            .admin-tabs-nav {
-                flex-direction: column;
-                gap: 8px;
-            }
-            .admin-tab-btn {
-                width: 100%;
-            }
-        }
-
-        .miniatura-locandina {
-            max-height: 70px;
-            max-width: 120px;
-            object-fit: contain;
-            cursor: zoom-in;
-            border-radius: 4px;
-            background: #0d1117;
-            border: 1px solid var(--border-color);
-            flex-shrink: 0;
-        }
-
-        #lightbox-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.85);
-            z-index: 9999;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        #lightbox-modal img {
-            max-width: 90vw;
-            max-height: 85vh;
-            object-fit: contain;
-            border-radius: 6px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        }
-
-        #lightbox-caption {
-            margin-top: 12px;
-            color: #c9d1d9;
-            font-size: 0.95rem;
-            text-align: center;
-            font-family: monospace;
-        }
-    </style>
+    <link rel="stylesheet" href="./static/admin.css">
+    <script src="./static/admin.js" defer></script>
 </head>
 
 <body>
@@ -526,26 +15,23 @@
 
         <!-- Vista Login -->
         <div id="login-view" class="panel">
-            <h2 style="text-align: center;">Kiosk4UPlanner - Autenticazione</h2>
+            <h2 class="login-title">Kiosk4UPlanner - Autenticazione</h2>
             <div class="form-group">
                 <label for="login-password">Password Amministratore</label>
-                <input type="password" id="login-password" placeholder="Inserisci la password"
-                    onkeypress="if(event.key === 'Enter') login()">
+                <input type="password" id="login-password" placeholder="Inserisci la password">
             </div>
-            <button class="btn" style="width: 100%;" onclick="login()">Accedi</button>
-            <div id="login-error"
-                style="color: var(--danger-color); margin-top: 10px; display: none; text-align: center;">Password
-                errata.</div>
+            <button type="button" id="btn-login" class="btn btn-full">Accedi</button>
+            <div id="login-error" class="login-error">Password errata.</div>
         </div>
 
         <!-- Vista Admin -->
         <div id="admin-view">
-            <div id="security-banner" class="security-banner" style="cursor: pointer;" onclick="switchTab('sistema'); toggleAccordion('panel-rete'); document.getElementById('panel-rete')?.scrollIntoView({ behavior: 'smooth' });">
-                <div style="display: flex; align-items: flex-start; gap: 14px; text-align: left;">
-                    <span style="font-size: 1.6rem; line-height: 1.1;">⚠️</span>
-                    <div style="flex: 1;">
-                        <div style="font-size: 1.05rem; font-weight: 700; margin-bottom: 5px;">SECURITY ALERT: Password predefinita in uso</div>
-                        <div style="font-size: 0.9rem; font-weight: normal; line-height: 1.45; opacity: 0.95;">
+            <div id="security-banner" class="security-banner">
+                <div class="security-banner-row">
+                    <span class="security-banner-icon">⚠️</span>
+                    <div class="security-banner-body">
+                        <div class="security-banner-title">SECURITY ALERT: Password predefinita in uso</div>
+                        <div class="security-banner-text">
                             Stai utilizzando la password predefinita di fabbrica (<em>"cambiami"</em>). Chiunque conosca l'indirizzo del Kiosk sulla rete può accedere a questo pannello di controllo.<br>
                             👉 <strong>Clicca qui</strong> per impostare una <strong>Nuova Password</strong> e per configurare gli <strong>IP Autorizzati</strong> (es. specificando la subnet o l'IP del tuo ufficio) per schermare il totem dal resto dell'Ateneo.
                         </div>
@@ -554,16 +40,16 @@
             </div>
 
             <!-- Intestazione Pannello e Azioni Rapide -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div class="admin-header-bar">
                 <div>
-                    <h1 style="margin: 0; font-size: 1.8rem;">Pannello di Amministrazione</h1>
-                    <p style="margin: 5px 0 0 0; color: var(--text-secondary); font-size: 0.95rem;">Configura le impostazioni della dashboard Kiosk in tempo reale</p>
+                    <h1 class="admin-header-title">Pannello di Amministrazione</h1>
+                    <p class="admin-header-subtitle">Configura le impostazioni della dashboard Kiosk in tempo reale</p>
                 </div>
-                <div style="display: flex; gap: 8px;">
-                    <button type="button" class="btn" style="background-color: #21262d; border: 1px solid var(--border-color); font-size: 0.85rem; padding: 6px 12px;" onclick="setAllAccordions(true)">
+                <div class="admin-header-actions">
+                    <button type="button" id="btn-expand-all" class="btn btn-toolbar">
                         ▼ Espandi tutto
                     </button>
-                    <button type="button" class="btn" style="background-color: #21262d; border: 1px solid var(--border-color); font-size: 0.85rem; padding: 6px 12px;" onclick="setAllAccordions(false)">
+                    <button type="button" id="btn-collapse-all" class="btn btn-toolbar">
                         ▲ Comprimi tutto
                     </button>
                 </div>
@@ -571,14 +57,14 @@
 
             <!-- Navigazione Schede (Tabs) -->
             <div class="admin-tabs-nav">
-                <button type="button" class="admin-tab-btn active" id="tab-btn-personalizzazione" onclick="switchTab('personalizzazione')">
+                <button type="button" class="admin-tab-btn active" id="tab-btn-personalizzazione">
                     <span class="tab-icon">🎨</span>
                     <div class="tab-info">
                         <span class="tab-title">Personalizzazione</span>
                         <span class="tab-desc">Avvisi di emergenza, grafica, locandine e notizie</span>
                     </div>
                 </button>
-                <button type="button" class="admin-tab-btn" id="tab-btn-sistema" onclick="switchTab('sistema')">
+                <button type="button" class="admin-tab-btn" id="tab-btn-sistema">
                     <span class="tab-icon">⚙️</span>
                     <div class="tab-info">
                         <span class="tab-title">Sistema e Rete</span>
@@ -594,8 +80,8 @@
             <div id="tab-content-personalizzazione" class="tab-content active">
 
                 <!-- TENDINA: Interfaccia Frontend & Digital Signage -->
-                <div class="accordion-panel" id="panel-frontend">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-frontend')">
+                <div class="accordion-panel accent-blue" id="panel-frontend">
+                    <div class="accordion-header" data-accordion-target="panel-frontend">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🖥️</span>
                             <div class="accordion-title-box">
@@ -613,26 +99,26 @@
                             <input type="checkbox" id="fe_mostra_confermati">
                             <label for="fe_mostra_confermati">Mostra ANCHE eventi Confermati (Stato C)</label>
                         </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Se impostato su 'false', nasconde le aule che hanno stato C (Confermato ma non Pubblicato).</p>
-                        
+                        <p class="help-text help-text-indent">Se impostato su 'false', nasconde le aule che hanno stato C (Confermato ma non Pubblicato).</p>
+
                         <div class="form-group form-group-checkbox">
                             <input type="checkbox" id="fe_mostra_stato">
                             <label for="fe_mostra_stato">Mostra Badge Stato P/C</label>
                         </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Mostra i pallini P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni.</p>
+                        <p class="help-text help-text-indent">Mostra i pallini P (Pubblicato) e C (Confermato) accanto ai titoli delle lezioni.</p>
 
-                        <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-left: 4px solid var(--accent-color); border-radius: 6px; padding: 12px 15px; margin: 10px 0 20px 0;">
-                            <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent-color); margin-bottom: 5px;">
+                        <div class="kiosk-info-box">
+                            <div class="kiosk-info-title">
                                 <span>📺 Schermi Secondari, Smart TV & Totem Touch (Digital Signage)</span>
                             </div>
-                            <p class="help-text" style="margin: 0; color: var(--text-primary); line-height: 1.4;">
+                            <p class="help-text kiosk-info-lead">
                                 Se installi monitor secondari, Smart TV o postazioni pubbliche, configurali per aprire l'indirizzo con il parametro <code>?kiosk=1</code> (ad esempio):<br>
-                                <code style="display: inline-block; background-color: #161b22; padding: 4px 8px; border-radius: 4px; margin-top: 6px; color: #58a6ff; font-size: 0.95rem;" id="kiosk-url-preview">http://[IP_DEL_SERVER]:[PORTA]/?kiosk=1</code>
+                                <code class="kiosk-url-code" id="kiosk-url-preview">http://[IP_DEL_SERVER]:[PORTA]/?kiosk=1</code>
                             </p>
-                            <p class="help-text" style="margin-top: 8px; margin-bottom: 4px; font-weight: 600; color: var(--accent-color);">
+                            <p class="help-text kiosk-info-subhead">
                                 Comportamento e protezioni della modalità Kiosk (<code>?kiosk=1</code>):
                             </p>
-                            <ul class="help-text" style="margin: 0; padding-left: 18px; line-height: 1.45;">
+                            <ul class="help-text kiosk-info-list">
                                 <li><strong>Carosello Locandine attivo di default:</strong> parte automaticamente a rotazione (mentre da PC/smartphone dei singoli utenti parte spento per consultare subito le aule) e ignora/blocca le preferenze locali del browser.</li>
                                 <li><strong>Lock-down di sicurezza anti-manomissione:</strong> disabilita tutti i link esterni (calendario, GitHub, licenza) impedendo a chi tocca lo schermo di uscire dalla dashboard.</li>
                                 <li><strong>Auto-chiusura per inattività (60s):</strong> se un utente apre il cassetto informativo o il News Hub, dopo 60 secondi di inattività si richiude automaticamente tornando al tabellone orari.</li>
@@ -648,7 +134,7 @@
                         </div>
                         <div class="form-group">
                             <label for="fe_logo">URL Logo</label>
-                            <input type="text" id="fe_logo" placeholder="/logo.png">
+                            <input type="text" id="fe_logo" placeholder="./logo.png">
                             <p class="help-text">Percorso del logo. Lasciare vuoto per nasconderlo del tutto.</p>
                         </div>
                         <div class="form-group">
@@ -666,7 +152,7 @@
 
                 <!-- TENDINA: Avviso di Emergenza / Alert Giallo (In Evidenza) -->
                 <div class="accordion-panel highlight-warning" id="panel-alert">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-alert')">
+                    <div class="accordion-header" data-accordion-target="panel-alert">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">📢</span>
                             <div class="accordion-title-box">
@@ -681,28 +167,28 @@
                     </div>
                     <div class="accordion-body">
                         <p class="panel-description">Attiva questo messaggio per mostrare un banner ad alta priorità sul footer della dashboard (visibile sia sul totem fisico che a chi consulta il sito da remoto).</p>
-                        
+
                         <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="fn_alert_attivo" onchange="aggiornaBadgesSommario()">
-                            <label for="fn_alert_attivo" style="font-weight: bold; color: #e3b341;">Attiva Avviso di Emergenza Fisso</label>
+                            <input type="checkbox" id="fn_alert_attivo">
+                            <label for="fn_alert_attivo" class="alert-label-bold">Attiva Avviso di Emergenza Fisso</label>
                         </div>
-                        
-                        <div class="form-group" style="margin-top: 15px;">
+
+                        <div class="form-group form-group-mt">
                             <label for="fn_alert_testo">Testo dell'Avviso</label>
-                            <input type="text" id="fn_alert_testo" placeholder="Es. ⚠️ Avviso: Domani 09/12 chiusura sede per festività patronale." oninput="aggiornaBadgesSommario()">
+                            <input type="text" id="fn_alert_testo" placeholder="Es. ⚠️ Avviso: Domani 09/12 chiusura sede per festività patronale.">
                             <p class="help-text">Puoi inserire emoji come ⚠️, 📢, ℹ️ per aumentare l'impatto visivo.</p>
                         </div>
 
-                        <div id="alert-preview-container" style="display: none; margin-top: 15px; padding: 12px 16px; background: rgba(210, 153, 34, 0.15); border: 1px solid rgba(210, 153, 34, 0.4); border-radius: 6px;">
-                            <div style="font-size: 0.75rem; color: #e3b341; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 5px;">ANTEPRIMA LIVE SULLA DASHBOARD:</div>
-                            <div id="alert-preview-text" style="font-size: 0.95rem; color: #f0f6fc; font-weight: 500;"></div>
+                        <div id="alert-preview-container">
+                            <div class="alert-preview-heading">ANTEPRIMA LIVE SULLA DASHBOARD:</div>
+                            <div id="alert-preview-text"></div>
                         </div>
                     </div>
                 </div>
 
                 <!-- TENDINA: Locandine -->
-                <div class="accordion-panel" id="panel-locandine">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-locandine')">
+                <div class="accordion-panel accent-purple" id="panel-locandine">
+                    <div class="accordion-header" data-accordion-target="panel-locandine">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🖼️</span>
                             <div class="accordion-title-box">
@@ -717,17 +203,17 @@
                     </div>
                     <div class="accordion-body">
                         <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="fe_carosello" onchange="aggiornaBadgesSommario()">
+                            <input type="checkbox" id="fe_carosello">
                             <label for="fe_carosello">Abilita Carosello Locandine (Globale)</label>
                         </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 20px;">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
+                        <p class="help-text help-text-indent-lg">Se disabilitato, lo schermo resta fisso sulle lezioni e la cartella /locandine/ viene ignorata sia sul Kiosk che sui client.</p>
 
                         <!-- Sezione Temporizzazione e Duty-Cycle Carosello -->
-                        <div style="background-color: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; margin-bottom: 25px;">
-                            <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                        <div class="duty-cycle-box">
+                            <h4 class="duty-cycle-title">
                                 <span>⏱️ Temporizzazione & Duty-Cycle Carosello</span>
                             </h4>
-                            <p class="panel-description" style="margin-bottom: 16px;">Configura i tempi di esposizione e la quota di tempo massimo riservata alle locandine per garantire che il totem resti prioritariamente a disposizione degli orari di lezione.</p>
+                            <p class="panel-description panel-description-compact">Configura i tempi di esposizione e la quota di tempo massimo riservata alle locandine per garantire che il totem resti prioritariamente a disposizione degli orari di lezione.</p>
 
                             <div class="form-group">
                                 <label for="fe_pausa_carosello">Pausa tra caroselli (ms)</label>
@@ -740,31 +226,31 @@
                                 <p class="help-text">Tempo di permanenza a schermo di OGNI SINGOLA locandina in millisecondi. (10000 = 10 secondi).</p>
                             </div>
                             <div class="form-group">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                                    <label for="fe_quota_carosello" style="margin-bottom: 0;">Quota Massima Carosello (Duty-Cycle)</label>
-                                    <span id="fe_quota_carosello_val" style="font-weight: bold; color: var(--accent-color); background-color: rgba(88, 166, 255, 0.15); padding: 2px 8px; border-radius: 4px; font-size: 0.9rem;">30%</span>
+                                <div class="quota-label-row">
+                                    <label for="fe_quota_carosello">Quota Massima Carosello (Duty-Cycle)</label>
+                                    <span id="fe_quota_carosello_val" class="quota-badge">30%</span>
                                 </div>
-                                <input type="range" id="fe_quota_carosello" min="10" max="50" step="5" value="30" oninput="document.getElementById('fe_quota_carosello_val').textContent = this.value + '%'" onchange="document.getElementById('fe_quota_carosello_val').textContent = this.value + '%'" style="width: 100%; accent-color: var(--accent-color); cursor: pointer;">
+                                <input type="range" id="fe_quota_carosello" min="10" max="50" step="5" value="30" class="quota-range">
                                 <p class="help-text">Quota massima di tempo a video riservata alle locandine (consigliato: 30%, min 10% - max 50%). Garantisce che almeno il 50-90% del tempo sia sempre dedicato alla visualizzazione degli orari per gli studenti. Il sistema calcola automaticamente quante locandine mostrare per ciclo senza mai superare questa soglia.</p>
                             </div>
                         </div>
 
-                        <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 10px;">Gestione File Locandine</h4>
+                        <h4 class="section-subtitle">Gestione File Locandine</h4>
                         <p class="panel-description">Carica immagini per il carosello del totem (JPEG, PNG, WebP — max 10 MB per file).</p>
-                        
-                        <div class="form-group" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                            <input type="file" id="locandine_file" accept="image/jpeg,image/png,image/webp" multiple style="flex: 1; min-width: 200px; padding: 8px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                            <button type="button" class="btn" onclick="caricaLocandine()">Carica</button>
+
+                        <div class="form-group upload-row">
+                            <input type="file" id="locandine_file" accept="image/jpeg,image/png,image/webp" multiple class="file-input-locandine">
+                            <button type="button" id="btn-carica-locandine" class="btn">Carica</button>
                         </div>
-                        
-                        <h4 style="color: var(--accent-color); margin-top: 25px; margin-bottom: 10px;">Locandine Attuali</h4>
-                        <ul id="locandine_lista" style="list-style: none; padding: 0; margin: 0; border: 1px solid var(--border-color); border-radius: 6px; background-color: #0d1117; min-height: 40px;"></ul>
+
+                        <h4 class="section-subtitle-mt">Locandine Attuali</h4>
+                        <ul id="locandine_lista"></ul>
                     </div>
                 </div>
 
                 <!-- TENDINA: Footer e Notizie -->
-                <div class="accordion-panel" id="panel-footer">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-footer')">
+                <div class="accordion-panel accent-teal" id="panel-footer">
+                    <div class="accordion-header" data-accordion-target="panel-footer">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">📰</span>
                             <div class="accordion-title-box">
@@ -779,44 +265,45 @@
                     </div>
                     <div class="accordion-body">
                         <p class="panel-description">Configura la barra delle notizie scorrevoli a fondo pagina.</p>
-                        
+
                         <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="fn_abilitato" onchange="aggiornaBadgesSommario()">
+                            <input type="checkbox" id="fn_abilitato">
                             <label for="fn_abilitato">Abilita Footer News</label>
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="fn_stile">Stile Scorrimento</label>
-                            <select id="fn_stile" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                            <select id="fn_stile" class="admin-select">
                                 <option value="orizzontale">Orizzontale (Telegiornale)</option>
                                 <option value="verticale">Verticale (Tabellone)</option>
                             </select>
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="fn_velocita">Velocità Scorrimento (minore = più veloce)</label>
                             <input type="number" id="fn_velocita" placeholder="Es. 50">
                         </div>
-                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                            <label for="fn_colore_testo" style="margin: 0; min-width: 150px;">Colore Testo</label>
-                            <input type="color" id="fn_colore_testo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                        <div class="form-group form-group-color">
+                            <label for="fn_colore_testo">Colore Testo</label>
+                            <input type="color" id="fn_colore_testo" class="color-picker-input">
                         </div>
-                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                            <label for="fn_colore_sfondo" style="margin: 0; min-width: 150px;">Colore Sfondo</label>
-                            <input type="color" id="fn_colore_sfondo" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                        <div class="form-group form-group-color">
+                            <label for="fn_colore_sfondo">Colore Sfondo</label>
+                            <input type="color" id="fn_colore_sfondo" class="color-picker-input">
                         </div>
-                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                            <label for="fn_colore_btn" style="margin: 0; min-width: 150px;">Colore Tasto Preferenze</label>
-                            <input type="color" id="fn_colore_btn" style="background: none; border: none; padding: 0; width: 40px; height: 40px; cursor: pointer;">
+                        <div class="form-group form-group-color">
+                            <label for="fn_colore_btn">Colore Tasto Preferenze</label>
+                            <input type="color" id="fn_colore_btn" class="color-picker-input">
                         </div>
                         <div class="form-group">
                             <label for="fn_dimensione_testo">Dimensione Testo</label>
                             <input type="text" id="fn_dimensione_testo" placeholder="Es. 1.15rem">
                         </div>
 
-                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 25px 0 20px 0;">
-                        <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 5px;">Fonti Notizie (Fino a 6)</h4>
-                        <p class="panel-description" style="margin-bottom: 15px;">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga.</p>
+                        <hr class="section-divider">
+                        <h4 class="section-subtitle-fonti">Fonti Notizie (Fino a 6)</h4>
+                        <p class="panel-description panel-description-fonti">Configura fino a 6 fonti per le notizie. Lascia vuoto il Nome per disabilitare la riga. Il <strong>Peso</strong> (da 1 a 5, default 1) regola quanto spesso compare ogni fonte: le notizie sono mescolate a turno e, a ogni giro, una fonte inserisce fino a <em>Peso</em> notizie di fila (es. Peso 2 contro Peso 1 = il doppio delle notizie).</p>
+                        <div id="diagnostica_news" class="diagnostica-news" hidden></div>
                         <div id="fonti_container"></div>
                     </div>
                 </div>
@@ -828,14 +315,14 @@
             <!-- ============================================================ -->
             <div id="tab-content-sistema" class="tab-content">
 
-                <div style="background-color: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.88rem; color: #e3b341; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 1.3rem;">⚠️</span>
+                <div class="tech-warning-banner">
+                    <span class="tech-warning-icon">⚠️</span>
                     <div><strong>Area Tecnica e Parametri di Connessione:</strong> Modificare questi campi solo se necessario (ad es. cambio password CINECA, cambio porte del server o configurazione certificati SSL). Errori in questa sezione possono interrompere la sincronizzazione del totem.</div>
                 </div>
 
                 <!-- TENDINA: Credenziali e Connessione CINECA -->
-                <div class="accordion-panel" id="panel-cineca">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-cineca')">
+                <div class="accordion-panel accent-blue" id="panel-cineca">
+                    <div class="accordion-header" data-accordion-target="panel-cineca">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🎓</span>
                             <div class="accordion-title-box">
@@ -852,7 +339,7 @@
                         <p class="panel-description">Parametri per connettersi alle API di U-Planner (CINECA) e recuperare gli impegni delle aule.</p>
                         <div class="form-group">
                             <label for="cineca_username">Username CINECA</label>
-                            <input type="text" id="cineca_username" oninput="aggiornaBadgesSommario()">
+                            <input type="text" id="cineca_username">
                             <p class="help-text">Account fornito dall'Ateneo</p>
                         </div>
                         <div class="form-group">
@@ -862,22 +349,47 @@
                         <div class="form-group">
                             <label for="cineca_realm">Realm (Cliente ID)</label>
                             <input type="text" id="cineca_realm">
-                            <p class="help-text">Il codice identificativo del tuo ateneo (farselo dare dall' help desk oppure recuperarlo come spiegato nel file readme.md).</p>
+                            <p class="help-text">Codice identificativo di 24 caratteri del tuo Ateneo su U-Planner: richiedilo all'help-desk oppure recuperalo con il tasto <code>F12</code> dalla pagina di login U-Planner (vedi Sezione 4 di <code>INSTALL.md</code>).</p>
+                        </div>
+
+                        <div class="kiosk-info-box">
+                            <div class="kiosk-info-title">
+                                <span>🧭 Come filtrano gli orari Anno Accademico, Contesto ed Edificio</span>
+                            </div>
+                            <p class="help-text kiosk-info-lead">
+                                L'API di U-Planner (CINECA) non permette di chiedere direttamente le lezioni di un singolo palazzo, ma ragiona in <strong>due passaggi successivi</strong>: prima CINECA estrae tutti gli impegni del <strong>Contesto</strong> e dell'<strong>Anno Accademico</strong> indicati, poi il Kiosk filtra localmente solo le aule dell'<strong>ID Edificio</strong> scelto.
+                            </p>
+                            <p class="help-text kiosk-info-subhead">
+                                Cosa sapere per configurarli correttamente:
+                            </p>
+                            <ul class="help-text kiosk-info-list">
+                                <li><strong>Perché Anno Accademico e Contesto sono obbligatori:</strong> senza questi due codici U-Planner restituisce <strong>0 lezioni</strong>. Inoltre, CINECA invia al massimo <strong>500 impegni totali per chiamata</strong> (senza paginazione): circoscrivere la richiesta evita che, nelle giornate più affollate, parte delle lezioni resti tagliata fuori oltre il 500° risultato o venga segnata per errore come <em>ANNULLATA</em>.</li>
+                                <li><strong>Quale Contesto scegliere (Polo vs Dipartimento):</strong> in U-Planner il <em>Contesto</em> è l'ambito gestionale delle aule (un intero <strong>Polo didattico</strong> come <em>Polo Centrale / Polo B / Polo C</em>, un singolo <em>Dipartimento</em>, oppure aule trasversali come <em>Aule Storiche</em> o <em>Aule Informatiche</em>). <strong>Se il tuo edificio ospita lezioni di più Dipartimenti, inserisci l'ID del Polo</strong> (e non del singolo Dipartimento), poi usa <code>ID Edificio</code> per mostrare solo le aule del tuo palazzo.</li>
+                                <li><strong>Formato e come trovarli (Debug Mode oppure <code>F12</code>):</strong> <code>Realm</code>, <code>ID Anno Accademico</code> e <code>ID Contesto</code> sono codici di <strong>24 caratteri esadecimali</strong> (es. <code>5b97788424deec000e171a8f</code>). Puoi recuperarli in due modi: <strong>(1) Auto-scoperta in Debug Mode (consigliato)</strong> — inserisci <code>Username</code>, <code>Password</code> e <code>Realm</code>, spunta qui sotto <strong>Abilita Debug Mode</strong> e salva per leggere in <code>kiosk.log</code> l'elenco completo di Anni Accademici, Contesti ed Edifici del tuo Ateneo (poi disattiva il Debug Mode); <strong>(2) Procedura Browser <code>F12</code></strong> — ispezionando le chiamate di rete sul portale web U-Planner seguendo la guida passo-passo nella <strong>Sezione 4 di <code>INSTALL.md</code></strong> (utile anche per trovare il <code>Realm</code> iniziale).</li>
+                                <li><strong>📅 Promemoria di inizio Anno Accademico:</strong> mentre <code>Realm</code>, <code>ID Contesto</code> e <code>ID Edificio</code> restano fissi nel tempo, ricordati di <strong>aggiornare l'<code>ID Anno Accademico</code> una volta all'anno</strong> (a inizio nuovo A.A., es. settembre) con il codice della nuova annualità.</li>
+                            </ul>
+                        </div>
+
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="debug_mode">
+                            <label for="debug_mode">Abilita Debug Mode (Auto-Discovery Anni, Contesti ed Edifici in <code>kiosk.log</code>)</label>
+                        </div>
+                        <p class="help-text help-text-indent">Stampa in <code>kiosk.log</code> le mappe complete di <strong>Anni Accademici</strong>, <strong>Contesti</strong> (Poli/Dipartimenti/Aree) ed <strong>Edifici</strong> rilevati su CINECA e registra i payload API (vedi <code>LEGENDA_LOG.md</code> e Sezione 4 di <code>INSTALL.md</code>). Finché è attivo permette di salvare anche senza Anno/Contesto durante la prima configurazione; ricordati di disattivarlo a configurazione completata.</p>
+
+                        <div class="form-group">
+                            <label for="anno_accademico_id">ID Anno Accademico (Obbligatorio)</label>
+                            <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
+                            <p class="help-text">Codice identificativo U-Planner dell'anno accademico corrente (da aggiornare a ogni nuovo A.A.).</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="contesto_id">ID Contesto — Polo / Dipartimento / Area (Obbligatorio)</label>
+                            <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
+                            <p class="help-text">Codice U-Planner del Polo didattico (consigliato per edifici multi-dipartimento), del Dipartimento o dell'area aule.</p>
                         </div>
                         <div class="form-group">
                             <label for="cineca_edificio">ID Edificio (Opzionale)</label>
-                            <input type="text" id="cineca_edificio" placeholder="es. 05" oninput="aggiornaBadgesSommario()">
-                            <p class="help-text">Filtra gli impegni mostrando solo quelli per uno specifico edificio. Lascia vuoto per mostrare tutti gli edifici.</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="anno_accademico_id">ID Anno Accademico (Opzionale)</label>
-                            <input type="text" id="anno_accademico_id" name="anno_accademico_id" placeholder="es. 5e1553cac831d600172af6d0">
-                            <p class="help-text">Identificativo interno U-Planner per l'anno accademico (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
-                        </div>
-                        <div class="form-group">
-                            <label for="contesto_id">ID Contesto (Opzionale)</label>
-                            <input type="text" id="contesto_id" name="contesto_id" placeholder="es. 5b97788424deec000e171a8f">
-                            <p class="help-text">Identificativo interno U-Planner per il contesto/dipartimento (ricavabile dalle chiamate di rete su CINECA UP, vedi README).</p>
+                            <input type="text" id="cineca_edificio" placeholder="es. 05">
+                            <p class="help-text">Filtra localmente le sole aule del palazzo indicato (es. 05). Lascia vuoto solo se vuoi mostrare tutte le aule dell'intero Contesto.</p>
                         </div>
                         <div class="form-group">
                             <label for="cineca_intervallo">Intervallo Aggiornamento (secondi)</label>
@@ -893,8 +405,8 @@
                 </div>
 
                 <!-- TENDINA: Rete e Sicurezza del Server -->
-                <div class="accordion-panel highlight-security" id="panel-rete">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-rete')">
+                <div class="accordion-panel accent-orange" id="panel-rete">
+                    <div class="accordion-header" data-accordion-target="panel-rete">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🌐</span>
                             <div class="accordion-title-box">
@@ -910,17 +422,11 @@
                     <div class="accordion-body">
                         <p class="panel-description">Configura i parametri di rete del server locale e la sicurezza del pannello di amministrazione.</p>
                         <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="admin_attivo" onchange="aggiornaBadgesSommario()">
+                            <input type="checkbox" id="admin_attivo">
                             <label for="admin_attivo">Abilita l'accesso al pannello Admin remoto</label>
                         </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Imposta su 'true' SOLO se vuoi abilitare il pannello web per modificare queste impostazioni direttamente dal browser all'indirizzo /admin</p>
-                        
-                        <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="debug_mode">
-                            <label for="debug_mode">Abilita Debug Mode</label>
-                        </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Registra eventi dettagliati nel file kiosk.log. Utile per risolvere problemi tecnici e leggere nei log i codici degli edifici disponibili.</p>
-                        
+                        <p class="help-text help-text-indent">Imposta su 'true' SOLO se vuoi abilitare il pannello web per modificare queste impostazioni direttamente dal browser all'indirizzo /admin</p>
+
                         <div class="form-group">
                             <label for="admin_ip_autorizzati">IP Autorizzati</label>
                             <input type="text" id="admin_ip_autorizzati" class="list-input" placeholder="es. 127.0.0.1, 192.168.1.0/24">
@@ -933,17 +439,17 @@
                         </div>
                         <div class="form-group">
                             <label for="porta_server">Porta Server Locale (HTTP)</label>
-                            <input type="number" id="porta_server" placeholder="es. 8080" oninput="aggiornaBadgesSommario()">
+                            <input type="number" id="porta_server" placeholder="es. 8080">
                             <p class="help-text">La porta su cui il server HTTP è in ascolto (modifica effettiva solo al riavvio).<br>
-                                <strong style="color: #f85149;">⚠️ IMPORTANTE:</strong> Se cambi porta, aggiorna manualmente anche l'URL nell'ultima riga di <code>~/.xinitrc</code> sul Raspberry Pi, altrimenti il Kiosk fisico mostrerà errore all'avvio. Per usare la porta 80 vedi la sezione dedicata nel README per i permessi Linux.
+                                <strong class="warning-strong">⚠️ IMPORTANTE:</strong> Se cambi porta, aggiorna manualmente anche l'URL nell'ultima riga di <code>~/.xinitrc</code> sul Raspberry Pi, altrimenti il Kiosk fisico mostrerà errore all'avvio. Per usare la porta 80 vedi la sezione dedicata nel README per i permessi Linux.
                             </p>
                         </div>
                     </div>
                 </div>
 
                 <!-- TENDINA: Server HTTPS (SSL Nativo) -->
-                <div class="accordion-panel" id="panel-https">
-                    <div class="accordion-header" onclick="toggleAccordion('panel-https')">
+                <div class="accordion-panel accent-green" id="panel-https">
+                    <div class="accordion-header" data-accordion-target="panel-https">
                         <div class="accordion-header-left">
                             <span class="accordion-icon">🔒</span>
                             <div class="accordion-title-box">
@@ -958,17 +464,17 @@
                     </div>
                     <div class="accordion-body">
                         <p class="panel-description">Avvia un server crittografato SSL/TLS in parallelo al server HTTP standard all'interno dello stesso processo Python.</p>
-                        
+
                         <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="https_abilitato" onchange="toggleHttpsFields(); aggiornaBadgesSommario();">
+                            <input type="checkbox" id="https_abilitato">
                             <label for="https_abilitato">Abilita Server HTTPS parallelo</label>
                         </div>
-                        <p class="help-text" style="margin-left: 28px; margin-top: -10px; margin-bottom: 15px;">Attiva l'ascolto crittografato su thread dedicato (modifica effettiva al riavvio del server).</p>
-                        
-                        <div id="https-fields-container" style="display: none; padding-left: 15px; border-left: 2px solid var(--accent-color); margin-bottom: 15px;">
+                        <p class="help-text help-text-indent">Attiva l'ascolto crittografato su thread dedicato (modifica effettiva al riavvio del server).</p>
+
+                        <div id="https-fields-container">
                             <div class="form-group">
                                 <label for="https_porta">Porta HTTPS Locale</label>
-                                <input type="number" id="https_porta" placeholder="es. 8443" oninput="aggiornaBadgesSommario()">
+                                <input type="number" id="https_porta" placeholder="es. 8443">
                                 <p class="help-text">La porta su cui il server HTTPS è in ascolto (consigliata: 8443). Se desideri usare la porta standard 443 esterna senza permessi root, usa <code>sudo iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-port 8443</code>.</p>
                             </div>
                             <div class="form-group">
@@ -985,7 +491,7 @@
                                 <input type="checkbox" id="https_forza_redirect">
                                 <label for="https_forza_redirect">Reindirizza automaticamente le connessioni da HTTP a HTTPS</label>
                             </div>
-                            <p class="help-text" style="margin-left: 28px; margin-top: -10px;">Se attivo, qualsiasi client che accede via HTTP verrà reindirizzato automaticamente alla versione crittografata HTTPS (le connessioni da localhost/totem non vengono forzate per sicurezza).</p>
+                            <p class="help-text help-text-indent-compact">Se attivo, qualsiasi client che accede via HTTP verrà reindirizzato automaticamente alla versione crittografata HTTPS (le connessioni da localhost/totem non vengono forzate per sicurezza).</p>
                         </div>
                     </div>
                 </div>
@@ -993,9 +499,9 @@
             </div>
 
             <div class="buttons-row sticky-actions">
-                <button type="button" class="btn" style="background-color: var(--text-secondary);" onclick="logout()">Logout</button>
-                <button type="button" class="btn btn-success" onclick="salvaConfigurazione(false)">💾 Salva Modifiche</button>
-                <button type="button" class="btn btn-danger" onclick="salvaConfigurazione(true)">⚡ Salva e Riavvia Demone</button>
+                <button type="button" id="btn-logout" class="btn btn-secondary">Logout</button>
+                <button type="button" id="btn-salva" class="btn btn-success">💾 Salva Modifiche</button>
+                <button type="button" id="btn-salva-riavvia" class="btn btn-danger">⚡ Salva e Riavvia Demone</button>
             </div>
         </div>
 
@@ -1011,909 +517,12 @@
     </div>
 
     <!-- Lightbox Locandina Modal -->
-    <div id="lightbox-modal" onclick="if(event.target === this || event.target.id === 'lightbox-close-btn') chiudiLightbox()">
-        <button id="lightbox-close-btn" type="button" style="position: absolute; top: 15px; right: 20px; background: transparent; border: none; color: #fff; font-size: 2rem; cursor: pointer; line-height: 1;" aria-label="Chiudi">&times;</button>
+    <div id="lightbox-modal">
+        <button id="lightbox-close-btn" type="button" aria-label="Chiudi">&times;</button>
         <img id="lightbox-img" src="" alt="">
         <div id="lightbox-caption"></div>
     </div>
 
-    <script>
-        function escapeHTML(valore) {
-            return String(valore ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-        }
-
-        function apriLightbox(voce) {
-            const modal = document.getElementById('lightbox-modal');
-            const img = document.getElementById('lightbox-img');
-            const caption = document.getElementById('lightbox-caption');
-            if (!modal || !img || !caption) return;
-            img.src = '/locandine/' + encodeURIComponent(voce.nome);
-            caption.textContent = `${voce.nome} · ${voce.kb} KB · ${voce.caricata}`;
-            modal.style.display = 'flex';
-        }
-
-        function chiudiLightbox() {
-            const modal = document.getElementById('lightbox-modal');
-            if (modal) modal.style.display = 'none';
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                chiudiLightbox();
-            }
-        });
-
-        let currentConfig = {};
-
-        function getAuthHeaders() {
-            return {
-                'Content-Type': 'application/json',
-                'X-Admin-Token': sessionStorage.getItem('adminToken')
-            };
-        }
-
-        let loginCountdownTimer = null;
-
-        async function login() {
-            const pwd = document.getElementById('login-password').value;
-            if (!pwd) return;
-
-            try {
-                const res = await fetch('/api/admin/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: pwd })
-                });
-
-                if (res.ok) {
-                    if (loginCountdownTimer) { clearInterval(loginCountdownTimer); loginCountdownTimer = null; }
-                    const data = await res.json();
-                    sessionStorage.setItem('adminToken', data.token);
-                    document.getElementById('login-error').style.display = 'none';
-                    loadAdminData();
-                } else {
-                    const errEl = document.getElementById('login-error');
-                    errEl.style.color = "var(--danger-color)";
-                    try {
-                        const errData = await res.json();
-                        let sec = errData.secondi_attesa;
-                        if (!sec && errData.error) {
-                            const m = errData.error.match(/(\d+)\s+secondi/);
-                            if (m) sec = parseInt(m[1]);
-                        }
-                        if (sec && sec > 0) {
-                            if (loginCountdownTimer) clearInterval(loginCountdownTimer);
-                            errEl.innerText = `🚨 Troppi tentativi falliti. Riprova tra ${sec} secondi.`;
-                            errEl.style.display = 'block';
-                            loginCountdownTimer = setInterval(() => {
-                                sec--;
-                                if (sec <= 0) {
-                                    clearInterval(loginCountdownTimer);
-                                    loginCountdownTimer = null;
-                                    errEl.innerText = "Puoi riprovare ad accedere ora.";
-                                    errEl.style.color = "var(--accent-color, #58a6ff)";
-                                } else {
-                                    errEl.innerText = `🚨 Troppi tentativi falliti. Riprova tra ${sec} secondi.`;
-                                }
-                            }, 1000);
-                            return;
-                        }
-                        errEl.innerText = errData.error || "Password errata.";
-                    } catch {
-                        errEl.innerText = "Password errata.";
-                    }
-                    errEl.style.display = 'block';
-                }
-            } catch (e) {
-                console.error(e);
-                alert("Errore di rete durante il login.");
-            }
-        }
-
-        function logout() {
-            sessionStorage.removeItem('adminToken');
-            showView('login-view');
-        }
-
-        async function loadAdminData(config) {
-            if (config) {
-                currentConfig = config;
-                populateForm(config);
-                return;
-            }
-            const token = sessionStorage.getItem('adminToken');
-            if (!token) {
-                showView('login-view');
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/admin/config_full', { headers: getAuthHeaders() });
-                if (res.status === 401 || res.status === 403) {
-                    sessionStorage.removeItem('adminToken');
-                    showView('login-view');
-                    return;
-                }
-
-                if (res.ok) {
-                    currentConfig = await res.json();
-                    populateForm(currentConfig);
-                    aggiornaElencoLocandine();
-                    showView('admin-view');
-                }
-            } catch (e) {
-                console.error(e);
-                showView('login-view');
-            }
-        }
-
-        function populateForm(config) {
-            // Banner sicurezza
-            const banner = document.getElementById('security-banner');
-            banner.style.display = config.avviso_sicurezza ? 'block' : 'none';
-
-            // Sicurezza
-            document.getElementById('admin_attivo').checked = config.sicurezza?.admin_attivo || false;
-            document.getElementById('debug_mode').checked = config.main?.debug_mode || false;
-            document.getElementById('admin_ip_autorizzati').value = (config.sicurezza?.admin_ip_autorizzati || []).join(', ');
-            document.getElementById('admin_password').value = '';
-            document.getElementById('porta_server').value = config.main?.porta_server || 8080;
-
-            // HTTPS
-            const httpsCfg = config.https || {};
-            document.getElementById('https_abilitato').checked = httpsCfg.abilitato === true;
-            document.getElementById('https_porta').value = httpsCfg.porta_https || 8443;
-            document.getElementById('https_certificato').value = httpsCfg.file_certificato || 'cert.pem';
-            document.getElementById('https_chiave').value = httpsCfg.file_chiave || 'key.pem';
-            document.getElementById('https_forza_redirect').checked = httpsCfg.forza_redirect_http === true;
-            toggleHttpsFields();
-
-            // Preview URL Schermi Secondari Digital Signage
-            const srvPort = config.main?.porta_server || '8080';
-            const srvHost = window.location.hostname || 'IP_RASPBERRY';
-            const srvProto = window.location.protocol || 'http:';
-            const previewEl = document.getElementById('kiosk-url-preview');
-            if (previewEl) {
-                const portSuffix = (srvPort == '80' && srvProto == 'http:') || (srvPort == '443' && srvProto == 'https:') ? '' : `:${srvPort}`;
-                previewEl.innerText = `${srvProto}//${srvHost}${portSuffix}/?kiosk=1`;
-            }
-
-            // API CINECA
-            document.getElementById('cineca_username').value = config.api_cineca?.username || '';
-            document.getElementById('cineca_password').value = config.api_cineca?.password || '';
-            document.getElementById('cineca_realm').value = config.api_cineca?.realm || '';
-            document.getElementById('cineca_edificio').value = config.api_cineca?.id_edificio || '';
-            document.getElementById('anno_accademico_id').value = config.api_cineca?.anno_accademico_id || '';
-            document.getElementById('contesto_id').value = config.api_cineca?.contesto_id || '';
-            document.getElementById('cineca_intervallo').value = config.api_cineca?.intervallo_aggiornamento_sec || 300;
-            document.getElementById('cineca_url').value = config.api_cineca?.url_base || '';
-
-            // Frontend
-            document.getElementById('fe_mostra_confermati').checked = config.frontend?.mostra_confermati !== false;
-            document.getElementById('fe_mostra_stato').checked = config.frontend?.mostraStatoPC !== false;
-            document.getElementById('fe_carosello').checked = config.frontend?.caroselloAttivo !== false;
-            document.getElementById('fe_titolo').value = config.frontend?.titoloSede || '';
-            document.getElementById('fe_logo').value = config.frontend?.urlLogo || '';
-            document.getElementById('fe_url_calendario').value = config.frontend?.urlCalendario || '';
-            document.getElementById('fe_pausa_carosello').value = config.frontend?.pausaTraCaroselli || 180000;
-            document.getElementById('fe_expo_locandina').value = config.frontend?.esposizioneLocandina || 10000;
-            document.getElementById('fe_intervallo').value = config.frontend?.intervalloAggiornamento || 5000;
-            let quotaVal = 30;
-            const rawQuota = config.frontend?.quotaCarosello;
-            if (typeof rawQuota === 'number' && Number.isFinite(rawQuota)) {
-                if (rawQuota >= 0.10 && rawQuota <= 0.50) {
-                    quotaVal = Math.round(rawQuota * 100);
-                } else if (rawQuota >= 10 && rawQuota <= 50) {
-                    quotaVal = Math.round(rawQuota);
-                }
-            }
-            const sliderQuota = document.getElementById('fe_quota_carosello');
-            if (sliderQuota) sliderQuota.value = quotaVal;
-            const badgeQuota = document.getElementById('fe_quota_carosello_val');
-            if (badgeQuota) badgeQuota.textContent = quotaVal + '%';
-
-            // Footer News
-            const fn = config.footer_news || {};
-            document.getElementById('fn_abilitato').checked = fn.abilitato !== false;
-            document.getElementById('fn_stile').value = fn.stile_scorrimento || 'orizzontale';
-            document.getElementById('fn_velocita').value = fn.velocita || 50;
-            document.getElementById('fn_colore_testo').value = fn.colore_testo || '#c9d1d9';
-            document.getElementById('fn_colore_sfondo').value = fn.colore_sfondo || '#161b22';
-            document.getElementById('fn_colore_btn').value = fn.colore_btn || '#30363d';
-            document.getElementById('fn_dimensione_testo').value = fn.dimensione_testo || '1.15rem';
-            document.getElementById('fn_alert_attivo').checked = fn.alert_fisso_attivo || false;
-            document.getElementById('fn_alert_testo').value = fn.alert_testo || '';
-            
-            const fonti = fn.fonti || [];
-            const diagNews = config.diagnostica_news || {};
-            const container = document.getElementById('fonti_container');
-            container.innerHTML = '';
-            for (let i = 0; i < 6; i++) {
-                const f = fonti[i] || { abilitata: false, nome: '', url: '', tipo: 'rss', visibile_di_default: true, peso: 1 };
-                const html = `
-                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; margin-bottom: 10px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4 style="margin:0; color:var(--text-secondary);">Fonte ${i + 1}</h4>
-                            <span id="fn_f${i}_diagnostica" class="status-badge" style="font-size: 0.85rem; padding: 2px 8px; border-radius: 4px;"></span>
-                        </div>
-                        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                            <div class="form-group form-group-checkbox" style="margin-bottom:0;">
-                                <input type="checkbox" id="fn_f${i}_abilitata" ${f.abilitata !== false ? 'checked' : ''}>
-                                <label for="fn_f${i}_abilitata">Abilitata (Scarica news)</label>
-                            </div>
-                            <div class="form-group form-group-checkbox" style="margin-bottom:0;">
-                                <input type="checkbox" id="fn_f${i}_visibile" ${f.visibile_di_default !== false ? 'checked' : ''}>
-                                <label for="fn_f${i}_visibile">Visibile di default sul Kiosk</label>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Nome Fonte</label>
-                                <input type="text" id="fn_f${i}_nome" value="${escapeHTML(f.nome || '')}">
-                            </div>
-                            <div class="form-group" style="flex: 2;">
-                                <label>URL</label>
-                                <input type="text" id="fn_f${i}_url" value="${escapeHTML(f.url || '')}">
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 5px;">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Formato Dati</label>
-                                <select id="fn_f${i}_tipo" style="padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; width: 100%;">
-                                    <option value="rss" ${f.tipo === 'rss' ? 'selected' : ''}>Feed RSS (XML)</option>
-                                    <option value="rest" ${f.tipo === 'rest' ? 'selected' : ''}>REST API (JSON)</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label title="Valore da 1 a 5. Determina quante volte ripetere le news di questa fonte (es. 5 = priorità massima, mostrate più spesso).">Peso (1-5) ℹ️</label>
-                                <input type="number" id="fn_f${i}_peso" min="1" max="5" value="${f.peso || 1}" style="width:100%; padding: 10px; background-color: #0d1117; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
-                            </div>
-                        </div>
-                    </div>
-                `;
-                container.insertAdjacentHTML('beforeend', html);
-
-                const badgeDiag = document.getElementById(`fn_f${i}_diagnostica`);
-                if (badgeDiag) {
-                    const u = (f.url || '').trim();
-                    badgeDiag.title = u;
-                    if (!u) {
-                        badgeDiag.textContent = '⚪ Non configurata';
-                        badgeDiag.style.color = '#8b949e';
-                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
-                        badgeDiag.style.border = '1px solid #30363d';
-                    } else if (f.abilitata === false) {
-                        badgeDiag.textContent = '⚪ Disattivata';
-                        badgeDiag.style.color = '#8b949e';
-                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
-                        badgeDiag.style.border = '1px solid #30363d';
-                    } else if (!diagNews || !diagNews[u]) {
-                        badgeDiag.textContent = '⚪ In attesa del primo aggiornamento';
-                        badgeDiag.style.color = '#8b949e';
-                        badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
-                        badgeDiag.style.border = '1px solid #30363d';
-                    } else {
-                        const d = diagNews[u];
-                        if (d.stato === 'OK') {
-                            badgeDiag.textContent = `🟢 OK: ${d.articoli} notizie (ore ${d.ora})`;
-                            badgeDiag.style.color = '#3fb950';
-                            badgeDiag.style.backgroundColor = 'rgba(63, 185, 80, 0.15)';
-                            badgeDiag.style.border = '1px solid rgba(63, 185, 80, 0.4)';
-                        } else if (d.stato === 'DISABILITATA') {
-                            badgeDiag.textContent = '⚪ Disattivata';
-                            badgeDiag.style.color = '#8b949e';
-                            badgeDiag.style.backgroundColor = 'rgba(110, 118, 129, 0.1)';
-                            badgeDiag.style.border = '1px solid #30363d';
-                        } else {
-                            badgeDiag.textContent = `🔴 Errore: ${d.stato} (ore ${d.ora})`;
-                            badgeDiag.style.color = '#f85149';
-                            badgeDiag.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
-                            badgeDiag.style.border = '1px solid rgba(248, 81, 73, 0.4)';
-                        }
-                    }
-                }
-            }
-            
-            aggiornaBadgesSommario();
-        }
-
-        function switchTab(tabId) {
-            document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
-            const btn = document.getElementById(`tab-btn-${tabId}`);
-            const content = document.getElementById(`tab-content-${tabId}`);
-            if (btn) btn.classList.add('active');
-            if (content) content.classList.add('active');
-        }
-
-        function toggleAccordion(id) {
-            const panel = document.getElementById(id);
-            if (panel) {
-                panel.classList.toggle('open');
-                if (id === 'panel-locandine' && panel.classList.contains('open')) {
-                    aggiornaElencoLocandine();
-                }
-            }
-        }
-
-        function setAllAccordions(open) {
-            const activeTab = document.querySelector('.tab-content.active') || document;
-            activeTab.querySelectorAll('.accordion-panel').forEach(p => {
-                if (open) p.classList.add('open');
-                else p.classList.remove('open');
-            });
-        }
-
-        function aggiornaBadgesSommario() {
-            // 1. Alert Giallo
-            const alertAttivo = document.getElementById('fn_alert_attivo')?.checked;
-            const alertTesto = document.getElementById('fn_alert_testo')?.value.trim();
-            const badgeAlert = document.getElementById('badge-summary-alert');
-            const previewContainer = document.getElementById('alert-preview-container');
-            const previewText = document.getElementById('alert-preview-text');
-            if (badgeAlert) {
-                if (alertAttivo) {
-                    badgeAlert.className = 'status-badge badge-warn';
-                    badgeAlert.innerText = 'ATTIVO';
-                    if (previewContainer) previewContainer.style.display = 'block';
-                    if (previewText) previewText.innerText = alertTesto || '(Nessun testo inserito)';
-                } else {
-                    badgeAlert.className = 'status-badge badge-off';
-                    badgeAlert.innerText = 'NON ATTIVO';
-                    if (previewContainer) previewContainer.style.display = 'none';
-                }
-            }
-
-            // 2. Rete e Sicurezza
-            const porta = document.getElementById('porta_server')?.value || '8080';
-            const adminAttivo = document.getElementById('admin_attivo')?.checked;
-            const badgeRete = document.getElementById('badge-summary-rete');
-            if (badgeRete) {
-                badgeRete.className = 'status-badge badge-info';
-                badgeRete.innerText = `Porta ${porta} ${adminAttivo ? '• Admin ON' : '• Admin OFF'}`;
-            }
-
-            // 3. HTTPS
-            const httpsAttivo = document.getElementById('https_abilitato')?.checked;
-            const httpsPorta = document.getElementById('https_porta')?.value || '8443';
-            const badgeHttps = document.getElementById('badge-summary-https');
-            if (badgeHttps) {
-                if (httpsAttivo) {
-                    badgeHttps.className = 'status-badge badge-on';
-                    badgeHttps.innerText = `ATTIVO: ${httpsPorta}`;
-                } else {
-                    badgeHttps.className = 'status-badge badge-off';
-                    badgeHttps.innerText = 'DISABILITATO';
-                }
-            }
-
-            // 4. CINECA
-            const edificio = document.getElementById('cineca_edificio')?.value.trim();
-            const userCineca = document.getElementById('cineca_username')?.value.trim();
-            const badgeCineca = document.getElementById('badge-summary-cineca');
-            if (badgeCineca) {
-                if (edificio) {
-                    badgeCineca.className = 'status-badge badge-info';
-                    badgeCineca.innerText = `Edificio: ${edificio}`;
-                } else if (userCineca) {
-                    badgeCineca.className = 'status-badge badge-info';
-                    badgeCineca.innerText = 'Tutti gli edifici';
-                } else {
-                    badgeCineca.className = 'status-badge badge-off';
-                    badgeCineca.innerText = 'Non configurato';
-                }
-            }
-
-            // 5. Locandine
-            const carosello = document.getElementById('fe_carosello')?.checked;
-            const badgeLocandine = document.getElementById('badge-summary-locandine') || document.getElementById('badge-summary-frontend');
-            if (badgeLocandine) {
-                if (carosello) {
-                    badgeLocandine.className = 'status-badge badge-on';
-                    badgeLocandine.innerText = 'Locandine: ON';
-                } else {
-                    badgeLocandine.className = 'status-badge badge-off';
-                    badgeLocandine.innerText = 'Locandine: OFF';
-                }
-            }
-
-            // 6. Footer News
-            const fnAttivo = document.getElementById('fn_abilitato')?.checked;
-            let numFontiAttive = 0;
-            for (let i = 0; i < 6; i++) {
-                const chk = document.getElementById(`fn_f${i}_abilitata`);
-                const nome = document.getElementById(`fn_f${i}_nome`);
-                if (chk && chk.checked && nome && nome.value.trim()) numFontiAttive++;
-            }
-            const badgeFooter = document.getElementById('badge-summary-footer');
-            if (badgeFooter) {
-                if (fnAttivo) {
-                    badgeFooter.className = 'status-badge badge-on';
-                    badgeFooter.innerText = `Attivo (${numFontiAttive} ${numFontiAttive === 1 ? 'fonte' : 'fonti'})`;
-                } else {
-                    badgeFooter.className = 'status-badge badge-off';
-                    badgeFooter.innerText = 'DISABILITATO';
-                }
-            }
-        }
-
-        function toggleHttpsFields() {
-            const isChecked = document.getElementById('https_abilitato').checked;
-            const container = document.getElementById('https-fields-container');
-            if (container) {
-                container.style.display = isChecked ? 'block' : 'none';
-            }
-        }
-
-        async function salvaConfigurazione(riavvia) {
-            const sanitizeId = (val) => (val || '').replace(/^[\s"']+|[\s"']+$/g, '');
-            const ips = document.getElementById('admin_ip_autorizzati').value.split(',').map(s => s.trim()).filter(s => s);
-            const annoId = sanitizeId(document.getElementById('anno_accademico_id').value);
-            const contestoId = sanitizeId(document.getElementById('contesto_id').value);
-            const realm = sanitizeId(document.getElementById('cineca_realm').value);
-            const edificio = sanitizeId(document.getElementById('cineca_edificio').value);
-            const intervallo = parseInt(document.getElementById('cineca_intervallo').value) || 300;
-            const hexPattern = /^[0-9a-fA-F]{24}$/;
-
-            if (annoId && !hexPattern.test(annoId)) {
-                if (!confirm("Attenzione: L'ID Anno Accademico inserito non sembra essere un identificativo CINECA valido (attesi 24 caratteri esadecimali).\n\nVuoi continuare comunque?")) {
-                    return;
-                }
-            }
-
-            if (contestoId && !hexPattern.test(contestoId)) {
-                if (!confirm("Attenzione: L'ID Contesto inserito non sembra essere un identificativo CINECA valido (attesi 24 caratteri esadecimali).\n\nVuoi continuare comunque?")) {
-                    return;
-                }
-            }
-
-            const payload = {
-                main: {
-                    ...currentConfig.main,
-                    porta_server: document.getElementById('porta_server').value,
-                    debug_mode: document.getElementById('debug_mode').checked
-                },
-                https: {
-                    ...currentConfig.https,
-                    abilitato: document.getElementById('https_abilitato').checked,
-                    porta_https: parseInt(document.getElementById('https_porta').value) || 8443,
-                    file_certificato: document.getElementById('https_certificato').value.trim() || 'cert.pem',
-                    file_chiave: document.getElementById('https_chiave').value.trim() || 'key.pem',
-                    forza_redirect_http: document.getElementById('https_forza_redirect').checked
-                },
-                sicurezza: {
-                    admin_attivo: document.getElementById('admin_attivo').checked,
-                    admin_ip_autorizzati: ips
-                },
-                api_cineca: {
-                    username: document.getElementById('cineca_username').value.trim(),
-                    password: document.getElementById('cineca_password').value,
-                    realm: realm,
-                    id_edificio: edificio,
-                    anno_accademico_id: annoId,
-                    contesto_id: contestoId,
-                    intervallo_aggiornamento_sec: intervallo,
-                    url_base: document.getElementById('cineca_url').value.trim()
-                },
-                frontend: {
-                    ...currentConfig.frontend,
-                    mostra_confermati: document.getElementById('fe_mostra_confermati').checked,
-                    mostraStatoPC: document.getElementById('fe_mostra_stato').checked,
-                    caroselloAttivo: document.getElementById('fe_carosello').checked,
-                    titoloSede: document.getElementById('fe_titolo').value,
-                    urlLogo: document.getElementById('fe_logo').value,
-                    urlCalendario: document.getElementById('fe_url_calendario').value,
-                    pausaTraCaroselli: parseInt(document.getElementById('fe_pausa_carosello').value),
-                    esposizioneLocandina: parseInt(document.getElementById('fe_expo_locandina').value),
-                    intervalloAggiornamento: parseInt(document.getElementById('fe_intervallo').value),
-                    quotaCarosello: parseFloat((parseInt(document.getElementById('fe_quota_carosello').value) / 100).toFixed(2))
-                },
-                footer_news: {
-                    ...currentConfig.footer_news,
-                    abilitato: document.getElementById('fn_abilitato').checked,
-                    stile_scorrimento: document.getElementById('fn_stile').value,
-                    velocita: parseInt(document.getElementById('fn_velocita').value) || 50,
-                    colore_testo: document.getElementById('fn_colore_testo').value,
-                    colore_sfondo: document.getElementById('fn_colore_sfondo').value,
-                    colore_btn: document.getElementById('fn_colore_btn').value,
-                    dimensione_testo: document.getElementById('fn_dimensione_testo').value,
-                    alert_fisso_attivo: document.getElementById('fn_alert_attivo').checked,
-                    alert_testo: document.getElementById('fn_alert_testo').value,
-                    fonti: Array.from({length: 6}).map((_, i) => ({
-                            abilitata: document.getElementById(`fn_f${i}_abilitata`).checked,
-                            nome: document.getElementById(`fn_f${i}_nome`).value.trim(),
-                            url: document.getElementById(`fn_f${i}_url`).value.trim(),
-                            tipo: document.getElementById(`fn_f${i}_tipo`).value,
-                            visibile_di_default: document.getElementById(`fn_f${i}_visibile`).checked,
-                            peso: parseInt(document.getElementById(`fn_f${i}_peso`).value) || 1
-                        }))
-                }
-            };
-
-            const nuovaPwd = document.getElementById('admin_password').value;
-            if (nuovaPwd) {
-                payload.admin_password = nuovaPwd;
-            }
-
-            try {
-                const res = await fetch('/api/admin/save', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify(payload)
-                });
-
-                if (res.ok) {
-                    showToast();
-                    document.getElementById('admin_password').value = '';
-
-                    if (riavvia) {
-                        await fetch('/api/admin/restart', { method: 'POST', headers: getAuthHeaders() });
-                        startRestartCountdown();
-                    } else {
-                        loadAdminData();
-                    }
-                } else {
-                    const errData = await res.json().catch(() => ({}));
-                    alert(errData.error || "Errore durante il salvataggio");
-                }
-            } catch (e) {
-                console.error(e);
-                alert("Errore di rete");
-            }
-        }
-
-        const saveAdminData = salvaConfigurazione;
-
-        function showView(viewId) {
-            document.getElementById('login-view').classList.remove('active');
-            document.getElementById('admin-view').classList.remove('active');
-            document.getElementById(viewId).classList.add('active');
-        }
-
-        let toastTimeout = null;
-        function showToast(messaggio) {
-            const toast = document.getElementById("toast");
-            if (!toast) return;
-            if (toastTimeout) {
-                clearTimeout(toastTimeout);
-                toastTimeout = null;
-            }
-            toast.textContent = messaggio || "Salvato con successo!";
-            toast.classList.remove("show");
-            void toast.offsetWidth;
-            toast.classList.add("show");
-            toastTimeout = setTimeout(() => {
-                toast.classList.remove("show");
-                toast.textContent = "Salvato con successo!";
-                toastTimeout = null;
-            }, 3000);
-        }
-
-        function startRestartCountdown() {
-            const modal = document.getElementById('restart-modal');
-            const cd = document.getElementById('countdown');
-            modal.style.display = 'flex';
-            let seconds = 5;
-            const timer = setInterval(() => {
-                seconds--;
-                cd.innerText = seconds;
-                if (seconds <= 0) {
-                    clearInterval(timer);
-                    window.location.reload();
-                }
-            }, 1000);
-        }
-
-        let locandineOperazioneInCorso = false;
-
-        const LATO_MAX_LOCANDINA = 2160;
-
-        function calcolaDimensioniLocandina(larghezza, altezza, latoMax) {
-            const scala = Math.min(1, latoMax / Math.max(larghezza, altezza));
-            return { larghezza: Math.round(larghezza * scala), altezza: Math.round(altezza * scala), ridimensiona: scala < 1 };
-        }
-
-        async function preparaLocandina(file) {
-            const bitmap = await createImageBitmap(file);
-            const dim = calcolaDimensioniLocandina(bitmap.width, bitmap.height, LATO_MAX_LOCANDINA);
-            if (!dim.ridimensiona && file.size <= 2 * 1024 * 1024) { bitmap.close(); return file; }
-            const canvas = document.createElement('canvas');
-            canvas.width = dim.larghezza; canvas.height = dim.altezza;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(bitmap, 0, 0, dim.larghezza, dim.altezza);
-            bitmap.close();
-            let blob = await new Promise(r => canvas.toBlob(r, 'image/webp', 0.85));
-            if (!blob || blob.type !== 'image/webp') {            // browser senza encoder WebP: JPEG su fondo bianco
-                ctx.globalCompositeOperation = 'destination-over';
-                ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, dim.larghezza, dim.altezza);
-                blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
-            }
-            return blob;
-        }
-
-        async function caricaLocandine() {
-            if (locandineOperazioneInCorso) return;
-            const input = document.getElementById('locandine_file');
-            if (!input || !input.files || input.files.length === 0) {
-                alert('Seleziona almeno un file immagine da caricare.');
-                return;
-            }
-
-            const MAX_SIZE = 10 * 1024 * 1024;
-            const files = Array.from(input.files);
-
-            locandineOperazioneInCorso = true;
-            try {
-                const token = sessionStorage.getItem('adminToken');
-                let qualcheRidimensionata = false;
-                for (const file of files) {
-                    let blob;
-                    try {
-                        blob = await preparaLocandina(file);
-                    } catch (err) {
-                        console.error(`Errore elaborazione immagine "${file.name}":`, err);
-                        await aggiornaElencoLocandine();
-                        alert(`Impossibile elaborare l'immagine "${file.name}". Assicurati che sia un'immagine valida (JPEG, PNG o WebP).`);
-                        return;
-                    }
-                    if (blob !== file) {
-                        qualcheRidimensionata = true;
-                    }
-                    if (blob.size > MAX_SIZE) {
-                        await aggiornaElencoLocandine();
-                        alert(`Il file "${file.name}" supera il limite massimo consentito di 10 MB.`);
-                        return;
-                    }
-                    try {
-                        const res = await fetch('/api/admin/locandine/upload', {
-                            method: 'POST',
-                            headers: {
-                                'X-Admin-Token': token,
-                                'Content-Type': blob.type || 'application/octet-stream'
-                            },
-                            body: blob
-                        });
-                        if (!res.ok) {
-                            let errText = `Errore HTTP ${res.status}`;
-                            try {
-                                const errJson = await res.json();
-                                if (errJson && errJson.error) errText = errJson.error;
-                            } catch (_) {}
-                            await aggiornaElencoLocandine();
-                            alert(`Errore durante il caricamento di "${file.name}": ${errText}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.error(err);
-                        await aggiornaElencoLocandine();
-                        alert(`Errore di rete durante il caricamento di "${file.name}".`);
-                        return;
-                    }
-                }
-
-                input.value = '';
-                await aggiornaElencoLocandine();
-                showToast(qualcheRidimensionata ? "Locandina ridimensionata e caricata con successo!" : "Locandina caricata con successo!");
-            } finally {
-                locandineOperazioneInCorso = false;
-            }
-        }
-
-        let elencoLocandineCache = [];
-
-        async function spostaLocandina(index, offset) {
-            if (locandineOperazioneInCorso) return;
-            const nuovoIndex = index + offset;
-            if (nuovoIndex < 0 || nuovoIndex >= elencoLocandineCache.length) return;
-            locandineOperazioneInCorso = true;
-            const nomi = elencoLocandineCache.map(item => item.nome);
-            const temp = nomi[index];
-            nomi[index] = nomi[nuovoIndex];
-            nomi[nuovoIndex] = temp;
-
-            try {
-                const res = await fetch('/api/admin/locandine/ordine', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ ordine: nomi })
-                });
-                if (res.ok) {
-                    await aggiornaElencoLocandine();
-                    showToast();
-                } else {
-                    let errText = `Errore HTTP ${res.status}`;
-                    try {
-                        const errJson = await res.json();
-                        if (errJson && errJson.error) errText = errJson.error;
-                    } catch (_) {}
-                    alert(`Errore durante il riordino: ${errText}`);
-                }
-            } catch (e) {
-                console.error('Errore riordino locandine:', e);
-                alert('Errore di rete durante il riordino delle locandine.');
-            } finally {
-                locandineOperazioneInCorso = false;
-            }
-        }
-
-        async function eliminaLocandina(nome) {
-            if (locandineOperazioneInCorso) return;
-            if (!confirm(`Sei sicuro di voler eliminare la locandina "${nome}"?`)) {
-                return;
-            }
-            locandineOperazioneInCorso = true;
-            try {
-                const res = await fetch('/api/admin/locandine/elimina', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ filename: nome })
-                });
-                if (res.ok) {
-                    await aggiornaElencoLocandine();
-                    showToast();
-                } else {
-                    let errText = `Errore HTTP ${res.status}`;
-                    try {
-                        const errJson = await res.json();
-                        if (errJson && errJson.error) errText = errJson.error;
-                    } catch (_) {}
-                    alert(`Errore durante l'eliminazione: ${errText}`);
-                }
-            } catch (e) {
-                console.error('Errore eliminazione locandina:', e);
-                alert('Errore di rete durante l\'eliminazione della locandina.');
-            } finally {
-                locandineOperazioneInCorso = false;
-            }
-        }
-
-        async function aggiornaElencoLocandine() {
-            try {
-                const res = await fetch('/api/admin/locandine', { headers: getAuthHeaders() });
-                if (res.status === 401 || res.status === 403) return;
-                if (!res.ok) return;
-                const lista = await res.json();
-                elencoLocandineCache = Array.isArray(lista) ? lista : [];
-                const ul = document.getElementById('locandine_lista');
-                if (!ul) return;
-                ul.textContent = '';
-                if (elencoLocandineCache.length === 0) {
-                    const li = document.createElement('li');
-                    li.textContent = 'Nessuna locandina presente.';
-                    li.style.color = 'var(--text-secondary)';
-                    li.style.padding = '10px 14px';
-                    li.style.fontStyle = 'italic';
-                    ul.appendChild(li);
-                    return;
-                }
-                elencoLocandineCache.forEach((v, index) => {
-                    const li = document.createElement('li');
-                    li.style.display = 'flex';
-                    li.style.justifyContent = 'space-between';
-                    li.style.alignItems = 'center';
-                    li.style.padding = '8px 14px';
-                    li.style.borderBottom = index === elencoLocandineCache.length - 1 ? 'none' : '1px solid var(--border-color)';
-                    li.style.gap = '12px';
-
-                    const colSinistra = document.createElement('div');
-                    colSinistra.style.display = 'flex';
-                    colSinistra.style.alignItems = 'center';
-                    colSinistra.style.gap = '12px';
-                    colSinistra.style.overflow = 'hidden';
-
-                    const colThumb = document.createElement('div');
-                    colThumb.style.flexShrink = '0';
-                    colThumb.innerHTML = `<img class="miniatura-locandina" loading="lazy" alt="" src="/locandine/${escapeHTML(encodeURIComponent(v.nome))}">`;
-                    const imgEl = colThumb.querySelector('img');
-                    if (imgEl) imgEl.onclick = () => apriLightbox(v);
-
-                    const colInfo = document.createElement('div');
-                    colInfo.style.display = 'flex';
-                    colInfo.style.flexDirection = 'column';
-                    colInfo.style.gap = '3px';
-                    colInfo.style.overflow = 'hidden';
-
-                    const nomeSpan = document.createElement('span');
-                    nomeSpan.textContent = v.nome;
-                    nomeSpan.style.fontFamily = 'monospace';
-                    nomeSpan.style.fontSize = '0.9rem';
-                    nomeSpan.style.color = 'var(--text-primary)';
-                    nomeSpan.style.fontWeight = '600';
-                    nomeSpan.style.wordBreak = 'break-all';
-
-                    const metaSpan = document.createElement('span');
-                    metaSpan.textContent = `${v.kb} KB • Caricata: ${v.caricata}`;
-                    metaSpan.style.fontSize = '0.78rem';
-                    metaSpan.style.color = 'var(--text-secondary)';
-
-                    colInfo.appendChild(nomeSpan);
-                    colInfo.appendChild(metaSpan);
-
-                    colSinistra.appendChild(colThumb);
-                    colSinistra.appendChild(colInfo);
-
-                    const colAzioni = document.createElement('div');
-                    colAzioni.style.display = 'flex';
-                    colAzioni.style.gap = '6px';
-                    colAzioni.style.flexShrink = '0';
-
-                    const btnSu = document.createElement('button');
-                    btnSu.type = 'button';
-                    btnSu.textContent = '▲';
-                    btnSu.title = 'Sposta in alto';
-                    btnSu.setAttribute('aria-label', `Sposta in alto ${v.nome}`);
-                    btnSu.className = 'btn';
-                    btnSu.style.padding = '4px 8px';
-                    btnSu.style.fontSize = '0.8rem';
-                    btnSu.style.backgroundColor = '#21262d';
-                    btnSu.style.border = '1px solid var(--border-color)';
-                    if (index === 0) {
-                        btnSu.disabled = true;
-                        btnSu.style.opacity = '0.35';
-                        btnSu.style.cursor = 'not-allowed';
-                    } else {
-                        btnSu.onclick = () => spostaLocandina(index, -1);
-                    }
-
-                    const btnGiu = document.createElement('button');
-                    btnGiu.type = 'button';
-                    btnGiu.textContent = '▼';
-                    btnGiu.title = 'Sposta in basso';
-                    btnGiu.setAttribute('aria-label', `Sposta in basso ${v.nome}`);
-                    btnGiu.className = 'btn';
-                    btnGiu.style.padding = '4px 8px';
-                    btnGiu.style.fontSize = '0.8rem';
-                    btnGiu.style.backgroundColor = '#21262d';
-                    btnGiu.style.border = '1px solid var(--border-color)';
-                    if (index === elencoLocandineCache.length - 1) {
-                        btnGiu.disabled = true;
-                        btnGiu.style.opacity = '0.35';
-                        btnGiu.style.cursor = 'not-allowed';
-                    } else {
-                        btnGiu.onclick = () => spostaLocandina(index, 1);
-                    }
-
-                    const btnElimina = document.createElement('button');
-                    btnElimina.type = 'button';
-                    btnElimina.textContent = '🗑';
-                    btnElimina.title = 'Elimina locandina';
-                    btnElimina.setAttribute('aria-label', `Elimina locandina ${v.nome}`);
-                    btnElimina.className = 'btn';
-                    btnElimina.style.padding = '4px 8px';
-                    btnElimina.style.fontSize = '0.8rem';
-                    btnElimina.style.backgroundColor = 'rgba(248, 81, 73, 0.15)';
-                    btnElimina.style.borderColor = 'rgba(248, 81, 73, 0.4)';
-                    btnElimina.style.color = 'var(--danger-color)';
-                    btnElimina.onclick = () => eliminaLocandina(v.nome);
-
-                    colAzioni.appendChild(btnSu);
-                    colAzioni.appendChild(btnGiu);
-                    colAzioni.appendChild(btnElimina);
-
-                    li.appendChild(colSinistra);
-                    li.appendChild(colAzioni);
-                    ul.appendChild(li);
-                });
-            } catch (e) {
-                console.error('Errore durante la lettura di locandine:', e);
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const adminView = document.getElementById('admin-view');
-            if (adminView) {
-                adminView.addEventListener('input', aggiornaBadgesSommario);
-                adminView.addEventListener('change', aggiornaBadgesSommario);
-            }
-
-            if (sessionStorage.getItem('adminToken')) {
-                loadAdminData();
-            } else {
-                showView('login-view');
-            }
-        });
-    </script>
 </body>
 
 </html>

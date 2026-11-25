@@ -8,10 +8,13 @@ import datetime
 import requests
 import yaml
 import hashlib
+import hmac
 import ipaddress
 import secrets
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import contextlib
+import socket
 import socketserver
 import ssl
 import copy
@@ -31,12 +34,33 @@ class KioskHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         # Ignora disconnessioni fisiologiche dei client remoti o bot scanner internet
         exc = sys.exception() if hasattr(sys, 'exception') else sys.exc_info()[1]
-        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, TimeoutError)):
             return
         super().handle_error(request, client_address)
 
 
 PERCORSO_BASE = os.path.dirname(os.path.abspath(__file__))
+if PERCORSO_BASE not in sys.path:
+    sys.path.insert(0, PERCORSO_BASE)
+
+from core.building_context import (
+    ESTENSIONI_LOCANDINE,
+    BuildingContext,
+    chiave_ordinamento_naturale,
+    rileva_formato_immagine,
+)
+from core.cineca_client import (
+    AVVISI_DI_STATO,
+    LIMITE_EVENTI_CINECA,
+    RE_ID_CINECA_SICURO,
+    SOGLIA_ASSENZE_ANNULLAMENTO,
+    CinecaClient,
+    get_giorno_operativo,
+    get_tz_roma,
+    sanitize_id_str,
+)
+from core.news_engine import TIMEOUT_FONTE_SEC, NewsEngine
+
 FILE_CONFIG = os.path.join(PERCORSO_BASE, 'config.yaml')
 
 CONFIG = {}
@@ -57,238 +81,162 @@ ultimo_aggiornamento_preservato = False
 memoria_news = []
 news_poll_event = threading.Event()
 
-LIMITE_EVENTI_CINECA = 500          # tetto 'limit' richiesto a getImpegniCalendario
-SOGLIA_ASSENZE_ANNULLAMENTO = 2     # polling consecutivi senza l'evento prima di marcarlo ANNULLATO
-AVVISI_DI_STATO = ("ANNULLATO", "SOSPESO")
-
 LIMITE_UPLOAD_LOCANDINA = 10 * 1024 * 1024
 LIMITE_POST_JSON = 1 * 1024 * 1024
-ESTENSIONI_LOCANDINE = ('.png', '.jpg', '.jpeg', '.webp')
 
-lock_locandine = threading.Lock()
+MAX_CONCURRENT_REQUESTS = 40
+HTTP_REQUEST_TIMEOUT = 15.0
+HTTP_CONCURRENCY_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION_SEC = 600
+SLIDING_WINDOW_SEC = 900
+
+CONFIG_WHITELIST = {
+    'main': {'porta_server', 'file_log', 'debug_mode', 'percorso_base'},
+    'sicurezza': {'admin_attivo', 'admin_ip_autorizzati'},
+    'https': {'abilitato', 'porta_https', 'file_certificato', 'file_chiave', 'forza_redirect_http'},
+    'api_cineca': {
+        'username', 'password', 'realm', 'id_edificio',
+        'anno_accademico_id', 'contesto_id', 'intervallo_aggiornamento_sec', 'url_base',
+    },
+    'frontend': {
+        'mostra_confermati', 'caroselloAttivo', 'titoloSede', 'urlLogo', 'mostraStatoPC',
+        'messaggioNessunaLezione', 'messaggioErroreRete', 'pausaTraCaroselli',
+        'esposizioneLocandina', 'quotaCarosello', 'intervalloAggiornamento',
+        'urlCalendario', 'urlRepo', 'urlLicenza', 'autore', 'emailAutore',
+    },
+    'footer_news': {
+        'abilitato', 'stile_scorrimento', 'velocita', 'colore_testo', 'colore_sfondo',
+        'colore_btn', 'dimensione_testo', 'alert_fisso_attivo', 'alert_testo', 'fonti',
+    },
+}
+FONTI_WHITELIST = {'abilitata', 'nome', 'url', 'tipo', 'visibile_di_default', 'peso'}
+RE_FILE_LOG_SICURO = re.compile(r'^[a-zA-Z0-9_\-\.]+\.log$')
+RE_NOME_CERT_SICURO = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data:; connect-src 'self'; "
+    "style-src 'self'; frame-ancestors 'self'"
+)
+
+lock_locandine = threading.RLock()
+
 
 def cartella_locandine():
-    return os.path.join(PERCORSO_BASE, 'locandine')
+    return ctx.cartella_locandine()
+
 
 def percorso_ordine():
-    return os.path.join(cartella_locandine(), 'ordine.json')
+    return ctx.percorso_ordine()
+
 
 def leggi_ordine():
-    try:
-        with open(percorso_ordine(), 'r', encoding='utf-8') as f:
-            dati = json.load(f)
-    except (OSError, ValueError):
-        return []
-    return [n for n in dati if isinstance(n, str)] if isinstance(dati, list) else []
+    return ctx.leggi_ordine()
+
 
 def scrivi_ordine(nomi):
-    cartella = cartella_locandine()
-    os.makedirs(cartella, exist_ok=True)
-    tmp = percorso_ordine() + '.tmp'
-    try:
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(nomi, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, percorso_ordine())
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+    return ctx.scrivi_ordine(nomi)
+
 
 def elenco_locandine_ordinato():
     """Ordine di ordine.json, poi i file non elencati in ordine naturale; voci senza file ignorate."""
-    presenti = elenco_file_locandine()
-    insieme = set(presenti)
-    ordinati = [n for n in dict.fromkeys(leggi_ordine()) if n in insieme]
-    gia = set(ordinati)
-    return ordinati + [n for n in presenti if n not in gia]
+    return ctx.elenco_locandine_ordinato()
 
-def rileva_formato_immagine(testa):
-    """Estensione dedotta dai magic bytes, None se il formato non è ammesso."""
-    if testa.startswith(b'\xff\xd8\xff'):
-        return '.jpg'
-    if testa.startswith(b'\x89PNG\r\n\x1a\n'):
-        return '.png'
-    if testa[:4] == b'RIFF' and testa[8:12] == b'WEBP':
-        return '.webp'
-    return None
-
-def chiave_ordinamento_naturale(nome):
-    # Tupla omogenea: la vecchia chiave int/str andava in TypeError con nomi misti (1.jpg + p..._ab12.jpg)
-    m = re.match(r'^(\d+)', nome)
-    return (0, int(m.group(1)), nome.lower()) if m else (1, 0, nome.lower())
 
 def elenco_file_locandine():
-    cartella = cartella_locandine()
-    if not os.path.isdir(cartella):
-        return []
-    nomi = [f for f in os.listdir(cartella)
-            if not f.startswith('.') and f.lower().endswith(ESTENSIONI_LOCANDINE)
-            and os.path.isfile(os.path.join(cartella, f))]
-    return sorted(nomi, key=chiave_ordinamento_naturale)
+    return ctx.elenco_file_locandine()
+
 
 def pulisci_upload_orfani():
-    cartella = cartella_locandine()
-    if os.path.isdir(cartella):
-        for f in os.listdir(cartella):
-            if f.startswith('.upload_') and f.endswith('.tmp'):
-                try:
-                    os.remove(os.path.join(cartella, f))
-                except OSError:
-                    pass
+    return ctx.pulisci_upload_orfani()
+
 
 def salva_locandina_da_stream(rfile, lunghezza):
     """Scrive il body su .tmp a blocchi, valida i magic bytes e rinomina con un nome immutabile."""
-    cartella = cartella_locandine()
-    os.makedirs(cartella, exist_ok=True)
-    tmp = os.path.join(cartella, f'.upload_{secrets.token_hex(8)}.tmp')
-    testa, letti = b'', 0
-    try:
-        with open(tmp, 'wb') as f:
-            while letti < lunghezza:
-                blocco = rfile.read(min(65536, lunghezza - letti))
-                if not blocco:
-                    raise ValueError('Upload interrotto prima della fine')
-                if len(testa) < 12:
-                    testa += blocco[:12 - len(testa)]
-                f.write(blocco)
-                letti += len(blocco)
-            f.flush()
-            os.fsync(f.fileno())
-        ext = rileva_formato_immagine(testa)
-        if not ext:
-            raise ValueError('Formato non supportato: ammessi JPEG, PNG, WebP')
-        nome = f"p{int(time.time() * 1000)}_{secrets.token_hex(2)}{ext}"
-        os.replace(tmp, os.path.join(cartella, nome))
-        return nome
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+    return ctx.salva_locandina_da_stream(rfile, lunghezza)
 
-def get_tz_roma():
-    """Restituisce il fuso orario di Roma (Europe/Rome).
-    Supporta nativamente zoneinfo su Linux/Raspberry Pi con fallback robusto per Windows/UTC."""
-    try:
-        import zoneinfo
-        return zoneinfo.ZoneInfo("Europe/Rome")
-    except Exception:
-        pass
-    local_tz = datetime.datetime.now().astimezone().tzinfo
-    if local_tz and datetime.datetime.now().astimezone().utcoffset() != datetime.timedelta(0):
-        return local_tz
-    # Fallback calcolato CET (UTC+1) / CEST (UTC+2) per sistemi configurati in UTC puro
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    anno = now_utc.year
-    mar_last_sun = max(d for d in range(25, 32) if datetime.date(anno, 3, d).weekday() == 6)
-    oct_last_sun = max(d for d in range(25, 32) if datetime.date(anno, 10, d).weekday() == 6)
-    dst_start = datetime.datetime(anno, 3, mar_last_sun, 2, 0, tzinfo=datetime.timezone.utc)
-    dst_end = datetime.datetime(anno, 10, oct_last_sun, 3, 0, tzinfo=datetime.timezone.utc)
-    offset_ore = 2 if dst_start <= now_utc < dst_end else 1
-    return datetime.timezone(datetime.timedelta(hours=offset_ore))
-
-def get_giorno_operativo(dt_roma=None):
-    """Calcola la data del giorno operativo corrente per l'Ateneo.
-    La giornata didattica va dalle 04:00 del mattino alle 03:59 del giorno successivo."""
-    tz_roma = get_tz_roma()
-    now_roma = dt_roma or datetime.datetime.now(tz_roma)
-    if now_roma.hour >= 4:
-        return now_roma.date()
-    else:
-        return now_roma.date() - datetime.timedelta(days=1)
 
 def salva_stato(forza=False):
-    """Salva lo stato degli impegni in modo condizionale e atomico.
-    Se i dati non sono cambiati, non effettua scritture su disco per tutelare la MicroSD.
-    Utilizza un file temporaneo e os.replace per prevenire corruzioni da blackout."""
+    """Salva lo stato degli impegni in modo condizionale e atomico fuori da lock_memoria (ST-09)."""
     global ultimo_stato_json_salvato
-    try:
-        nuovo_json = json.dumps(storico_impegni, indent=4, sort_keys=True)
-        if not forza and nuovo_json == ultimo_stato_json_salvato:
-            return  # Nessuna variazione: zero scritture su MicroSD
-        
-        percorso_def = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
-        percorso_tmp = os.path.join(PERCORSO_BASE, 'stato_impegni.json.tmp')
-        with open(percorso_tmp, 'w', encoding='utf-8') as f:
-            f.write(nuovo_json)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(percorso_tmp, percorso_def)
-        ultimo_stato_json_salvato = nuovo_json
-    except Exception as e:
-        logging.error(f"❌ Errore durante il salvataggio atomico dello stato: {e}")
+    esito = ctx.salva_stato(forza=forza)
+    ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
+    return esito
+
 
 def verifica_e_esegui_reset_04am(dt_roma=None):
-    """Verifica ed esegue il reset programmato alle 04:00 AM (o catch-up all'avvio).
-    Ritorna True se è stato eseguito un reset dello storico impegni."""
-    global storico_impegni, ultimo_reset_data
-    tz_roma = get_tz_roma()
-    now_roma = dt_roma or datetime.datetime.now(tz_roma)
-    giorno_op = get_giorno_operativo(now_roma)
-    giorno_op_str = str(giorno_op)
+    """Verifica ed esegue il reset programmato alle 04:00 AM (o catch-up all'avvio) con ST-11.1."""
+    global memoria_dati, ultimo_reset_data, ultimo_stato_json_salvato
+    esito = ctx.verifica_e_esegui_reset_04am(dt_roma=dt_roma)
+    if esito:
+        memoria_dati = ctx.ottieni_dati_pubblici()
+    ultimo_reset_data = ctx.ultimo_reset_data
+    ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
+    return esito
 
-    file_reset = os.path.join(PERCORSO_BASE, 'ultimo_reset.txt')
-    if ultimo_reset_data is None:
-        if os.path.exists(file_reset):
-            try:
-                with open(file_reset, 'r', encoding='utf-8') as f:
-                    ultimo_reset_data = f.read().strip()
-            except Exception:
-                ultimo_reset_data = None
+DEFAULT_CONFIG = """# ==============================================================================
+# CONFIGURAZIONE ATTIVA - KIOSK4UPLANNER (Versione 2 - REST API CINECA)
+# ==============================================================================
+# Modificabile dal pannello web /admin o da terminale (i commenti vengono preservati).
+# ==============================================================================
 
-    if ultimo_reset_data != giorno_op_str:
-        logging.info(f"🔄 Esecuzione reset giornaliero impegni (precedente: {ultimo_reset_data} -> nuovo giorno operativo: {giorno_op_str}).")
-        storico_impegni.clear()
-        salva_stato()
-        ultimo_reset_data = giorno_op_str
-        try:
-            with open(file_reset, 'w', encoding='utf-8') as f:
-                f.write(giorno_op_str)
-        except Exception as e:
-            logging.warning(f"⚠️ Impossibile salvare ultimo_reset.txt: {e}")
-        return True
-    return False
-
-DEFAULT_CONFIG = """main:
+# ------------------------------------------------------------------------------
+# 1. PARAMETRI GENERALI DEL SERVER E MODALITÀ DEBUG
+# ------------------------------------------------------------------------------
+main:
   porta_server: 8080
   percorso_base: '{PERCORSO}'
   file_log: 'kiosk.log'
-  # ----------------------------------------------------------------------------
-  # MODALITÀ DEBUG E DIAGNOSTICA
-  # ----------------------------------------------------------------------------
-  # Imposta su 'true' solo in fase di test o se richiesto dall'assistenza.
+  # Imposta debug_mode su 'true' (o spunta "Abilita Debug Mode" nella tendina
+  # Credenziali e Connessione CINECA di /admin) per stampare in kiosk.log le
+  # mappe complete di Anni Accademici, Contesti ed Edifici rilevati su U-Planner.
   debug_mode: false
+
+# ------------------------------------------------------------------------------
+# 2. RETE E SICUREZZA DEL PANNELLO /admin
+# ------------------------------------------------------------------------------
 sicurezza:
   admin_attivo: true
+  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+  # Elenco IP o subnet CIDR autorizzati ad aprire /admin (lista vuota [] = accesso libero)
   admin_ip_autorizzati:
     - '127.0.0.1'
-  password_admin_hash: 'a45090e56b7639cae365ee553d321fe8ef76300adcab875a064bb3f0abbc08d0'
+
+# ------------------------------------------------------------------------------
+# 3. SERVER HTTPS / SSL PARALLELO (OPZIONALE)
+# ------------------------------------------------------------------------------
 https:
   abilitato: false
   porta_https: 8443
   file_certificato: 'cert.pem'
   file_chiave: 'key.pem'
   forza_redirect_http: false
+
+# ------------------------------------------------------------------------------
+# 4. CREDENZIALI E FILTRI U-PLANNER CINECA
+# ------------------------------------------------------------------------------
+# anno_accademico_id e contesto_id sono obbligatori (24 caratteri esadecimali;
+# per edifici multi-dipartimento scegliere il Polo didattico in contesto_id).
+# Ricordarsi di aggiornare anno_accademico_id a ogni inizio di nuovo A.A.!
 api_cineca:
   username: ''
   password: ''
   realm: ''
-  id_edificio: ''
   anno_accademico_id: ''
   contesto_id: ''
+  id_edificio: ''
   intervallo_aggiornamento_sec: 300
   url_base: 'https://cineca.prod.up.cineca.it/api'
+
+# ------------------------------------------------------------------------------
+# 5. INTERFACCIA DASHBOARD, DIGITAL SIGNAGE (?kiosk=1) & CAROSELLO LOCANDINE
+# ------------------------------------------------------------------------------
 frontend:
   mostra_confermati: true
+  mostraStatoPC: true
   caroselloAttivo: true
   titoloSede: 'Impegni Aule'
   urlLogo: './logo.png'
-  mostraStatoPC: true
   messaggioNessunaLezione: 'Nessun impegno attivo programmato per la giornata.'
   messaggioErroreRete: 'Connessione persa col Server API. Tentativo di riconnessione...'
   pausaTraCaroselli: 180000
@@ -300,15 +248,34 @@ frontend:
   urlLicenza: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it'
   autore: 'Vincenzo Oriti'
   emailAutore: 'vincenzo.oriti@unipv.it'
+
+# ------------------------------------------------------------------------------
+# 6. AVVISO DI EMERGENZA (ALERT GIALLO) & FOOTER NOTIZIE RSS/REST
+# ------------------------------------------------------------------------------
 footer_news:
   abilitato: true
   stile_scorrimento: 'verticale'
   velocita: 20
   colore_testo: '#c9d1d9'
   colore_sfondo: '#3e3c3d'
+  colore_btn: '#30363d'
   dimensione_testo: '1.20rem'
   alert_fisso_attivo: false
   alert_testo: ''
+  # Lista fino a 6 fonti (nome, url, tipo: 'rss'|'rest', abilitata, visibile_di_default, peso: 1..5)
+  # peso (intero da 1 a 5, default 1): le notizie delle varie fonti vengono mescolate a turno e,
+  # a ogni giro, una fonte inserisce fino a 'peso' notizie di fila. Esempio: fonte A con peso 2 e
+  # fonte B con peso 1 -> A, A, B, A, A, B... (A compare il doppio più spesso). Valori fuori
+  # range vengono riportati nell'intervallo 1-5 (valori non numerici = 1).
+  # ESEMPIO: per attivare una fonte, sostituisci 'fonti: []' con il blocco seguente
+  # (togli il '#' iniziale e mantieni l'indentazione) oppure compilala da /admin:
+  #   fonti:
+  #     - nome: "ANSA - Ultima ora"
+  #       url: "https://www.ansa.it/sito/ansait_rss.xml"
+  #       tipo: "rss"                # 'rss' (RSS/Atom) oppure 'rest' (API JSON)
+  #       abilitata: true            # false = fonte disattivata
+  #       visibile_di_default: true  # true = selezionata di default nelle preferenze utente
+  #       peso: 1                    # 1..5 (vedi spiegazione sopra)
   fonti: []
 """
 
@@ -326,6 +293,21 @@ def load_config():
             PERCORSO_BASE = pb
 
 load_config()
+
+
+def _crea_cineca_client():
+    api_cfg = CONFIG.get('api_cineca', {}) if isinstance(CONFIG, dict) else {}
+    return CinecaClient(
+        url_base=api_cfg.get('url_base') or 'https://cineca.prod.up.cineca.it/api',
+        realm=sanitize_id_str(api_cfg.get('realm')),
+        username=api_cfg.get('username', ''),
+        password=api_cfg.get('password', ''),
+        timeout=15,
+    )
+
+
+cineca_client = _crea_cineca_client()
+news_engine = NewsEngine(CONFIG.get('footer_news', {}).get('fonti', []))
 server_https_attivo = False
 
 import logging.handlers
@@ -348,39 +330,41 @@ handler_rotativo.setFormatter(logging.Formatter(
 ))
 root_logger.addHandler(handler_rotativo)
 
+ctx = BuildingContext(CONFIG, PERCORSO_BASE)
+lock_config = ctx.lock_config
+lock_memoria = ctx.lock_memoria
+lock_locandine = ctx.lock_locandine
+storico_impegni = ctx.storico_impegni
+
+
 def carica_stato():
-    global storico_impegni, ultimo_reset_data, ultimo_stato_json_salvato
-    file_stato = os.path.join(PERCORSO_BASE, 'stato_impegni.json')
-    if os.path.exists(file_stato):
-        try:
-            with open(file_stato, 'r', encoding='utf-8') as f:
-                storico_impegni = json.load(f)
-                ultimo_stato_json_salvato = json.dumps(storico_impegni, indent=4, sort_keys=True)
-        except Exception as e:
-            logging.warning(f"⚠️ Impossibile leggere stato_impegni.json (file corrotto o non valido): {e}")
-            storico_impegni = {}
-            ultimo_stato_json_salvato = None
-    
+    global ultimo_reset_data, ultimo_stato_json_salvato
+    ctx.carica_stato()
     tz_roma = get_tz_roma()
     now_roma = datetime.datetime.now(tz_roma)
-    
+
     # Catch-up delle 04:00 AM all'avvio (es. accensione portineria alle 07:30):
-    if verifica_e_esegui_reset_04am(now_roma):
+    if ctx.verifica_e_esegui_reset_04am(now_roma):
         logging.info("🧹 Catch-up avvio: storico impegni resettato per la nuova giornata operativa.")
     else:
-        # Se siamo nella stessa giornata operativa, rimuoviamo solo eventuali eventi scaduti
-        dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(now_roma), datetime.time(0, 0, 0), tzinfo=tz_roma)
+        # Se siamo nella stessa giornata operativa, rimuoviamo solo eventuali eventi scaduti in-place
+        dt_inizio_giorno = datetime.datetime.combine(
+            get_giorno_operativo(now_roma), datetime.time(0, 0, 0), tzinfo=tz_roma
+        )
         mezzanotte_ts = dt_inizio_giorno.timestamp()
-        storico_impegni = {k: v for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) > mezzanotte_ts}
+        with ctx.lock_memoria:
+            chiavi_scadute = [
+                k for k, v in ctx.storico_impegni.items()
+                if v.get('timestamp_fine', 0) <= mezzanotte_ts
+            ]
+            for k in chiavi_scadute:
+                del ctx.storico_impegni[k]
+
+    ultimo_reset_data = ctx.ultimo_reset_data
+    ultimo_stato_json_salvato = ctx.ultimo_stato_json_salvato
+
 
 carica_stato()
-
-def sanitize_id_str(val):
-    """Sanitizza gli identificativi CINECA rimuovendo spazi e apici accidentali ed evitando 'None'."""
-    if val is None:
-        return ''
-    import re
-    return re.sub(r"^[\s\'\"]+|[\s\'\"]+$", '', str(val))
 
 def salva_config_yaml(file_path=None, config_data=None):
     """Salva il dizionario di configurazione preservando commenti e struttura YAML."""
@@ -522,190 +506,40 @@ def salva_config_yaml(file_path=None, config_data=None):
 
 def effettua_login():
     global token_cineca
-    logging.info("Richiesta di un nuovo Token a CINECA (Admin) in corso...")
-    
     api_cineca = CONFIG.get('api_cineca', {})
-    url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
-    url_login = f"{url_base}/Utenti/login"
-    
-    realm = sanitize_id_str(api_cineca.get('realm'))
-    payload = {
-        "username": api_cineca.get('username', ''), 
-        "password": api_cineca.get('password', ''), 
-        "realm": realm,
-        "clientId": realm
-    }
-    try:
-        risposta = requests.post(url_login, json=payload, timeout=10)   
-        if risposta.status_code == 200:
-            dati = risposta.json()
-            token_cineca = dati.get("id")
-            logging.info("✅ Login effettuato con successo. Nuovo token acquisito.")
-            return True
-        else:
-            logging.error(f"❌ Errore di Login. Codice: {risposta.status_code}. Risposta: {risposta.text}")
-            return False
-    except Exception as e:
-        logging.error(f"❌ Errore di rete durante il login: {e}")
-        return False
+    cineca_client.url_base = str(api_cineca.get('url_base') or 'https://cineca.prod.up.cineca.it/api').strip().rstrip('/')
+    cineca_client.realm = sanitize_id_str(api_cineca.get('realm'))
+    cineca_client.username = str(api_cineca.get('username', ''))
+    cineca_client.password = str(api_cineca.get('password', ''))
+    token_cineca = cineca_client.login()
+    return bool(token_cineca)
+
 
 def estrai_e_formatta_dati(impegni_grezzi):
-    global storico_impegni, data_storico
+    global data_storico, ultimo_aggiornamento_preservato
     tz_roma = get_tz_roma()
     ora_attuale = datetime.datetime.now(tz_roma)
     oggi_str = str(get_giorno_operativo(ora_attuale))
-    
     if oggi_str != data_storico:
         data_storico = oggi_str
-        
-    nuovi_estratti = {}
-    id_esclusi = set()      # presenti in CINECA ma esclusi dalla configurazione corrente (edificio, stato B, C nascosti)
-    id_illeggibili = set()  # presenti in CINECA ma non interpretabili: non vanno mai trattati come annullati
-    for item in impegni_grezzi:
-        id_imp = (item.get('id') or item.get('_id')) if isinstance(item, dict) else None
-        if not id_imp: continue
-        try:
-            aule = item.get('aule', [])
-            edifici_impegno = [sanitize_id_str(a.get('edificio', {}).get('codice')) for a in aule if isinstance(a, dict) and a.get('edificio')]
-            
-            id_edificio = sanitize_id_str(CONFIG.get('api_cineca', {}).get('id_edificio'))
-            if id_edificio != "":
-                edifici_norm = set(edifici_impegno) | {c.lstrip('0') or '0' for c in edifici_impegno}
-                id_norm = id_edificio.lstrip('0') or '0'
-                if id_edificio not in edifici_norm and id_norm not in edifici_norm:
-                    id_esclusi.add(id_imp)
-                    continue
-
-            stato = item.get('stato', 'P')
-            if isinstance(stato, dict):
-                stato = stato.get('codice') or stato.get('id') or 'P'
-            stato = str(stato).upper().strip()
-
-            if stato == 'B':
-                id_esclusi.add(id_imp)
-                continue
-                
-            mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
-            if stato == 'C' and not mostra_confermati:
-                id_esclusi.add(id_imp)
-                continue
-
-            is_cancellato = (stato == 'A')
-            avviso_stato = ""
-            if stato == 'A': avviso_stato = "ANNULLATO"
-            elif stato == 'S': avviso_stato = "SOSPESO"
-
-            str_inizio = item.get('dataInizio', '').replace('Z', '+00:00')
-            str_fine = item.get('dataFine', '').replace('Z', '+00:00')
-            dt_inizio = datetime.datetime.fromisoformat(str_inizio)
-            dt_fine = datetime.datetime.fromisoformat(str_fine)
-            
-            evento = item.get('evento', {})
-            
-            is_indisponibilita = (
-                item.get('indisponibilita', False) or 
-                item.get('indisponibilitaTotale', False) or 
-                item.get('indisponibilitaTotaleAule', False) or 
-                item.get('tipoImpegno') == 'INDISPONIBILITA'
-            )
-            
-            testo_estratto = (item.get('nome') or item.get('causaleIndisponibilita') or item.get('note') or evento.get('nome') or item.get('motivo') or item.get('descrizione') or evento.get('dettaglioDidattico', {}).get('nome') or "Attività programmata")
-            
-            if is_indisponibilita:
-                titolo_raw = f"INDISPONIBILITÀ: {testo_estratto}"
-            else:
-                titolo_raw = testo_estratto
-
-            nuovi_estratti[id_imp] = {
-                "id": id_imp,
-                "orario": f"{dt_inizio.astimezone(tz_roma).strftime('%H:%M')} - {dt_fine.astimezone(tz_roma).strftime('%H:%M')}",
-                "titolo": titolo_raw.strip(),
-                "docente": f"{item.get('docenti', [{}])[0].get('cognome', '')} {item.get('docenti', [{}])[0].get('nome', '')}".strip() if item.get('docenti') else "Dipartimento",
-                "aula": (aule[0].get('descrizione') or 'Da definire').strip() if aule else "Da definire",
-                "inCorso": (dt_inizio <= ora_attuale <= dt_fine),
-                "timestamp_inizio": dt_inizio.timestamp(),
-                "timestamp_fine": dt_fine.timestamp(),
-                "cancellato": is_cancellato,
-                "avviso": avviso_stato,
-                "stato_cineca": stato,
-                "assenze": 0
-            }
-        except Exception as e:
-            id_illeggibili.add(id_imp)
-            logging.warning(f"⚠️ Impegno CINECA {id_imp} non interpretabile ({e}): stato precedente preservato.")
-
-    # Un evento escluso dai filtri NON è annullato: esce semplicemente dallo storico
-    for id_escluso in id_esclusi:
-        storico_impegni.pop(id_escluso, None)
-
-    for id_nuovo, imp_nuovo in nuovi_estratti.items():
-        if id_nuovo not in storico_impegni:
-            storico_impegni[id_nuovo] = imp_nuovo
-        else:
-            imp_storico = storico_impegni[id_nuovo]
-
-            # Auto-healing: l'evento è di nuovo regolare in CINECA, si rimuove l'avviso di stato ereditato
-            if not imp_nuovo['avviso'] and imp_storico.get('avviso') in AVVISI_DI_STATO:
-                imp_storico['avviso'] = ""
-                imp_storico['cancellato'] = False
-
-            cambiata_aula = imp_storico['aula'] != imp_nuovo['aula']
-            cambiato_orario = imp_storico['orario'] != imp_nuovo['orario']
-            
-            if (cambiata_aula or cambiato_orario) and not imp_storico.get('avviso', '').startswith("Spostato"):
-                vecchia_aula = imp_storico['aula']
-                vecchio_orario = imp_storico['orario']
-                imp_storico['avviso'] = f"Spostato (da {vecchia_aula} ore {vecchio_orario})"
-            
-            if imp_nuovo['avviso']:
-                imp_storico['avviso'] = imp_nuovo['avviso']
-                imp_storico['cancellato'] = imp_nuovo['cancellato']
-            else:
-                imp_nuovo['avviso'] = imp_storico.get('avviso', "")
-            
-            imp_storico.update(imp_nuovo)
-
-    # Protezione anti-falso annullamento:
-    # Se la risposta da CINECA e vuota ma avevamo gia impegni validi nello storico,
-    # non marchiamo gli eventi come annullati per evitare falsi allarmi sul totem.
-    global ultimo_aggiornamento_preservato
-    if len(impegni_grezzi) == 0 and len(storico_impegni) > 0:
-        logging.warning("⚠️ Rilevato payload CINECA vuoto a fronte di impegni validi in memoria. Preservo lo stato per evitare falsi annullamenti.")
-        ultimo_aggiornamento_preservato = True
-    else:
-        ultimo_aggiornamento_preservato = False
-        # Un evento sparito diventa ANNULLATO solo dopo SOGLIA_ASSENZE_ANNULLAMENTO polling consecutivi
-        for id_storico, imp_storico in storico_impegni.items():
-            if id_storico in nuovi_estratti or id_storico in id_illeggibili:
-                continue
-            if imp_storico['timestamp_fine'] > ora_attuale.timestamp() and not imp_storico.get('cancellato'):
-                imp_storico['assenze'] = imp_storico.get('assenze', 0) + 1
-                if imp_storico['assenze'] >= SOGLIA_ASSENZE_ANNULLAMENTO:
-                    imp_storico["cancellato"] = True
-                    imp_storico["avviso"] = "ANNULLATO"
-                    logging.info(f"🚫 Impegno {id_storico} assente da CINECA per {imp_storico['assenze']} polling consecutivi: marcato ANNULLATO.")
-
-    dt_inizio_giorno = datetime.datetime.combine(get_giorno_operativo(ora_attuale), datetime.time(0, 0, 0), tzinfo=tz_roma)
-    mezzanotte_oggi = dt_inizio_giorno.timestamp()
-    chiavi_scadute = [k for k, v in storico_impegni.items() if v.get('timestamp_fine', 0) <= mezzanotte_oggi]
-    for k in chiavi_scadute:
-        del storico_impegni[k]
-
-    for imp in storico_impegni.values():
-         imp['inCorso'] = (imp['timestamp_inizio'] <= ora_attuale.timestamp() <= imp['timestamp_fine'])
-
+    id_edificio = sanitize_id_str(CONFIG.get('api_cineca', {}).get('id_edificio'))
+    mostra_confermati = CONFIG.get('frontend', {}).get('mostra_confermati', True)
+    with ctx.lock_memoria:
+        dati_puliti, ultimo_aggiornamento_preservato = CinecaClient.processa_impegni(
+            impegni_grezzi,
+            ctx.storico_impegni,
+            id_edificio=id_edificio,
+            mostra_confermati=mostra_confermati,
+            ora_attuale=ora_attuale,
+        )
+        ctx.ultimo_aggiornamento_preservato = ultimo_aggiornamento_preservato
     salva_stato()
-
-    dati_puliti = [imp for imp in storico_impegni.values() if imp['timestamp_fine'] > ora_attuale.timestamp() or imp['inCorso']]
-    dati_puliti.sort(key=lambda x: x['timestamp_inizio'])
     return dati_puliti
+
 
 def verifica_sentinella_limite(dati_grezzi):
     """Segnala nel log una risposta CINECA arrivata al tetto 'limit' (possibile troncatura)."""
-    if isinstance(dati_grezzi, list) and len(dati_grezzi) >= LIMITE_EVENTI_CINECA:
-        logging.warning(f"⚠️ SENTINELLA LIMITE CINECA: ricevuti {len(dati_grezzi)} impegni (limite {LIMITE_EVENTI_CINECA}). Possibile troncatura: valorizzare anno_accademico_id e contesto_id.")
-        return True
-    return False
+    return CinecaClient.verifica_sentinella_limite(dati_grezzi)
 
 def intervallo_aggiornamento_sec():
     try:
@@ -717,9 +551,13 @@ def intervallo_aggiornamento_sec():
 def elabora_risposta_cineca(dati_grezzi):
     global memoria_dati, ultimo_sync_cineca_ok
     verifica_sentinella_limite(dati_grezzi)
+    dati_puliti = estrai_e_formatta_dati(dati_grezzi)
+    ctx.aggiorna_impegni(ctx.storico_impegni, nuovi_dati=dati_puliti)
     with lock_memoria:
-        memoria_dati = estrai_e_formatta_dati(dati_grezzi)
+        memoria_dati = ctx.memoria_dati
     ultimo_sync_cineca_ok = time.time()
+    ctx.ultimo_sync_cineca_ok = ultimo_sync_cineca_ok
+    ctx.ultimo_aggiornamento_preservato = ultimo_aggiornamento_preservato
     if ultimo_aggiornamento_preservato:
         logging.info(f"🛡️ Nessun nuovo dato CINECA: {len(memoria_dati)} impegni precedenti mantenuti a video.")
     else:
@@ -728,6 +566,8 @@ def elabora_risposta_cineca(dati_grezzi):
 def ciclo_aggiornamento_api():
     global token_cineca, memoria_dati
     logging.info("🚀 Avviato demone API CINECA (Modalità Admin Autenticata).")
+    sonda_paginazione_eseguita = False
+    anagrafiche_debug_loggate = False
     
     while True:
         try:
@@ -739,7 +579,7 @@ def ciclo_aggiornamento_api():
             
             if not token_cineca:
                 if not effettua_login():
-                    time.sleep(120)
+                    time.sleep(60)
                     continue
             
             headers = { 
@@ -778,8 +618,40 @@ def ciclo_aggiornamento_api():
             if contesto_id:
                 payload["contestoId"] = contesto_id
 
+            if not sonda_paginazione_eseguita and token_cineca:
+                cineca_client.token = token_cineca
+                cineca_client.url_base = url_base
+                cineca_client.realm = realm
+                try:
+                    cineca_client.verifica_supporto_paginazione(
+                        giorno_op,
+                        anno_accademico_id=anno_id,
+                        contesto_id=contesto_id,
+                    )
+                except Exception as e_sonda:
+                    logging.warning(f"⚠️ Sonda paginazione CINECA non completata: {e_sonda}")
+                sonda_paginazione_eseguita = True
+
             
             is_debug = bool(CONFIG.get('main', {}).get('debug_mode', False))
+            if not is_debug:
+                anagrafiche_debug_loggate = False
+            elif not anagrafiche_debug_loggate and token_cineca:
+                cineca_client.token = token_cineca
+                cineca_client.url_base = url_base
+                cineca_client.realm = realm
+                cineca_client.scopri_anagrafiche_debug(
+                    anno_accademico_id=anno_id,
+                    contesto_id=contesto_id,
+                )
+                anagrafiche_debug_loggate = True
+                if not anno_id or not contesto_id:
+                    logging.info(
+                        "🕵️ DEBUG: anno_accademico_id o contesto_id non ancora configurati. "
+                        "Copia gli ID dalle mappe ANNI ACCADEMICI e CONTESTI qui sopra in /admin "
+                        "per abilitare il recupero degli orari e la MAPPA EDIFICI."
+                    )
+
             if is_debug:
                 logging.info(f"🕵️ DEBUG: Richiesta impegni a {url_impegni} (Payload: {payload})")
             
@@ -788,9 +660,11 @@ def ciclo_aggiornamento_api():
             if risposta.status_code == 401:
                 logging.error("❌ Token scaduto o non valido (401). Forzo il rinnovo.")
                 token_cineca = None
+                cineca_client.invalida_token()
                 time.sleep(2)
                 continue
             elif risposta.status_code == 200:
+                cineca_client.reset_backoff()
                 dati_grezzi = risposta.json()
                 if is_debug:
                     logging.info(f"🕵️ DEBUG: Ricevuti {len(dati_grezzi)} impegni grezzi.")
@@ -816,179 +690,26 @@ def ciclo_aggiornamento_api():
         intervallo = intervallo_aggiornamento_sec()
         time.sleep(intervallo)
 
-DIAGNOSTICA_NEWS = {}   # url -> {"stato", "articoli", "ora"}; sostituito per intero a ogni giro
+DIAGNOSTICA_NEWS = {}   # url -> {"stato", "semaforo", "articoli", "ora", "ultimo_errore"}; sostituito per intero a ogni giro
+TIMEOUT_FONTE_NEWS_SEC = TIMEOUT_FONTE_SEC
 
-def classifica_errore_fonte(exc):
-    risposta = getattr(exc, 'response', None)
-    if risposta is not None and getattr(risposta, 'status_code', None):
-        return f"HTTP {risposta.status_code}"
-    if 'Timeout' in type(exc).__name__:
-        return "Timeout"
-    if isinstance(exc, ET.ParseError):
-        return "Errore formato XML"
-    if isinstance(exc, ValueError):
-        return "Errore formato JSON"
-    return "Errore di rete"
+classifica_errore_fonte = NewsEngine.classifica_errore_fonte
+clean_html = NewsEngine.clean_html
+parse_data_notizia = NewsEngine.parse_data_notizia
+normalizza_peso = NewsEngine.normalizza_peso
 
-TIMEOUT_FONTE_NEWS_SEC = 5
-
-def clean_html(raw_html):
-    if not raw_html: return ""
-    cleanr = re.compile(r'<.*?>', re.DOTALL)
-    cleantext = re.sub(cleanr, '', str(raw_html))
-    return cleantext.strip()
-
-def parse_data_notizia(raw):
-    if not raw: return ''
-    raw = raw.strip()
-    try:
-        import email.utils
-        dt = email.utils.parsedate_to_datetime(raw)
-        if dt: return dt.strftime('%d/%m/%Y')
-    except Exception:
-        pass
-    m1 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
-    if m1:
-        d, m, y = m1.groups()
-        return f"{int(d):02d}/{int(m):02d}/{y}"
-    mesi = {
-        'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
-        'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
-        'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4, 'maggio': 5, 'giugno': 6,
-        'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
-    }
-    m2 = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', raw)
-    if m2:
-        d, mese_str, y = m2.groups()
-        mese_num = mesi.get(mese_str.lower()[:3]) or mesi.get(mese_str.lower())
-        if mese_num:
-            return f"{int(d):02d}/{mese_num:02d}/{y}"
-    m3 = re.search(r'(\d{4})-(\d{2})-(\d{2})', raw)
-    if m3:
-        y, m, d = m3.groups()
-        return f"{int(d):02d}/{int(m):02d}/{y}"
-    return raw
-
-def normalizza_peso(valore):
-    try:
-        return min(5, max(1, int(valore)))
-    except (TypeError, ValueError):
-        return 1
 
 def scarica_fonte(fonte):
-    url = fonte.get('url', '').strip()
-    tipo = fonte.get('tipo', '').lower()
-    nome = fonte.get('nome', 'Fonte')
-    visibile = fonte.get('visibile_di_default', True)
+    return news_engine.scarica_fonte(fonte)
 
-    if not url:
-        return []
-
-    notizie_di_questa_fonte = []
-    res = requests.get(url, timeout=TIMEOUT_FONTE_NEWS_SEC)
-    res.raise_for_status()
-
-    if tipo == 'rest':
-        dati = res.json()
-        for item in dati:
-            title = item.get('title', {}).get('rendered', '')
-            link = item.get('link', '')
-            data = parse_data_notizia(item.get('date', ''))
-            titolo_pulito = clean_html(title)
-            if titolo_pulito:
-                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link, "data": data, "visibile": visibile})
-    elif tipo == 'rss':
-        root = ET.fromstring(res.content)
-        items = root.findall('./channel/item')
-        if not items:
-            # Supporto fallback per formati Atom (Drupal Views / feed alternativi)
-            items = root.findall('.//{http://www.w3.org/2005/Atom}entry') or root.findall('.//entry')
-
-        for item in items:
-            title = item.find('{http://www.w3.org/2005/Atom}title') if item.find('{http://www.w3.org/2005/Atom}title') is not None else item.find('title')
-            link_elem = item.find('{http://www.w3.org/2005/Atom}link') if item.find('{http://www.w3.org/2005/Atom}link') is not None else item.find('link')
-            date_elem = None
-            for tag_candidate in ['{http://www.w3.org/2005/Atom}updated', '{http://www.w3.org/2005/Atom}published', 'pubDate', '{http://purl.org/dc/elements/1.1/}date', 'date']:
-                found_el = item.find(tag_candidate)
-                if found_el is not None:
-                    date_elem = found_el
-                    break
-
-            link = ''
-            if link_elem is not None:
-                link = link_elem.get('href', '') or (link_elem.text.strip() if link_elem.text else '')
-            raw_data = date_elem.text.strip() if date_elem is not None and date_elem.text else ''
-            data = parse_data_notizia(raw_data)
-
-            titolo_raw = "".join(title.itertext()).strip() if title is not None else ""
-            # Compatibilità avanzata Drupal: se il link non è in <link>, estrailo da tag <a> o CDATA del titolo
-            if not link and title is not None:
-                a_elem = title.find('.//a')
-                if a_elem is not None and a_elem.get('href'):
-                    link = a_elem.get('href')
-                elif 'href=' in str(titolo_raw):
-                    m_href = re.search(r'href="([^"]+)"', str(titolo_raw)) or re.search(r"href='([^']+)'", str(titolo_raw))
-                    if m_href:
-                        link = m_href.group(1).strip()
-
-            titolo_pulito = clean_html(titolo_raw)
-            if titolo_pulito:
-                notizie_di_questa_fonte.append({"fonte": nome, "titolo": titolo_pulito, "link": link.strip(), "data": data, "visibile": visibile})
-    return notizie_di_questa_fonte
 
 def aggiorna_news_una_volta():
     global memoria_news, DIAGNOSTICA_NEWS
     footer_config = CONFIG.get('footer_news', {})
     fonti = footer_config.get('fonti', [])
-    notizie_per_fonte = []
-    diagnostica = {}
-    tz_roma = get_tz_roma()
-
-    for fonte in fonti:
-        url = fonte.get('url', '').strip()
-        nome = fonte.get('nome', 'Fonte')
-        abilitata = fonte.get('abilitata', True)
-        peso = normalizza_peso(fonte.get('peso', 1))
-
-        if not url:
-            continue
-
-        if not abilitata:
-            diagnostica[url] = {"stato": "DISABILITATA", "articoli": 0, "ora": ""}
-            continue
-
-        try:
-            notizie_di_questa_fonte = scarica_fonte(fonte)
-            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
-            diagnostica[url] = {"stato": "OK", "articoli": len(notizie_di_questa_fonte), "ora": ora_roma}
-            if notizie_di_questa_fonte:
-                notizie_per_fonte.append({'notizie': notizie_di_questa_fonte, 'peso': peso})
-        except Exception as e:
-            ora_roma = datetime.datetime.now(tz_roma).strftime('%H:%M')
-            diagnostica[url] = {"stato": classifica_errore_fonte(e), "articoli": 0, "ora": ora_roma}
-            logging.warning(f"⚠️ Errore recupero news da {nome} ({url}): {e}")
-
-    DIAGNOSTICA_NEWS = diagnostica
-
-    notizie_estratte = []
-    if notizie_per_fonte:
-        ancora_notizie = True
-        indici = [0] * len(notizie_per_fonte)
-
-        while ancora_notizie:
-            ancora_notizie = False
-            for i, f in enumerate(notizie_per_fonte):
-                peso = f['peso']
-                notizie = f['notizie']
-                idx = indici[i]
-
-                for _ in range(peso):
-                    if idx < len(notizie):
-                        notizie_estratte.append(notizie[idx])
-                        idx += 1
-                        indici[i] = idx
-                        ancora_notizie = True
-
+    news_engine.set_fonti(fonti)
+    notizie_estratte = news_engine.aggiorna()
+    DIAGNOSTICA_NEWS = news_engine.get_diagnostica()
     memoria_news = notizie_estratte
 
 def NewsPollingDaemon():
@@ -1021,13 +742,238 @@ def password_default_bloccata(client_ip, hash_salvato):
     except ValueError:
         return True
 
+
+def verifica_login_admin(client_ip, password_proposta, hash_corretto, now_ts=None):
+    """Controllo lockout, confronto HMAC a tempo costante e incremento atomico sotto un unico lock_login (ST-10.3)."""
+    ts = time.time() if now_ts is None else float(now_ts)
+    pwd_str = password_proposta if isinstance(password_proposta, str) else ''
+    pwd_hash = hashlib.sha256(pwd_str.encode('utf-8')).hexdigest()
+
+    with lock_login:
+        ip_scaduti = [
+            ip for ip, rec in LOGIN_ATTEMPTS.items()
+            if (ts - rec.get('ultimo_tentativo', ts) > 3600) and (rec.get('locked_until', 0) <= ts)
+        ]
+        for ip in ip_scaduti:
+            del LOGIN_ATTEMPTS[ip]
+
+        record = LOGIN_ATTEMPTS.get(client_ip)
+        if record is None:
+            record = {'count': 0, 'locked_until': 0, 'ultimo_tentativo': ts}
+
+        locked_until = record.get('locked_until', 0)
+        if locked_until > ts:
+            secondi_attesa = max(1, int(locked_until - ts))
+            return {
+                'status': 429,
+                'retry_after': secondi_attesa,
+                'secondi_attesa': secondi_attesa,
+                'token': None,
+            }
+
+        ultimo = record.get('ultimo_tentativo', ts)
+        if (0 < locked_until <= ts) or (ts - ultimo > SLIDING_WINDOW_SEC):
+            record['count'] = 0
+            record['locked_until'] = 0
+
+        if hmac.compare_digest(pwd_hash, str(hash_corretto or '')):
+            LOGIN_ATTEMPTS.pop(client_ip, None)
+            token = secrets.token_hex(16)
+            SESSIONS[token] = time.time() + 3600
+            return {
+                'status': 200,
+                'retry_after': 0,
+                'secondi_attesa': 0,
+                'token': token,
+            }
+
+        record['count'] = record.get('count', 0) + 1
+        record['ultimo_tentativo'] = ts
+        if record['count'] >= MAX_LOGIN_ATTEMPTS:
+            record['locked_until'] = ts + LOCKOUT_DURATION_SEC
+            logging.warning(
+                f"🚨 Troppi tentativi di login errati dall'IP {client_ip}. IP bloccato per 10 minuti."
+            )
+        LOGIN_ATTEMPTS[client_ip] = record
+        return {
+            'status': 401,
+            'retry_after': 0,
+            'secondi_attesa': 0,
+            'token': None,
+        }
+
+
+def _valida_porta(valore, nome_campo):
+    if isinstance(valore, bool):
+        raise ValueError(f"Valore non consentito per {nome_campo}")
+    if isinstance(valore, int):
+        porta = valore
+    elif isinstance(valore, str) and valore.strip().isdigit():
+        porta = int(valore.strip())
+    else:
+        raise ValueError(f"Valore non consentito per {nome_campo}: attesa porta numerica 1-65535")
+    if not (1 <= porta <= 65535):
+        raise ValueError(f"Porta {nome_campo} fuori intervallo consentito (1-65535)")
+    return porta
+
+
+def _valida_nome_file_sicuro(valore, pattern, nome_campo):
+    if not isinstance(valore, str) or not valore.strip():
+        raise ValueError(f"Nome file non consentito per {nome_campo}")
+    v = valore.strip()
+    if (
+        '..' in v
+        or '/' in v
+        or '\\' in v
+        or '\x00' in v
+        or os.path.isabs(v)
+        or not pattern.match(v)
+    ):
+        raise ValueError(f"Percorso o nome file non consentito per {nome_campo}")
+    return v
+
+
+def valida_payload_admin_save(payload, config_attuale=None):
+    """Validazione rigorosa a whitelist esplicita per POST /api/admin/save (N-10)."""
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Payload configurazione non consentito o vuoto")
+
+    chiavi_top_ammesse = set(CONFIG_WHITELIST) | {'admin_password'}
+    extra_top = set(payload.keys()) - chiavi_top_ammesse
+    if extra_top:
+        raise ValueError(f"Sezioni configurazione non consentite: {sorted(extra_top)}")
+
+    if 'admin_password' in payload and not isinstance(payload['admin_password'], str):
+        raise ValueError("Campo admin_password non consentito")
+
+    for sezione, chiavi_ammesse in CONFIG_WHITELIST.items():
+        if sezione not in payload:
+            continue
+        val_sez = payload[sezione]
+        if not isinstance(val_sez, dict):
+            raise ValueError(f"Sezione '{sezione}' non consentita: atteso oggetto JSON")
+        extra_keys = set(val_sez.keys()) - chiavi_ammesse
+        if extra_keys:
+            raise ValueError(f"Chiavi non consentite nella sezione '{sezione}': {sorted(extra_keys)}")
+
+    if 'main' in payload:
+        main_cfg = payload['main']
+        if 'percorso_base' in main_cfg:
+            pb_raw = main_cfg['percorso_base']
+            if pb_raw is not None and not isinstance(pb_raw, str):
+                raise ValueError("Modifica di percorso_base non consentita via API")
+            pb_attuale = str((config_attuale or {}).get('main', {}).get('percorso_base', '') or '').strip("'\"")
+            pb_nuovo = str(pb_raw or '').strip("'\"")
+            if pb_nuovo not in ('', pb_attuale):
+                raise ValueError("Modifica di percorso_base non consentita via API")
+            del main_cfg['percorso_base']
+        if 'file_log' in main_cfg:
+            main_cfg['file_log'] = _valida_nome_file_sicuro(main_cfg['file_log'], RE_FILE_LOG_SICURO, 'file_log')
+        if 'porta_server' in main_cfg:
+            main_cfg['porta_server'] = _valida_porta(main_cfg['porta_server'], 'porta_server')
+
+    if 'https' in payload:
+        https_cfg = payload['https']
+        if 'porta_https' in https_cfg:
+            https_cfg['porta_https'] = _valida_porta(https_cfg['porta_https'], 'porta_https')
+        if 'file_certificato' in https_cfg:
+            https_cfg['file_certificato'] = _valida_nome_file_sicuro(
+                https_cfg['file_certificato'], RE_NOME_CERT_SICURO, 'file_certificato'
+            )
+        if 'file_chiave' in https_cfg:
+            https_cfg['file_chiave'] = _valida_nome_file_sicuro(
+                https_cfg['file_chiave'], RE_NOME_CERT_SICURO, 'file_chiave'
+            )
+
+    if 'sicurezza' in payload:
+        sic_cfg = payload['sicurezza']
+        if 'admin_ip_autorizzati' in sic_cfg:
+            ips = sic_cfg['admin_ip_autorizzati']
+            if not isinstance(ips, list) or not all(isinstance(ip, str) for ip in ips):
+                raise ValueError("Campo 'admin_ip_autorizzati' non consentito: attesa lista di stringhe")
+
+    if 'api_cineca' in payload:
+        api_cfg = payload['api_cineca']
+        for nome_id in ('anno_accademico_id', 'contesto_id'):
+            if nome_id in api_cfg:
+                val_id = sanitize_id_str(api_cfg[nome_id])
+                if val_id and not RE_ID_CINECA_SICURO.match(val_id):
+                    raise ValueError(
+                        f"Formato non consentito per {nome_id}: inserire un codice identificativo valido "
+                        "(4-64 caratteri alfanumerici, senza spazi o simboli; su U-Planner solitamente 24 caratteri esadecimali)."
+                    )
+
+    if 'footer_news' in payload:
+        fn_cfg = payload['footer_news']
+        if 'fonti' in fn_cfg:
+            fonti = fn_cfg['fonti']
+            if not isinstance(fonti, list) or len(fonti) > 6:
+                raise ValueError("Campo 'fonti' non consentito: attesa lista di al massimo 6 fonti")
+            for idx, fonte in enumerate(fonti):
+                if not isinstance(fonte, dict):
+                    raise ValueError(f"Fonte news #{idx + 1} non consentita: atteso oggetto JSON")
+                extra_f = set(fonte.keys()) - FONTI_WHITELIST
+                if extra_f:
+                    raise ValueError(
+                        f"Chiavi non consentite nella fonte news #{idx + 1}: {sorted(extra_f)}"
+                    )
+
+    return payload
+
+
 class KioskServer(BaseHTTPRequestHandler):
+    timeout = HTTP_REQUEST_TIMEOUT
+
+    def setup(self):
+        self.timeout = HTTP_REQUEST_TIMEOUT
+        super().setup()
+
+    def handle(self):
+        acquired = HTTP_CONCURRENCY_SEMAPHORE.acquire(blocking=False)
+        if not acquired:
+            corpo_503 = json.dumps({
+                'success': False,
+                'error': 'Server sovraccarico: limite concorrenza raggiunto',
+            }).encode('utf-8')
+            risposta_503 = (
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Retry-After: 5\r\n"
+                b"Connection: close\r\n"
+                b"Content-Length: " + str(len(corpo_503)).encode('ascii') + b"\r\n\r\n" + corpo_503
+            )
+            try:
+                self.wfile.write(risposta_503)
+                self.wfile.flush()
+                # Lingering close (RFC 7230 §6.6): segnala EOF in scrittura e drena i byte in arrivo
+                # per evitare che socket.close() generi TCP RST prima che il client legga il 503.
+                with contextlib.suppress(OSError):
+                    self.connection.shutdown(socket.SHUT_WR)
+                self.connection.settimeout(0.05)
+                drenati = 0
+                while drenati < 16384:
+                    try:
+                        chunk = self.connection.recv(4096)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    drenati += len(chunk)
+            except OSError:
+                pass
+            return
+        try:
+            super().handle()
+        finally:
+            HTTP_CONCURRENCY_SEMAPHORE.release()
+
     def log_message(self, format, *args): pass 
 
     def end_headers(self):
         self.send_header('X-Frame-Options', 'SAMEORIGIN')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', CONTENT_SECURITY_POLICY)
         super().end_headers() 
     
     def _check_security(self):
@@ -1124,12 +1070,22 @@ class KioskServer(BaseHTTPRequestHandler):
 
         parsed_path = self.path.split('?')[0]
         if parsed_path == '/':
-            self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html')
+            self.serve_file(os.path.join(PERCORSO_BASE, 'remoto.html'), 'text/html; charset=utf-8')
         elif parsed_path == '/remoto.html':
             qs = ('?' + self.path.split('?', 1)[1]) if '?' in self.path else ''
             self.send_response(301)
             self.send_header('Location', '/' + qs)
             self.end_headers()
+        elif parsed_path == '/static/remoto.js':
+            self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'remoto.js'), 'application/javascript; charset=utf-8')
+        elif parsed_path == '/static/remoto.css':
+            self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'remoto.css'), 'text/css; charset=utf-8')
+        elif parsed_path == '/static/admin.js':
+            if self._check_security():
+                self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'admin.js'), 'application/javascript; charset=utf-8')
+        elif parsed_path == '/static/admin.css':
+            if self._check_security():
+                self.serve_file(os.path.join(PERCORSO_BASE, 'static', 'admin.css'), 'text/css; charset=utf-8')
         elif parsed_path == '/config_pubblica':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -1148,7 +1104,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            with lock_memoria: self.wfile.write(json.dumps(memoria_dati).encode('utf-8'))
+            self.wfile.write(json.dumps(ctx.ottieni_dati_pubblici()).encode('utf-8'))
         elif parsed_path == '/stato':
             self._invia_json(200, {"ultimo_sync_cineca": ultimo_sync_cineca_ok,
                                    "preservato": ultimo_aggiornamento_preservato,
@@ -1208,7 +1164,7 @@ class KioskServer(BaseHTTPRequestHandler):
             self._invia_json(200, voci)
         elif parsed_path == '/admin':
             if self._check_security():
-                self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html')
+                self.serve_file(os.path.join(PERCORSO_BASE, 'admin.html'), 'text/html; charset=utf-8')
         elif parsed_path == '/api/admin/config_full':
             if self._check_security() and self._check_token():
                 self.send_response(200)
@@ -1221,8 +1177,11 @@ class KioskServer(BaseHTTPRequestHandler):
                 if 'api_cineca' in safe_config and 'password' in safe_config['api_cineca']:
                     safe_config['api_cineca']['password'] = '********'
                 
-                hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
+                hash_salvato = safe_config.get('sicurezza', {}).get('password_admin_hash', '')
                 safe_config['avviso_sicurezza'] = hash_salvato in HASH_PASSWORD_DEFAULT
+                safe_config['paginazione_cineca_supportata'] = bool(
+                    getattr(cineca_client, 'paginazione_supportata', False)
+                )
                     
                 self.wfile.write(json.dumps(safe_config).encode('utf-8'))
         else:
@@ -1240,48 +1199,36 @@ class KioskServer(BaseHTTPRequestHandler):
             if not self._check_security(): return
             
             client_ip = self.client_address[0] if self.client_address else '127.0.0.1'
-            now_ts = time.time()
-            
-            with lock_login:
-                tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
-                if tentativo.get('locked_until', 0) > now_ts:
-                    secondi_attesa = int(tentativo['locked_until'] - now_ts)
+            body = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(body)
+                if not isinstance(data, dict):
+                    self.send_error(400, "Bad Request")
+                    return
+                pwd = data.get('password', '')
+                if not isinstance(pwd, str):
+                    self.send_error(400, "Bad Request")
+                    return
+
+                with lock_config:
+                    hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
+
+                esito = verifica_login_admin(client_ip, pwd, hash_salvato)
+
+                if esito['status'] == 200:
+                    self._invia_json(200, {"token": esito['token']})
+                elif esito['status'] == 429:
+                    secondi_attesa = esito['secondi_attesa']
                     self.send_response(429)
                     self.send_header('Content-type', 'application/json')
+                    self.send_header('Retry-After', str(esito['retry_after']))
                     self.end_headers()
                     self.wfile.write(json.dumps({
                         "error": f"Troppi tentativi falliti. Riprova tra {secondi_attesa} secondi.",
                         "secondi_attesa": secondi_attesa
                     }).encode('utf-8'))
-                    return
-
-            body = self.rfile.read(content_length).decode('utf-8')
-            try:
-                data = json.loads(body)
-                pwd = data.get('password', '')
-                pwd_hash = hashlib.sha256(pwd.encode('utf-8')).hexdigest()
-                
-                hash_salvato = CONFIG.get('sicurezza', {}).get('password_admin_hash', '')
-                
-                if pwd_hash == hash_salvato:
-                    with lock_login:
-                        if client_ip in LOGIN_ATTEMPTS:
-                            del LOGIN_ATTEMPTS[client_ip]
-                    token = secrets.token_hex(16)
-                    SESSIONS[token] = time.time() + 3600
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"token": token}).encode('utf-8'))
                 else:
-                    time.sleep(1)  # Delay difensivo anti-timing e anti-brute force
-                    with lock_login:
-                        tentativo = LOGIN_ATTEMPTS.get(client_ip, {'count': 0, 'locked_until': 0})
-                        tentativo['count'] = tentativo.get('count', 0) + 1
-                        if tentativo['count'] >= 5:
-                            tentativo['locked_until'] = now_ts + 600  # Blocco per 10 minuti
-                            logging.warning(f"🚨 Troppi tentativi di login errati dall'IP {client_ip}. IP bloccato per 10 minuti.")
-                        LOGIN_ATTEMPTS[client_ip] = tentativo
+                    time.sleep(1)  # Delay difensivo anti-timing e anti-brute force (fuori da lock_login)
                     self.send_error(401, "Unauthorized")
             except Exception as e:
                 logging.error(f"Errore login: {e}")
@@ -1297,6 +1244,8 @@ class KioskServer(BaseHTTPRequestHandler):
                 # Copy-on-Write: prepariamo la nuova configurazione su una copia isolata
                 with lock_config:
                     nuova_config = copy.deepcopy(CONFIG)
+
+                valida_payload_admin_save(payload, config_attuale=nuova_config)
                 
                 if 'main' in payload:
                     if 'main' not in nuova_config: nuova_config['main'] = {}
@@ -1334,6 +1283,31 @@ class KioskServer(BaseHTTPRequestHandler):
                         if field in payload['api_cineca']:
                             payload['api_cineca'][field] = sanitize_id_str(payload['api_cineca'][field])
                     nuova_config['api_cineca'].update(payload['api_cineca'])
+
+                    if not getattr(cineca_client, 'paginazione_supportata', False):
+                        credenziali_attive = bool(
+                            str(nuova_config['api_cineca'].get('username') or '').strip()
+                            and str(nuova_config['api_cineca'].get('password') or '').strip()
+                        )
+                        debug_attivo = bool(nuova_config.get('main', {}).get('debug_mode', False))
+                        if credenziali_attive and not CinecaClient.valida_configurazione_salvaguardia(nuova_config):
+                            if debug_attivo:
+                                logging.warning(
+                                    "🕵️ Salvataggio temporaneo consentito senza anno_accademico_id/contesto_id "
+                                    "perché Debug Mode è attiva (auto-discovery anagrafiche CINECA)."
+                                )
+                            else:
+                                logging.warning(
+                                    "🚫 Errore salvataggio config: anno_accademico_id e contesto_id obbligatori "
+                                    "quando la paginazione CINECA non è supportata."
+                                )
+                                self._invia_json(400, {
+                                    "error": (
+                                        "Specificare anno_accademico_id e contesto_id per evitare il troncamento a 500 impegni "
+                                        "(oppure spunta temporaneamente Abilita Debug Mode nella tendina Credenziali CINECA per scoprirne gli ID in kiosk.log)."
+                                    )
+                                })
+                                return
                     
                 if 'sicurezza' in payload:
                     if 'sicurezza' not in nuova_config: nuova_config['sicurezza'] = {}
@@ -1357,9 +1331,10 @@ class KioskServer(BaseHTTPRequestHandler):
                 # Aggiornamento custom su disco per preservare commenti YAML
                 salva_config_yaml(FILE_CONFIG, nuova_config)
                 
-                # Riassegnazione atomica thread-safe della configurazione in RAM
+                # Aggiornamento in-place thread-safe della configurazione in RAM (mantiene alias ctx.config)
                 with lock_config:
-                    CONFIG = nuova_config
+                    CONFIG.clear()
+                    CONFIG.update(nuova_config)
                 
                 news_poll_event.set() # Sveglia il demone per rileggere subito la config delle fonti
                 logging.info("💾 Configurazione salvata e applicata con successo da /admin.")
@@ -1369,9 +1344,12 @@ class KioskServer(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
                 
+            except ValueError as e:
+                logging.warning(f"🚫 Errore salvataggio config (payload rifiutato): {e}")
+                self._invia_json(400, {"error": str(e)})
             except Exception as e:
                 logging.error(f"Errore salvataggio config: {e}")
-                self.send_error(400, "Bad Request")
+                self._invia_json(400, {"error": "Bad Request"})
                 
         elif parsed_path == '/api/admin/locandine/upload':
             if not self._check_security() or not self._check_token(): return
@@ -1432,19 +1410,18 @@ class KioskServer(BaseHTTPRequestHandler):
                 return
 
             with lock_locandine:
-                presenti = elenco_file_locandine()
-                if nome not in presenti:
+                if nome not in elenco_file_locandine():
                     self._invia_json(404, {"error": "File non trovato"})
                     return
-                percorso = os.path.join(cartella_locandine(), nome)
                 try:
-                    os.remove(percorso)
+                    ctx.elimina_locandina(nome)
+                except ValueError as e:
+                    self._invia_json(400, {"error": str(e)})
+                    return
                 except OSError as e:
                     logging.error(f"Errore rimozione file {nome}: {e}")
                     self._invia_json(500, {"error": "Errore durante l'eliminazione del file"})
                     return
-                scrivi_ordine(elenco_locandine_ordinato())
-                logging.info(f"🗑️ Locandina eliminata: {nome}")
             self._invia_json(200, {"status": "ok"})
 
         elif parsed_path == '/api/admin/restart':
@@ -1468,10 +1445,8 @@ class KioskServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', mime)
             self.end_headers()
-            if mime in ['text/html', 'text/javascript']:
-                with open(path, 'r', encoding='utf-8') as f: self.wfile.write(f.read().encode('utf-8'))
-            else:
-                with open(path, 'rb') as f: self.wfile.write(f.read())
+            with open(path, 'rb') as f:
+                self.wfile.write(f.read())
         else:
             self.send_response(404)
             self.end_headers()
@@ -1498,12 +1473,12 @@ def avvia_server_https():
         porta_https = int(https_cfg.get('porta_https', 8443))
         logging.info(f"Avvio KioskServer HTTPS (SSL) sulla porta {porta_https}")
         
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
+        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
         
         httpd_ssl = KioskHTTPServer(('0.0.0.0', porta_https), KioskServer)
         httpd_ssl.is_ssl = True
-        httpd_ssl.socket = ctx.wrap_socket(httpd_ssl.socket, server_side=True)
+        httpd_ssl.socket = ssl_ctx.wrap_socket(httpd_ssl.socket, server_side=True)
         server_https_attivo = True
         httpd_ssl.serve_forever()
     except Exception as e:
